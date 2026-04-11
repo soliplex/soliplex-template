@@ -1,0 +1,20 @@
+id: "search"
+name: "Search & Answer"
+description: "Search the knowledge base and answer questions"
+
+suggestions:
+  - "What is a Soliplex installation?"
+  - "Find documents about authentication"
+
+agent:
+  template_id: "default_chat"
+  system_prompt: "./prompt.txt"
+
+tools:
+  - tool_name: "soliplex.tools.rag.search_documents"
+    rag_lancedb_stem: "rag"
+    search_documents_limit: 7
+    # Apply HR config overrides local to this room
+    #haiku_rag_config: "./haiku.rag.yaml"
+
+allow_mcp: false

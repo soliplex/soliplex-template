@@ -1,0 +1,33 @@
+id: "chat"
+name: "Haiku Chat"
+description: "Conversational RAG with search, ask, and document retrieval"
+
+suggestions:
+  - "Get the document agents.md and summarize its key points"
+  - "Search for information about Soliplex"
+  - "Explain how the authentication system works"
+
+agent:
+  template_id: "default_chat"
+  system_prompt: |
+    You are a helpful agent.
+
+    Use the room's tools and skills to respond to the user's requests.
+
+tools:
+  - tool_name: "soliplex.tools.get_current_datetime"
+  - tool_name: "soliplex.tools.get_current_user"
+  - tool_name: "soliplex.tools.file_uploads.list_thread_file_uploads"
+  - tool_name: "soliplex.tools.file_uploads.get_thread_file_upload"
+
+skills:
+
+# Requires installing 'haiku-skills-image-generation'
+# installation_skill_names:
+#   - "image-generation"
+
+  skill_configs:
+    - kind: "haiku.rag.skills.rag"
+      rag_lancedb_stem: "rag"
+
+allow_mcp: false

@@ -1,0 +1,8 @@
+id: "joker"
+name: "Joke generator"
+description: "Testing agent delegation"
+agent:
+  kind: "factory"
+  factory_name: "soliplex.examples.joker_agent_factory"
+  with_agent_config: true
+allow_mcp: false

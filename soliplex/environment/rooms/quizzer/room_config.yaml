@@ -1,0 +1,15 @@
+id: "quizzer"
+name: "Quiz demonstration"
+description: "Quiz demonstration."
+agent:
+  template_id: "default_chat"
+  system_prompt: "UNUSED, see quiz config"
+quizzes:
+  - id: "test_quiz"
+    question_file: "test_quiz"
+    title: "Test Quiz"
+    randomize: True
+    max_questions: 20
+    judge_agent:
+      id: "test_quiz_judge"
+      template_id: "alternate_chat"

@@ -1,0 +1,19 @@
+id: "analysis"
+name: "Analysis"
+description: "Search and analyze documents with code execution"
+
+suggestions:
+  - "Analyze the data in the documents"
+  - "Compare metrics across documents"
+
+agent:
+  template_id: "default_chat"
+
+skills:
+  skill_configs:
+    - kind: "haiku.rag.skills.rag"
+      rag_lancedb_stem: "rag"
+    - kind: "haiku.rag.skills.rlm"
+      rag_lancedb_stem: "rag"
+
+allow_mcp: false

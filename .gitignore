@@ -1,0 +1,32 @@
+# Docker secrets
+.secrets/
+
+#Python
+*.pyc
+.coverage
+*.egg-info
+
+# Dotenv
+.env
+
+# direnv
+.direnv
+
+# misc
+tmp/
+db/
+
+#logs
+info.log
+
+# android
+local.properties
+.android/
+
+# osx
+.DS_Store
+._*
+
+# data and conf directories (for testing)
+data/
+conf/

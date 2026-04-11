@@ -1,0 +1,142 @@
+# Usage:
+# docker compose up
+name: soliplex-template
+
+services:
+
+  nginx:
+
+    build:
+      context: nginx
+      dockerfile: Dockerfile
+
+    depends_on:
+      - soliplex
+
+    ports:
+      - "9000:9000"
+      - "9443:9443"
+
+  soliplex:
+
+    build:
+      context: soliplex
+      dockerfile: Dockerfile
+
+    env_file: ".env"
+    user: "1000:1000"
+
+    depends_on:
+      - postgres
+
+    healthcheck:
+
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/api/ok || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 4
+
+    secrets:
+      - agui_db_password
+      - authz_db_password
+      - url_safe_token_secret
+
+    environment:
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL}
+
+    volumes:
+      - type: bind
+        source: "soliplex/environment"
+        target: "/environment/"
+
+      - type: bind
+        source: "db/"
+        target: "/db"
+
+    ports:
+      - "8000:8000"
+
+    # Temporary: run with '--no-auth-mode'
+    command: "/app/.venv/bin/soliplex-cli serve --no-auth-mode --reload=config --host=0.0.0.0 --proxy-headers --forwarded-allow-ips=* /environment"
+
+  postgres:
+
+    build:
+      context: postgres
+      dockerfile: Dockerfile
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    environment:
+      AUTO_CREATE_DATABASE: ${AUTO_CREATE_DATABASE:-1}
+      AGUI_DB_PASS_FILE: /run/secrets/agui_db_password
+      AUTHZ_DB_PASS_FILE: /run/secrets/authz_db_password
+      INGESTION_DB_PASS_FILE: /run/secrets/ingestion_db_password
+      POSTGRES_INITDB_ARGS: "-A scram-sha-256"
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_USER: postgres
+
+    volumes:
+      - type: "bind"
+        source: "./postgres/config"
+        target: "/docker-entrypoint-initdb.d"
+        bind:
+          selinux: "z"  # mark as shared
+
+      - type: "volume"
+        source: "postgres_data"
+        target: "/var/lib/postgresql"
+
+    tmpfs:
+      - /var/run/postgresql:uid=999,gid=999
+      - /tmp
+    secrets:
+      - source: agui_db_password
+      - source: authz_db_password
+      - source: ingestion_db_password
+      - source: postgres_password
+    ports:
+      - "5432:5432"
+
+volumes:
+  postgres_data:
+  lancedb_data:
+
+secrets:
+
+#------------------------------------------------------------------------------
+#  Secrets in '.secrets/*' files
+#------------------------------------------------------------------------------
+#
+#  Generate those with '.gen' suffixes using 'scripts/generate-secrets.sh'
+#------------------------------------------------------------------------------
+    agui_db_password:
+      file: ./.secrets/agui_db_password.gen
+    authz_db_password:
+      file: ./.secrets/authz_db_password.gen
+    ingestion_db_password:
+      file: ./.secrets/ingestion_db_password.gen
+    postgres_password:
+      file: ./.secrets/postgres_password.gen
+    url_safe_token_secret:
+      file: ./.secrets/url_safe_token_secret.gen
+#
+#------------------------------------------------------------------------------
+#  Secrets in '.env' file / environment
+#------------------------------------------------------------------------------
+#  See above for using file-based secrets instead.
+#------------------------------------------------------------------------------
+#   agui_db_password:
+#     environment: "SOLIPLEX_AGUI_DB_PASSWORD"
+#   authz_db_password:
+#     environment: "SOLIPLEX_AUTHZ_DB_PASSWORD"
+#   ingestion_db_password:
+#     environment: "SOLIPLEX_INGESTION_DB_PASSWORD"
+#   postgres_password:
+#     environment: "SOLIPLEX_POSTGRES_PASSWORD"
+#   url_safe_token_secret:
+#     environment: "SOLIPLEX_URL_SAFE_TOKEN_SECRET"
