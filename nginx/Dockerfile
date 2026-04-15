@@ -1,15 +1,15 @@
-FROM ghcr.io/cirruslabs/flutter:3.38.4 as builder
+FROM ghcr.io/cirruslabs/flutter:3.38.4 AS builder
 
 RUN \
-  latest=$(curl -s -L https://api.github.com/repos/soliplex/flutter/releases/latest -H "Accept: application/json" | jq -r ".tarball_url") && \
+  latest=$(curl -s -L https://api.github.com/repos/soliplex/frontend/releases/latest -H "Accept: application/json" | jq -r ".tarball_url") && \
   cd /tmp/ && \
-  curl -L $latest -o soliplex-flutter-latest.tgz && \
-  topdir=$(tar tf soliplex-flutter-latest.tgz | head -1) && \
-  tar xf soliplex-flutter-latest.tgz && \
+  curl -L $latest -o soliplex-frontend-latest.tgz && \
+  topdir=$(tar tf soliplex-frontend-latest.tgz | head -1) && \
+  tar xf soliplex-frontend-latest.tgz && \
   mv $topdir /app && \
-  wo_prefix=${topdir#soliplex-flutter-} && \
+  wo_prefix=${topdir#soliplex-frontend-} && \
   release_hash=${wo_prefix%/} && \
-  echo $release_hash > /tmp/soliplex-flutter-release-hash
+  echo $release_hash > /tmp/soliplex-frontend-release-hash
 
 # Copy post-build cache busting script (needed before flutter build completes)
 COPY ./post-build-cache-bust.sh /tmp/post-build-cache-bust.sh
@@ -23,7 +23,7 @@ RUN \
     flutter clean && \
     flutter pub get && \
     flutter build web --release --no-tree-shake-icons --no-web-resources-cdn --pwa-strategy=none && \
-    RELEASE_HASH=$(cat /tmp/soliplex-flutter-release-hash) \
+    RELEASE_HASH=$(cat /tmp/soliplex-frontend-release-hash) \
     /tmp/post-build-cache-bust.sh
 
 FROM debian:trixie
