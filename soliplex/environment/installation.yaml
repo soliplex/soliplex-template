@@ -226,7 +226,7 @@ environment:
     value: "file:."
 
   - name: "RAG_LANCE_DB_PATH"
-    value: "file:/db/rag"
+    value: "file:/db"
 
   #------------------------------------------------------------------------
   # Expire MCP room server tokens after one hour.
