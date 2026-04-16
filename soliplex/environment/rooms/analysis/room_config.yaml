@@ -12,8 +12,8 @@ agent:
 skills:
   skill_configs:
     - kind: "haiku.rag.skills.rag"
-      rag_lancedb_stem: "rag"
+      rag_lancedb_stem: "haiku.rag"
     - kind: "haiku.rag.skills.rlm"
-      rag_lancedb_stem: "rag"
+      rag_lancedb_stem: "haiku.rag"
 
 allow_mcp: false
