@@ -59,6 +59,65 @@ services:
     # Temporary: run with '--no-auth-mode'
     command: "/app/.venv/bin/soliplex-cli serve --no-auth-mode --reload=config --host=0.0.0.0 --proxy-headers --forwarded-allow-ips=* /environment"
 
+  haiku-rag:
+
+    image: ghcr.io/ggozad/haiku.rag-slim:latest
+
+    build:
+      context: haiku-rag
+      dockerfile: Dockerfile
+
+    ports:
+      - "8001:8001"  # MCP server
+
+    volumes:
+      - ./rag/db:/data  # Persist database
+      - ./rag/docs:/docs  # Mount documents directory for monitoring
+      - ./haiku.rag/haiku.rag.yaml:/app/haiku.rag.yaml:ro  # Mount config file
+
+    environment:
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL}
+      # API keys (set as needed)
+      #- OPENAI_API_KEY=${OPENAI_API_KEY}
+      #- ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      #- VOYAGE_API_KEY=${VOYAGE_API_KEY}
+      #- CO_API_KEY=${CO_API_KEY}
+
+    user: "1000:1000"
+
+    depends_on:
+
+      docling-serve:
+        condition: service_healthy
+
+    restart: unless-stopped
+
+  docling-serve:
+
+    #image: ghcr.io/docling-project/docling-serve:v1.16.1
+    # Use CPU version for machines w/o compatible/ capable GPU
+    image: ghcr.io/docling-project/docling-serve-cpu:v1.16.1
+
+    build:
+      context: docling-serve
+      dockerfile: Dockerfile
+
+    environment:
+      DOCLING_SERVE_ENABLE_UI: 1
+
+    ports:
+      - "5001:5001"
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+      start_interval: 5s
+
   postgres:
 
     build:

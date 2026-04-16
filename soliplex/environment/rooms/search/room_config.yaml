@@ -12,7 +12,7 @@ agent:
 
 tools:
   - tool_name: "soliplex.tools.rag.search_documents"
-    rag_lancedb_stem: "rag"
+    rag_lancedb_stem: "haiku.rag"
     search_documents_limit: 7
     # Apply HR config overrides local to this room
     #haiku_rag_config: "./haiku.rag.yaml"
