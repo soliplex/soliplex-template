@@ -18,9 +18,12 @@ WORKDIR /app
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy
 
+COPY --link constraints.txt constraints.txt
+
 RUN \
     uv init --bare --name "soliplex-template" --no-description && \
     uv add \
+      --constraints constraints.txt \
       soliplex \
       psycopg[binary] \
       asyncpg \
