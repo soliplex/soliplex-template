@@ -50,6 +50,14 @@ services:
         target: "/environment/"
 
       - type: bind
+        source: "backend/sandbox/workdirs"
+        target: "/sandbox/workdirs"
+
+      - type: bind
+        source: "backend/uploads"
+        target: "/uploads/"
+
+      - type: bind
         source: "rag/db/"
         target: "/db"
 
@@ -64,7 +72,7 @@ services:
     image: ghcr.io/ggozad/haiku.rag-slim:latest
 
     build:
-      context: haiku-rag
+      context: haiku.rag
       dockerfile: Dockerfile
 
     ports:
