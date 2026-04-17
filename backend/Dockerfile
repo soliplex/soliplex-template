@@ -32,8 +32,17 @@ RUN \
       textual-serve && \
     uv sync
 
+# Bootstrap sandbox environments
+COPY --link sandbox/environments /sandbox/environments
+
+RUN --mount=type=cache,target=/root/.cache/uv \
+    for env_dir in /sandbox/environments/*/; do \
+      if [ -f "$env_dir/pyproject.toml" ]; then \
+        uv --directory "$env_dir" sync --frozen; \
+      fi; \
+    done
+
 RUN groupadd -g 1000 soliplex && useradd -m  -u 1000 -g 1000 soliplex
-RUN mkdir /app/environment
 
 USER soliplex
 
