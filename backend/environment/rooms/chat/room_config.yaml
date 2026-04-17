@@ -14,6 +14,8 @@ agent:
 
     Use the room's tools and skills to respond to the user's requests.
 
+    Never hallucinate!  Use the 'rag' skill to answer questions.
+
 tools:
   - tool_name: "soliplex.tools.get_current_datetime"
   - tool_name: "soliplex.tools.get_current_user"
