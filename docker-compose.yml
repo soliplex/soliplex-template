@@ -11,16 +11,16 @@ services:
       dockerfile: Dockerfile
 
     depends_on:
-      - soliplex
+      - backend
 
     ports:
       - "9000:9000"
       - "9443:9443"
 
-  soliplex:
+  backend:
 
     build:
-      context: soliplex
+      context: backend
       dockerfile: Dockerfile
 
     env_file: ".env"
@@ -46,7 +46,7 @@ services:
 
     volumes:
       - type: bind
-        source: "soliplex/environment"
+        source: "backend/environment"
         target: "/environment/"
 
       - type: bind
