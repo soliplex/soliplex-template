@@ -3,20 +3,22 @@
 # Authelia Configuration
 #
 # Minimal template config suitable for local development behind
-# the nginx front-end proxy on `https://localhost:9443/`.
+# the nginx front-end proxy on `https://127.0.0.1:9443/`.
 #
 # Docs: https://www.authelia.com/configuration/
-# Secrets (jwt, session, storage_encryption_key, postgres password)
-# are injected via AUTHELIA_*_FILE environment variables from
-# Docker secrets — see `docker-compose.yml`.
+# Secrets (jwt, session, storage_encryption_key, postgres password,
+# OIDC hmac secret + JWKS signing key) are injected via
+# AUTHELIA_*_FILE environment variables from Docker secrets — see
+# `docker-compose.yml`.
 ###############################################################
 
 theme: 'light'
 
 server:
-  # Path prefix '/authelia' lets nginx serve the portal at
-  # https://localhost:9443/authelia/ on the same origin as the
-  # Flutter app, avoiding hosts-file edits.
+  # Path prefix '/authelia' lets nginx serve the portal and the OIDC
+  # endpoints (/.well-known/openid-configuration, /api/oidc/*) at
+  # https://127.0.0.1:9443/authelia/ on the same origin as the Flutter
+  # app, avoiding hosts-file edits.
   address: 'tcp://0.0.0.0:9091/authelia'
 
 log:
@@ -43,10 +45,10 @@ authentication_backend:
       algorithm: 'argon2id'
 
 access_control:
-  # Authelia only evaluates policy when nginx actually invokes the
-  # auth_request sub-request (on /api/ and /mcp/). Default 'one_factor'
-  # keeps this config host-agnostic so it works whether users reach
-  # the stack via 127.0.0.1, a LAN IP, or a mapped hostname.
+  # Evaluated by Authelia's OIDC authorization endpoint when the soliplex
+  # backend (as an OIDC relying party) redirects the user for consent.
+  # 'one_factor' requires username+password; bump to 'two_factor' once
+  # TOTP enrolment is wired up.
   default_policy: 'one_factor'
 
 session:
@@ -59,7 +61,9 @@ session:
   cookies:
     # Authelia's validator rejects 'localhost' (requires a period or
     # IP). 127.0.0.1 satisfies the IP rule and avoids hosts-file edits
-    # or cert SAN juggling for fake FQDNs.
+    # or cert SAN juggling for fake FQDNs. The session cookie now
+    # primarily covers the OIDC authorization flow (Authelia's portal
+    # and /api/oidc/* endpoints).
     - domain: '127.0.0.1'
       authelia_url: 'https://127.0.0.1:9443/authelia/'
       default_redirection_url: 'https://127.0.0.1:9443/'
@@ -84,3 +88,49 @@ notifier:
   # file inside the container. Swap for SMTP before production.
   filesystem:
     filename: '/tmp/authelia-notifications.txt'
+
+###############################################################
+# OIDC Provider
+#
+# Authelia acts as the OpenID Connect Provider for the soliplex
+# backend. Discovery document is served at:
+#   https://127.0.0.1:9443/authelia/.well-known/openid-configuration
+###############################################################
+identity_providers:
+  oidc:
+    # hmac_secret injected via AUTHELIA_IDENTITY_PROVIDERS_OIDC_HMAC_SECRET_FILE
+    hmac_secret: ''
+    jwks:
+      # RS256 private key for signing ID tokens. Generate once with:
+      #   docker run --rm authelia/authelia:latest \
+      #     authelia crypto pair rsa generate --directory /tmp/keys
+      # and copy the resulting private.pem into
+      #   .secrets/authelia_oidc_jwks_key.gen
+      # Injected via AUTHELIA_IDENTITY_PROVIDERS_OIDC_JWKS_0_KEY_FILE.
+      - key: ''
+    clients:
+      - client_id: 'soliplex'
+        client_name: 'Soliplex'
+        # PBKDF2-SHA512 digest of the client secret. Generate with:
+        #   docker run --rm authelia/authelia:latest \
+        #     authelia crypto hash generate pbkdf2 --variant sha512 --password '<plaintext>'
+        # Paste the $pbkdf2-sha512$... digest here. Store the PLAINTEXT
+        # in .secrets/authelia_oidc_client_secret.gen for the backend.
+        client_secret: '$pbkdf2-sha512$REPLACE_ME'
+        public: false
+        authorization_policy: 'one_factor'
+        redirect_uris:
+          # TODO: confirm exact callback path the soliplex backend posts.
+          - 'https://127.0.0.1:9443/api/auth/callback/authelia'
+        scopes:
+          - 'openid'
+          - 'profile'
+          - 'email'
+          - 'groups'
+        grant_types:
+          - 'authorization_code'
+          - 'refresh_token'
+        response_types:
+          - 'code'
+        token_endpoint_auth_method: 'client_secret_basic'
+        consent_mode: 'implicit'

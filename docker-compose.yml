@@ -35,12 +35,16 @@ services:
       - authelia_session_secret
       - authelia_storage_encryption_key
       - authelia_db_password
+      - authelia_oidc_hmac_secret
+      - authelia_oidc_jwks_key
 
     environment:
       AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET_FILE: /run/secrets/authelia_jwt_secret
       AUTHELIA_SESSION_SECRET_FILE: /run/secrets/authelia_session_secret
       AUTHELIA_STORAGE_ENCRYPTION_KEY_FILE: /run/secrets/authelia_storage_encryption_key
       AUTHELIA_STORAGE_POSTGRES_PASSWORD_FILE: /run/secrets/authelia_db_password
+      AUTHELIA_IDENTITY_PROVIDERS_OIDC_HMAC_SECRET_FILE: /run/secrets/authelia_oidc_hmac_secret
+      AUTHELIA_IDENTITY_PROVIDERS_OIDC_JWKS_0_KEY_FILE: /run/secrets/authelia_oidc_jwks_key
 
     volumes:
       - type: bind
@@ -72,6 +76,7 @@ services:
       - agui_db_password
       - authz_db_password
       - url_safe_token_secret
+      - authelia_oidc_client_secret
 
     environment:
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL}
@@ -221,6 +226,12 @@ secrets:
       file: ./.secrets/authelia_db_password.gen
     authelia_jwt_secret:
       file: ./.secrets/authelia_jwt_secret.gen
+    authelia_oidc_client_secret:
+      file: ./.secrets/authelia_oidc_client_secret.gen
+    authelia_oidc_hmac_secret:
+      file: ./.secrets/authelia_oidc_hmac_secret.gen
+    authelia_oidc_jwks_key:
+      file: ./.secrets/authelia_oidc_jwks_key.gen
     authelia_session_secret:
       file: ./.secrets/authelia_session_secret.gen
     authelia_storage_encryption_key:
