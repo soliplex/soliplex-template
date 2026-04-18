@@ -34,6 +34,14 @@ elif [ -z "$AUTHZ_DB_PASS" ]; then
     exit 1
 fi
 
+# Read password from secret file if available, otherwise fallback to environment variable
+if [ -f "$AUTHELIA_DB_PASS_FILE" ]; then
+    AUTHELIA_DB_PASS=$(cat "$AUTHELIA_DB_PASS_FILE")
+elif [ -z "$AUTHELIA_DB_PASS" ]; then
+    echo "ERROR: Neither AUTHELIA_DB_PASS_FILE nor AUTHELIA_DB_PASS is set"
+    exit 1
+fi
+
 
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
     -- Create ingetser application user with password
@@ -44,6 +52,9 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
 
     -- Create ragserver authz application user with password
     CREATE USER soliplex_authz WITH PASSWORD '$AUTHZ_DB_PASS';
+
+    -- Create authelia application user with password
+    CREATE USER soliplex_authelia WITH PASSWORD '$AUTHELIA_DB_PASS';
 
     -- Create database owned by postgres (not application user)
     CREATE DATABASE soliplex_ingester;
@@ -56,6 +67,10 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
     -- Create database owned by postgres (not application user)
     CREATE DATABASE soliplex_authz;
     ALTER DATABASE soliplex_authz OWNER TO postgres;
+
+    -- Create database owned by postgres (not application user)
+    CREATE DATABASE soliplex_authelia;
+    ALTER DATABASE soliplex_authelia OWNER TO postgres;
 
     -- Connect to the soliplex_ingester database to set up schema permissions
     \c soliplex_ingester
@@ -95,8 +110,22 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
 
     GRANT ALL PRIVILEGES ON DATABASE soliplex_authz to soliplex_authz;
     GRANT ALL PRIVILEGES ON SCHEMA public TO soliplex_authz;
+
+    -- Connect to the soliplex_authelia database to set up schema permissions
+    \c soliplex_authelia
+
+    -- Grant minimal required PRIVILEGES (EVAL.md #14 recommendation)
+    -- Only CONNECT, not superuser or database ownership
+    GRANT CONNECT ON DATABASE soliplex_authelia TO soliplex_authelia;
+
+    -- Schema-level permissions
+    GRANT USAGE ON SCHEMA public TO soliplex_authelia;
+
+    GRANT ALL PRIVILEGES ON DATABASE soliplex_authelia to soliplex_authelia;
+    GRANT ALL PRIVILEGES ON SCHEMA public TO soliplex_authelia;
 EOSQL
 
 echo "Database 'soliplex_ingester' initialized with minimal privileges for user 'soliplex_ingester'"
 echo "Database 'soliplex_agui' initialized with minimal privileges for user 'soliplex_agui'"
 echo "Database 'soliplex_authz' initialized with minimal privileges for user 'soliplex_authz'"
+echo "Database 'soliplex_authelia' initialized with minimal privileges for user 'soliplex_authelia'"
