@@ -14,6 +14,19 @@ services:
       - backend
       - authelia
 
+    # SSL cert + key are generated on the host by
+    # scripts/generate-nginx-cert.sh (into .secrets/) and bind-mounted
+    # here so cert rotation does not require a container rebuild.
+    volumes:
+      - type: bind
+        source: "./.secrets/nginx-server.crt.gen"
+        target: "/etc/nginx/ssl/server.crt"
+        read_only: true
+      - type: bind
+        source: "./.secrets/nginx-server.key.gen"
+        target: "/etc/nginx/ssl/server.key"
+        read_only: true
+
     ports:
       - "9000:9000"
       - "9443:9443"
