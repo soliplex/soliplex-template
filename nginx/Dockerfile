@@ -42,12 +42,17 @@ RUN apt-get update && \
         libnginx-mod-http-lua && \
     rm -rf /var/lib/apt/lists/*
 
-# Generate self-signed SSL certificate
+# Generate self-signed SSL certificate.
+# SAN entries: 'localhost' for convenience, 'IP:127.0.0.1' because
+# Authelia rejects a bare 'localhost' as a session cookie domain
+# (must contain a period or be an IP), so the stack is accessed via
+# https://127.0.0.1:9443/ and the cert needs a matching SAN.
 RUN mkdir -p /etc/nginx/ssl && \
     openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
     -keyout /etc/nginx/ssl/server.key \
     -out /etc/nginx/ssl/server.crt \
-    -subj "/C=US/ST=State/L=City/O=Organization/CN=localhost" && \
+    -subj "/C=US/ST=State/L=City/O=Organization/CN=localhost" \
+    -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" && \
     chown -R 1000:1000 /etc/nginx/ssl
 
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt

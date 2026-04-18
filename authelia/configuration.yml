@@ -1,0 +1,86 @@
+---
+###############################################################
+# Authelia Configuration
+#
+# Minimal template config suitable for local development behind
+# the nginx front-end proxy on `https://localhost:9443/`.
+#
+# Docs: https://www.authelia.com/configuration/
+# Secrets (jwt, session, storage_encryption_key, postgres password)
+# are injected via AUTHELIA_*_FILE environment variables from
+# Docker secrets — see `docker-compose.yml`.
+###############################################################
+
+theme: 'light'
+
+server:
+  # Path prefix '/authelia' lets nginx serve the portal at
+  # https://localhost:9443/authelia/ on the same origin as the
+  # Flutter app, avoiding hosts-file edits.
+  address: 'tcp://0.0.0.0:9091/authelia'
+
+log:
+  level: 'info'
+
+totp:
+  issuer: 'soliplex.local'
+
+identity_validation:
+  reset_password:
+    # jwt_secret injected via AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET_FILE
+    jwt_secret: ''
+
+authentication_backend:
+  password_reset:
+    # The filesystem notifier (below) does not support resetting
+    # flows that expect a real user inbox; disable the UI until
+    # SMTP is configured.
+    disable: true
+  refresh_interval: '5m'
+  file:
+    path: '/config/users_database.yml'
+    password:
+      algorithm: 'argon2id'
+
+access_control:
+  # Authelia only evaluates policy when nginx actually invokes the
+  # auth_request sub-request (on /api/ and /mcp/). Default 'one_factor'
+  # keeps this config host-agnostic so it works whether users reach
+  # the stack via 127.0.0.1, a LAN IP, or a mapped hostname.
+  default_policy: 'one_factor'
+
+session:
+  name: 'authelia_session'
+  # secret injected via AUTHELIA_SESSION_SECRET_FILE
+  secret: ''
+  expiration: '1h'
+  inactivity: '5m'
+  remember_me: '1M'
+  cookies:
+    # Authelia's validator rejects 'localhost' (requires a period or
+    # IP). 127.0.0.1 satisfies the IP rule and avoids hosts-file edits
+    # or cert SAN juggling for fake FQDNs.
+    - domain: '127.0.0.1'
+      authelia_url: 'https://127.0.0.1:9443/authelia/'
+      default_redirection_url: 'https://127.0.0.1:9443/'
+
+regulation:
+  max_retries: 3
+  find_time: '2m'
+  ban_time: '5m'
+
+storage:
+  # encryption_key injected via AUTHELIA_STORAGE_ENCRYPTION_KEY_FILE
+  encryption_key: ''
+  postgres:
+    address: 'tcp://postgres:5432'
+    database: 'soliplex_authelia'
+    username: 'soliplex_authelia'
+    # password injected via AUTHELIA_STORAGE_POSTGRES_PASSWORD_FILE
+    password: ''
+
+notifier:
+  # Dev: write password-reset / 2FA-enrolment notifications to a
+  # file inside the container. Swap for SMTP before production.
+  filesystem:
+    filename: '/tmp/authelia-notifications.txt'

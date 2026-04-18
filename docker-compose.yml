@@ -13,6 +13,7 @@ services:
     depends_on:
       - backend
       - tui
+      - authelia
 
     ports:
       - "9000:9000"
@@ -48,6 +49,41 @@ services:
     # the websocket) stays consistent with what the browser sees.
     command: "/app/.venv/bin/soliplex-tui-serve --backend-url http://backend:8000 --host 0.0.0.0 --port 8002 --public-url https://soliplex.localhost:9443/tui"
 
+  authelia:
+
+    build:
+      context: authelia
+      dockerfile: Dockerfile
+
+    image: docker.io/authelia/authelia:latest
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    secrets:
+      - authelia_jwt_secret
+      - authelia_session_secret
+      - authelia_storage_encryption_key
+      - authelia_db_password
+      - authelia_oidc_hmac_secret
+      - authelia_oidc_jwks_key
+
+    environment:
+      AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET_FILE: /run/secrets/authelia_jwt_secret
+      AUTHELIA_SESSION_SECRET_FILE: /run/secrets/authelia_session_secret
+      AUTHELIA_STORAGE_ENCRYPTION_KEY_FILE: /run/secrets/authelia_storage_encryption_key
+      AUTHELIA_STORAGE_POSTGRES_PASSWORD_FILE: /run/secrets/authelia_db_password
+      AUTHELIA_IDENTITY_PROVIDERS_OIDC_HMAC_SECRET_FILE: /run/secrets/authelia_oidc_hmac_secret
+      AUTHELIA_IDENTITY_PROVIDERS_OIDC_JWKS_0_KEY_FILE: /run/secrets/authelia_oidc_jwks_key
+
+    volumes:
+      - type: bind
+        source: "authelia"
+        target: "/config"
+
+    restart: unless-stopped
+
   backend:
 
     build:
@@ -71,6 +107,7 @@ services:
       - agui_db_password
       - authz_db_password
       - url_safe_token_secret
+      - authelia_oidc_client_secret
 
     environment:
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL}
@@ -172,6 +209,7 @@ services:
     environment:
       AUTO_CREATE_DATABASE: ${AUTO_CREATE_DATABASE:-1}
       AGUI_DB_PASS_FILE: /run/secrets/agui_db_password
+      AUTHELIA_DB_PASS_FILE: /run/secrets/authelia_db_password
       AUTHZ_DB_PASS_FILE: /run/secrets/authz_db_password
       INGESTION_DB_PASS_FILE: /run/secrets/ingestion_db_password
       POSTGRES_INITDB_ARGS: "-A scram-sha-256"
@@ -194,6 +232,7 @@ services:
       - /tmp
     secrets:
       - source: agui_db_password
+      - source: authelia_db_password
       - source: authz_db_password
       - source: ingestion_db_password
       - source: postgres_password
@@ -214,6 +253,20 @@ secrets:
 #------------------------------------------------------------------------------
     agui_db_password:
       file: ./.secrets/agui_db_password.gen
+    authelia_db_password:
+      file: ./.secrets/authelia_db_password.gen
+    authelia_jwt_secret:
+      file: ./.secrets/authelia_jwt_secret.gen
+    authelia_oidc_client_secret:
+      file: ./.secrets/authelia_oidc_client_secret.gen
+    authelia_oidc_hmac_secret:
+      file: ./.secrets/authelia_oidc_hmac_secret.gen
+    authelia_oidc_jwks_key:
+      file: ./.secrets/authelia_oidc_jwks_key.gen
+    authelia_session_secret:
+      file: ./.secrets/authelia_session_secret.gen
+    authelia_storage_encryption_key:
+      file: ./.secrets/authelia_storage_encryption_key.gen
     authz_db_password:
       file: ./.secrets/authz_db_password.gen
     ingestion_db_password:

@@ -33,11 +33,12 @@ Ports exposed to the host: `9000` (nginx HTTP), `9443` (nginx HTTPS, self-signed
 
 ### Service graph (see `docker-compose.yml`)
 
-- **nginx** — serves the Flutter web frontend (built from the `soliplex/frontend` release tarball inside `nginx/Dockerfile`) and reverse-proxies `/api/` and `/mcp/` to `backend:8000`. Terminates TLS on 9443 with a self-signed cert generated at build time.
-- **backend** — runs `soliplex-cli serve /environment`. **Currently launched with `--no-auth-mode`** (see `docker-compose.yml`; marked temporary). The `--reload=config` flag means edits under `backend/environment/` take effect without rebuild.
+- **nginx** — serves the Flutter web frontend (built from the `soliplex/frontend` release tarball inside `nginx/Dockerfile`) and reverse-proxies `/api/` and `/mcp/` to `backend:8000`. On the HTTPS listener (9443), both locations sit behind an `auth_request` sub-request to Authelia (see below). Terminates TLS on 9443 with a self-signed cert generated at build time.
+- **backend** — runs `soliplex-cli serve /environment`. **Currently launched with `--no-auth-mode`** (see `docker-compose.yml`; marked temporary). The `--reload=config` flag means edits under `backend/environment/` take effect without rebuild. Receives `Remote-User` / `Remote-Groups` / `Remote-Name` / `Remote-Email` headers from nginx when Authelia authenticates a request, but does not yet consume them (soliplex-config work still pending).
+- **authelia** — guards `/api/` and `/mcp/` on the HTTPS server via the [AuthRequest pattern](https://www.authelia.com/integration/proxies/nginx/). Portal served at `https://127.0.0.1:9443/authelia/` (path prefix, same origin — no hosts-file edits required). File-based user backend at `authelia/users_database.yml`; Postgres storage in DB `soliplex_authelia`; secrets injected via `AUTHELIA_*_FILE`. Default dev credentials `admin` / `authelia` — rotate the argon2 hash before any non-local use. Authelia requires HTTPS, so auth is not enforced on the plain-HTTP 9000 listener. **Access the stack via `https://127.0.0.1:9443/`, not `localhost`** — Authelia's validator rejects `localhost` as a session cookie domain, so the template uses `127.0.0.1` and the nginx cert carries an `IP:127.0.0.1` SAN.
 - **haiku-rag** — watches `rag/docs/` and writes a LanceDB to `rag/db/`. That same `rag/db/` directory is bind-mounted into the backend at `/db` so the backend's `rag` skill can query it. Delegates document conversion/chunking to docling-serve.
 - **docling-serve** — stateless document converter. CPU image by default; comment swap in `docker-compose.yml` for GPU.
-- **postgres** — three databases created on first boot by `postgres/config/init.sh`: `soliplex_agui` (thread persistence), `soliplex_authz` (authorization policy), `soliplex_ingester`. Each gets a dedicated low-privilege role whose password is read from `/run/secrets/<name>_db_password`. Init runs only on an empty data volume; to re-run, `docker compose down -v`.
+- **postgres** — four databases created on first boot by `postgres/config/init.sh`: `soliplex_agui` (thread persistence), `soliplex_authz` (soliplex's own authorization policy — distinct from Authelia), `soliplex_ingester`, `soliplex_authelia` (Authelia session/config storage). Each gets a dedicated low-privilege role whose password is read from `/run/secrets/<name>_db_password`. Init runs only on an empty data volume; to re-run, `docker compose down -v`.
 
 ### Secrets
 
@@ -72,5 +73,7 @@ Drop documents into `rag/docs/` and haiku-rag will ingest them on its monitor cy
 
 - `constraints.txt` pins `soliplex >= 0.60.0.1, < 0.61`. Bumping this is a backend rebuild.
 - The frontend is pulled from **the latest** `soliplex/frontend` GitHub release inside `nginx/Dockerfile` — rebuilds are not reproducible across time unless you pin the tarball URL. Cache-bust hash is captured from the release tag and written to `/tmp/soliplex-frontend-release-hash` during build.
-- Backend `--no-auth-mode` is explicitly labeled temporary in `docker-compose.yml`. Don't assume auth is enforced end-to-end in this template.
-- `docker compose down -v` drops the `postgres_data` volume — all chat threads, authz grants, and ingester state go with it.
+- Backend `--no-auth-mode` is explicitly labeled temporary in `docker-compose.yml`. Authelia gates at nginx but the backend does not yet enforce the forwarded `Remote-*` identity headers — don't assume auth is enforced end-to-end.
+- `docker compose down -v` drops the `postgres_data` volume — all chat threads, authz grants, ingester state, **and Authelia session/config state** go with it.
+- If nginx refuses to start with `"auth_request" directive is not allowed here`, the nginx variant pulled into the image lacks the `http_auth_request` module — add `nginx-full` to the `apt-get install` line in `nginx/Dockerfile`.
+- Authelia requires HTTPS; the `/api/` and `/mcp/` auth gates are only wired on the 9443 listener. The 9000 listener stays open for behind-an-upstream-proxy deployments that terminate TLS upstream.

@@ -37,6 +37,11 @@ generate_password() {
     openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c "$length" || true
 }
 
+# Function to generate a 4096-bit RSA private key in PEM format
+generate_rsa_key() {
+    openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 2>/dev/null
+}
+
 # Parse docker-compose.yml and generate secrets
 echo -e "${CYAN}Scanning $COMPOSE_FILE for .gen secret files...${NC}"
 echo ""
@@ -55,20 +60,32 @@ grep -E '^\s+file:\s+' "$COMPOSE_FILE" | \
 while IFS= read -r secret_file_path; do
     # Convert relative path to absolute
     secret_file_path="${secret_file_path#./}"
-    
+
     secret_file="${DOCKER_DIR}/${secret_file_path}"
     secret_name=$(basename "$secret_file")
-    
-    # Generate password
-    password=$(generate_password 32)
-    
-    # Write to file without newline
-    echo -n "$password" > "$secret_file"
+
+    # Branch on secret name: most are random passwords, but the OIDC
+    # JWKS signing key must be an RSA keypair in PEM form.
+    case "$secret_name" in
+        authelia_oidc_jwks_key.gen)
+            generate_rsa_key > "$secret_file"
+            password="<4096-bit RSA private key — not displayed>"
+            ;;
+        authelia_oidc_hmac_secret.gen)
+            # Authelia recommends >= 64 chars for the OIDC HMAC secret.
+            password=$(generate_password 64)
+            echo -n "$password" > "$secret_file"
+            ;;
+        *)
+            password=$(generate_password 32)
+            echo -n "$password" > "$secret_file"
+            ;;
+    esac
     chmod 600 "$secret_file" 2>/dev/null || true
-    
+
     # Store for display later
     echo "${secret_name}|${password}" >> "$TEMP_PASSWORDS"
-    
+
     echo -e "${GREEN}✓ Generated: ${secret_name}${NC}"
     secret_count=$((secret_count + 1))
 done
@@ -105,6 +122,44 @@ done < "$TEMP_PASSWORDS"
 echo -e "${RED}IMPORTANT: Save these passwords securely!${NC}"
 echo -e "${YELLOW}They are stored in the secret files but will not be displayed again.${NC}"
 echo ""
+
+# If the OIDC client secret was just generated, compute its PBKDF2-SHA512
+# digest via the Authelia CLI. The backend needs the plaintext (already
+# written to .secrets/authelia_oidc_client_secret.gen); Authelia's
+# configuration.yml needs the digest, which the user must paste in
+# manually because it lives in YAML rather than a mounted secret.
+client_secret_file="${SECRETS_DIR}/authelia_oidc_client_secret.gen"
+if [ -f "$client_secret_file" ]; then
+    echo -e "${CYAN}=== OIDC Client Secret Digest ===${NC}"
+    echo ""
+    if command -v docker >/dev/null 2>&1; then
+        client_secret_plain=$(cat "$client_secret_file")
+        digest_output=$(docker run --rm docker.io/authelia/authelia:latest \
+            authelia crypto hash generate pbkdf2 --variant sha512 \
+            --password "$client_secret_plain" 2>&1 || true)
+        digest=$(echo "$digest_output" | awk -F': ' '/Digest/ {print $2}')
+        if [ -n "$digest" ]; then
+            echo -e "${YELLOW}Paste this digest into authelia/configuration.yml${NC}"
+            echo -e "${YELLOW}under identity_providers.oidc.clients[soliplex].client_secret:${NC}"
+            echo ""
+            echo "  $digest"
+            echo ""
+        else
+            echo -e "${RED}Failed to compute PBKDF2 digest via Authelia CLI.${NC}"
+            echo -e "${YELLOW}Run manually:${NC}"
+            echo "  docker run --rm docker.io/authelia/authelia:latest \\"
+            echo "    authelia crypto hash generate pbkdf2 --variant sha512 \\"
+            echo "    --password \"\$(cat ${client_secret_file})\""
+            echo ""
+        fi
+    else
+        echo -e "${YELLOW}Docker not available — hash the client secret manually:${NC}"
+        echo "  docker run --rm docker.io/authelia/authelia:latest \\"
+        echo "    authelia crypto hash generate pbkdf2 --variant sha512 \\"
+        echo "    --password \"\$(cat ${client_secret_file})\""
+        echo ""
+    fi
+fi
 
 # Provide next steps
 echo -e "${CYAN}=== Next Steps ===${NC}"
