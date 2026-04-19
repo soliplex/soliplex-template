@@ -37,10 +37,22 @@ generate_password() {
     openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c "$length" || true
 }
 
-# Function to generate a 4096-bit RSA private key in PEM format
-generate_rsa_key() {
-    openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 2>/dev/null
-}
+# Generate the OIDC JWKS keypair used for signing ID tokens. Unlike
+# other secrets, the private key is NOT mounted into Authelia as a
+# Docker secret (Authelia doesn't support a '_FILE' env var for list
+# entries like jwks[]). Instead it is injected directly into
+# authelia/configuration.yml below. The public-key half is injected
+# into backend/environment/oidc/config.yaml so the backend can verify
+# tokens Authelia signs.
+jwks_key_file="${SECRETS_DIR}/authelia_oidc_jwks_key.gen"
+jwks_pubkey_file="${SECRETS_DIR}/authelia_oidc_jwks_pubkey.gen"
+echo -e "${CYAN}Generating OIDC JWKS RSA-4096 keypair...${NC}"
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 \
+    -out "$jwks_key_file" 2>/dev/null
+chmod 600 "$jwks_key_file"
+openssl rsa -in "$jwks_key_file" -pubout -out "$jwks_pubkey_file" 2>/dev/null
+chmod 644 "$jwks_pubkey_file"
+echo -e "${GREEN}✓ Wrote: $(basename "$jwks_key_file"), $(basename "$jwks_pubkey_file")${NC}"
 
 # Parse docker-compose.yml and generate secrets
 echo -e "${CYAN}Scanning $COMPOSE_FILE for .gen secret files...${NC}"
@@ -64,19 +76,9 @@ while IFS= read -r secret_file_path; do
     secret_file="${DOCKER_DIR}/${secret_file_path}"
     secret_name=$(basename "$secret_file")
 
-    # Branch on secret name: most are random passwords, but the OIDC
-    # JWKS signing key must be an RSA keypair in PEM form.
+    # Branch on secret name: most are random passwords; the OIDC HMAC
+    # secret gets a longer password per Authelia guidance.
     case "$secret_name" in
-        authelia_oidc_jwks_key.gen)
-            generate_rsa_key > "$secret_file"
-            # Derive the matching public key for the backend's
-            # token_validation_pem. Written alongside (not a Docker
-            # secret — just a pasteable artifact).
-            pubkey_file="${SECRETS_DIR}/authelia_oidc_jwks_pubkey.gen"
-            openssl rsa -in "$secret_file" -pubout -out "$pubkey_file" 2>/dev/null
-            chmod 644 "$pubkey_file"
-            password="<4096-bit RSA private key — not displayed>"
-            ;;
         authelia_oidc_hmac_secret.gen)
             # Authelia recommends >= 64 chars for the OIDC HMAC secret.
             password=$(generate_password 64)
@@ -169,14 +171,17 @@ elif [ -f "$pubkey_file" ]; then
     echo ""
 fi
 
-# If the OIDC client secret was just generated, compute its PBKDF2-SHA512
-# digest via the Authelia CLI and rebuild authelia/configuration.yml
-# (gitignored) from its template (configuration.yml.in), injecting the
-# digest under identity_providers.oidc.clients[soliplex].client_secret.
-# The backend needs the plaintext (already written to
+# Rebuild authelia/configuration.yml (gitignored) from its template
+# (configuration.yml.in), injecting:
+#   - the RSA-4096 JWKS private key between the BEGIN/END PRIVATE KEY
+#     markers under identity_providers.oidc.jwks
+#   - the PBKDF2-SHA512 digest of the OIDC client secret under
+#     identity_providers.oidc.clients[soliplex].client_secret
+# The digest is computed via the Authelia CLI. The backend needs the
+# plaintext of the client secret (already written to
 # .secrets/authelia_oidc_client_secret.gen); Authelia's YAML needs the
-# digest — which must live inline there since it isn't mounted as a
-# Docker secret.
+# digest, which must live inline since it isn't mounted as a Docker
+# secret.
 client_secret_file="${SECRETS_DIR}/authelia_oidc_client_secret.gen"
 authelia_config_file_in="${DOCKER_DIR}/authelia/configuration.yml.in"
 authelia_config_file="${DOCKER_DIR}/authelia/configuration.yml"
@@ -189,27 +194,51 @@ if [ -f "$client_secret_file" ]; then
             authelia crypto hash generate pbkdf2 --variant sha512 \
             --password "$client_secret_plain" 2>&1 || true)
         digest=$(echo "$digest_output" | awk -F': ' '/Digest/ {print $2}')
-        if [ -n "$digest" ] && [ -f "$authelia_config_file_in" ]; then
+        if [ -n "$digest" ] && [ -f "$authelia_config_file_in" ] \
+                && [ -f "$jwks_key_file" ]; then
             tmp_config=$(mktemp)
-            # Replace the first client_secret line whose value begins
-            # with $pbkdf2-sha512$ (placeholder or previously injected
-            # digest), preserving leading whitespace. Char 39 is '.
-            awk -v digest="$digest" '
-            !done && /^[[:space:]]*client_secret:[[:space:]]*.\$pbkdf2-sha512\$/ {
+            # Single awk pass:
+            #  * replace the PEM block between BEGIN/END PRIVATE KEY
+            #    markers with the freshly generated JWKS key
+            #  * replace the client_secret line whose value begins
+            #    with $pbkdf2-sha512$ (placeholder or previously
+            #    injected digest), preserving leading whitespace. Char
+            #    39 is '.
+            awk -v digest="$digest" \
+                -v key_file="$jwks_key_file" \
+                -v pem_indent="          " '
+            BEGIN {
+                while ((getline line < key_file) > 0) {
+                    pem = pem (pem ? "\n" : "") pem_indent line
+                }
+                close(key_file)
+            }
+            !key_done && /^[[:space:]]*-----BEGIN PRIVATE KEY-----/ {
+                print pem
+                in_pem = 1
+                key_done = 1
+                next
+            }
+            in_pem && /^[[:space:]]*-----END PRIVATE KEY-----/ {
+                in_pem = 0
+                next
+            }
+            in_pem { next }
+            !digest_done && /^[[:space:]]*client_secret:[[:space:]]*.\$pbkdf2-sha512\$/ {
                 match($0, /^[[:space:]]*/)
                 indent = substr($0, RSTART, RLENGTH)
                 printf "%sclient_secret: %c%s%c\n", indent, 39, digest, 39
-                done = 1
+                digest_done = 1
                 next
             }
             { print }
             ' "$authelia_config_file_in" > "$tmp_config"
             mv "$tmp_config" "$authelia_config_file"
-            echo -e "${GREEN}✓ Wrote Authelia config with injected client secret digest:${NC}"
+            echo -e "${GREEN}✓ Wrote Authelia config with injected JWKS key + client secret digest:${NC}"
             echo -e "  ${authelia_config_file#${DOCKER_DIR}/}"
             echo ""
         elif [ -n "$digest" ]; then
-            echo -e "${YELLOW}WARNING: ${authelia_config_file_in} not found — config not built.${NC}"
+            echo -e "${YELLOW}WARNING: ${authelia_config_file_in} or ${jwks_key_file} missing — config not built.${NC}"
             echo -e "${YELLOW}Paste this digest into identity_providers.oidc.clients[soliplex].client_secret manually:${NC}"
             echo ""
             echo "  $digest"
