@@ -3,12 +3,15 @@
 #
 # Generate the nginx self-signed server cert on the host, store it in
 # .secrets/nginx-server.{crt,key}.gen (bind-mounted into the nginx
-# container), and append the public cert to the backend's CA bundle
-# (backend/environment/oidc/cacert.pem) so soliplex trusts nginx when
-# it hits Authelia's OIDC endpoints.
+# container), and write the backend's CA bundle
+# (backend/environment/oidc/cacert.pem — gitignored) by copying the
+# template bundle (cacert.pem.in) and appending the public cert so
+# soliplex trusts nginx when it hits Authelia's OIDC endpoints.
 #
-# Idempotent: any previously-appended block (delimited by the BEGIN/END
-# markers below) is stripped before the current cert is appended.
+# Idempotent: the output cacert.pem is rebuilt from cacert.pem.in on
+# every run. Any block in the template delimited by the BEGIN/END
+# markers below (e.g. the `REPLACE ME` placeholder) is stripped before
+# the current cert is appended.
 #
 # Run:
 #   - once before the first `docker compose up`
@@ -28,6 +31,7 @@ DOCKER_DIR="$(dirname "$SCRIPT_DIR")"
 SECRETS_DIR="${DOCKER_DIR}/.secrets"
 CERT="${SECRETS_DIR}/nginx-server.crt.gen"
 KEY="${SECRETS_DIR}/nginx-server.key.gen"
+CACERT_IN="${DOCKER_DIR}/backend/environment/oidc/cacert.pem.in"
 CACERT="${DOCKER_DIR}/backend/environment/oidc/cacert.pem"
 BEGIN_MARKER="# >>> soliplex-template nginx self-signed cert >>>"
 END_MARKER="# <<< soliplex-template nginx self-signed cert <<<"
@@ -37,8 +41,8 @@ if ! command -v openssl >/dev/null 2>&1; then
     exit 1
 fi
 
-if [ ! -f "$CACERT" ]; then
-    echo -e "${RED}ERROR: ${CACERT} not found${NC}" >&2
+if [ ! -f "$CACERT_IN" ]; then
+    echo -e "${RED}ERROR: ${CACERT_IN} not found${NC}" >&2
     exit 1
 fi
 
@@ -64,12 +68,12 @@ echo -e "${GREEN}  ${notAfter}${NC}"
 TMPDIR=$(mktemp -d)
 trap "rm -rf $TMPDIR" EXIT
 
-echo -e "${CYAN}Stripping any previous appended block from ${CACERT}...${NC}"
+echo -e "${CYAN}Rebuilding ${CACERT} from ${CACERT_IN} (stripping any marker block)...${NC}"
 awk -v b="$BEGIN_MARKER" -v e="$END_MARKER" '
     $0 == b {skip=1; next}
     $0 == e {skip=0; next}
     !skip   {print}
-' "$CACERT" > "${TMPDIR}/cacert.pem"
+' "$CACERT_IN" > "${TMPDIR}/cacert.pem"
 
 echo -e "${CYAN}Appending current cert with marker block...${NC}"
 {
@@ -82,6 +86,6 @@ echo -e "${CYAN}Appending current cert with marker block...${NC}"
 } > "${TMPDIR}/cacert.new"
 
 mv "${TMPDIR}/cacert.new" "$CACERT"
-echo -e "${GREEN}Updated ${CACERT}${NC}"
+echo -e "${GREEN}Wrote ${CACERT}${NC}"
 echo ""
 echo -e "${YELLOW}Next: docker compose restart nginx backend${NC}"

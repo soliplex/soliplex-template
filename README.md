@@ -19,22 +19,30 @@ Run the two generator scripts, in either order, before the first
 
 ```bash
 ./scripts/generate-secrets.sh       # populates .secrets/*.gen (gitignored)
-./scripts/generate-nginx-cert.sh    # self-signed nginx cert + appends to backend cacert.pem
+./scripts/generate-nginx-cert.sh    # self-signed nginx cert + builds backend cacert.pem from cacert.pem.in
 ```
 
-`generate-secrets.sh` is idempotent and, in addition to writing the
-`.secrets/*.gen` files, injects two derived values into
-version-controlled config files:
+Both scripts are idempotent. Each one rebuilds a gitignored output file
+from a version-controlled `*.in` template on every run:
 
-- the OIDC JWKS **public key** PEM into
-  `backend/environment/oidc/config.yaml` under
-  `auth_systems[authelia].token_validation_pem`
-- the PBKDF2-SHA512 **digest** of the OIDC client secret into
-  `authelia/configuration.yml` under
-  `identity_providers.oidc.clients[soliplex].client_secret`
+- `generate-nginx-cert.sh` rebuilds `backend/environment/oidc/cacert.pem`
+  from `cacert.pem.in` (the Mozilla CA bundle) and appends the freshly
+  generated nginx public cert so the backend trusts the HTTPS path to
+  Authelia.
+- `generate-secrets.sh` also writes the `.secrets/*.gen` files and
+  rebuilds two configs from their templates, injecting derived values
+  in place of `REPLACE_ME` placeholders:
+  - the OIDC JWKS **public key** PEM into
+    `backend/environment/oidc/config.yaml` (from `config.yaml.in`) under
+    `auth_systems[authelia].token_validation_pem`
+  - the PBKDF2-SHA512 **digest** of the OIDC client secret into
+    `authelia/configuration.yml` (from `configuration.yml.in`) under
+    `identity_providers.oidc.clients[soliplex].client_secret`
 
 No manual paste step is required. The plaintext OIDC client secret stays
 in `.secrets/authelia_oidc_client_secret.gen` for the backend to mount.
+Don't hand-edit the three gitignored outputs — edit the `.in` templates
+and re-run the scripts.
 
 Create a `.env` file defining `OLLAMA_BASE_URL`, pointing at the Ollama
 server that will serve the models.
