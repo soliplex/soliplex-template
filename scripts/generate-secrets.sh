@@ -69,6 +69,12 @@ while IFS= read -r secret_file_path; do
     case "$secret_name" in
         authelia_oidc_jwks_key.gen)
             generate_rsa_key > "$secret_file"
+            # Derive the matching public key for the backend's
+            # token_validation_pem. Written alongside (not a Docker
+            # secret — just a pasteable artifact).
+            pubkey_file="${SECRETS_DIR}/authelia_oidc_jwks_pubkey.gen"
+            openssl rsa -in "$secret_file" -pubout -out "$pubkey_file" 2>/dev/null
+            chmod 644 "$pubkey_file"
             password="<4096-bit RSA private key — not displayed>"
             ;;
         authelia_oidc_hmac_secret.gen)
@@ -122,6 +128,21 @@ done < "$TEMP_PASSWORDS"
 echo -e "${RED}IMPORTANT: Save these passwords securely!${NC}"
 echo -e "${YELLOW}They are stored in the secret files but will not be displayed again.${NC}"
 echo ""
+
+# If the JWKS public key was derived, print it so the user can paste it
+# into backend/environment/oidc/config.yaml under
+# auth_systems[authelia].token_validation_pem (replacing the REPLACE_ME
+# placeholder).
+pubkey_file="${SECRETS_DIR}/authelia_oidc_jwks_pubkey.gen"
+if [ -f "$pubkey_file" ]; then
+    echo -e "${CYAN}=== OIDC JWKS Public Key ===${NC}"
+    echo ""
+    echo -e "${YELLOW}Paste this PEM into backend/environment/oidc/config.yaml${NC}"
+    echo -e "${YELLOW}under auth_systems[authelia].token_validation_pem:${NC}"
+    echo ""
+    sed 's/^/  /' "$pubkey_file"
+    echo ""
+fi
 
 # If the OIDC client secret was just generated, compute its PBKDF2-SHA512
 # digest via the Authelia CLI. The backend needs the plaintext (already

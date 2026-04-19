@@ -114,8 +114,7 @@ services:
     ports:
       - "8000:8000"
 
-    # Temporary: run with '--no-auth-mode'
-    command: "/app/.venv/bin/soliplex-cli serve --no-auth-mode --reload=config --host=0.0.0.0 --proxy-headers --forwarded-allow-ips=* /environment"
+    command: "/app/.venv/bin/soliplex-cli serve --reload=config --host=0.0.0.0 --proxy-headers --forwarded-allow-ips=* /environment"
 
   haiku-rag:
 
