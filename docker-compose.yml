@@ -290,19 +290,3 @@ secrets:
       file: ./.secrets/postgres_password.gen
     url_safe_token_secret:
       file: ./.secrets/url_safe_token_secret.gen
-#
-#------------------------------------------------------------------------------
-#  Secrets in '.env' file / environment
-#------------------------------------------------------------------------------
-#  See above for using file-based secrets instead.
-#------------------------------------------------------------------------------
-#   agui_db_password:
-#     environment: "SOLIPLEX_AGUI_DB_PASSWORD"
-#   authz_db_password:
-#     environment: "SOLIPLEX_AUTHZ_DB_PASSWORD"
-#   ingestion_db_password:
-#     environment: "SOLIPLEX_INGESTION_DB_PASSWORD"
-#   postgres_password:
-#     environment: "SOLIPLEX_POSTGRES_PASSWORD"
-#   url_safe_token_secret:
-#     environment: "SOLIPLEX_URL_SAFE_TOKEN_SECRET"
