@@ -129,27 +129,53 @@ echo -e "${RED}IMPORTANT: Save these passwords securely!${NC}"
 echo -e "${YELLOW}They are stored in the secret files but will not be displayed again.${NC}"
 echo ""
 
-# If the JWKS public key was derived, print it so the user can paste it
-# into backend/environment/oidc/config.yaml under
-# auth_systems[authelia].token_validation_pem (replacing the REPLACE_ME
-# placeholder).
+# If the JWKS public key was derived, inject it into
+# backend/environment/oidc/config.yaml under
+# auth_systems[authelia].token_validation_pem, replacing whatever PEM
+# block (placeholder or previously injected key) sits between the
+# BEGIN/END PUBLIC KEY markers.
 pubkey_file="${SECRETS_DIR}/authelia_oidc_jwks_pubkey.gen"
-if [ -f "$pubkey_file" ]; then
-    echo -e "${CYAN}=== OIDC JWKS Public Key ===${NC}"
+oidc_config_file="${DOCKER_DIR}/backend/environment/oidc/config.yaml"
+if [ -f "$pubkey_file" ] && [ -f "$oidc_config_file" ]; then
+    tmp_config=$(mktemp)
+    awk -v pubkey_file="$pubkey_file" -v indent="        " '
+    BEGIN {
+        while ((getline line < pubkey_file) > 0) {
+            pem = pem (pem ? "\n" : "") indent line
+        }
+        close(pubkey_file)
+    }
+    /^[[:space:]]*-----BEGIN PUBLIC KEY-----/ {
+        print pem
+        in_block = 1
+        next
+    }
+    in_block && /^[[:space:]]*-----END PUBLIC KEY-----/ {
+        in_block = 0
+        next
+    }
+    !in_block { print }
+    ' "$oidc_config_file" > "$tmp_config"
+    mv "$tmp_config" "$oidc_config_file"
+    echo -e "${GREEN}✓ Injected OIDC JWKS public key into:${NC}"
+    echo -e "  ${oidc_config_file#${DOCKER_DIR}/}"
     echo ""
-    echo -e "${YELLOW}Paste this PEM into backend/environment/oidc/config.yaml${NC}"
-    echo -e "${YELLOW}under auth_systems[authelia].token_validation_pem:${NC}"
-    echo ""
-    sed 's/^/  /' "$pubkey_file"
+elif [ -f "$pubkey_file" ]; then
+    echo -e "${YELLOW}WARNING: ${oidc_config_file} not found — PEM not injected.${NC}"
+    echo -e "${YELLOW}Paste the contents of ${pubkey_file} into${NC}"
+    echo -e "${YELLOW}auth_systems[authelia].token_validation_pem manually.${NC}"
     echo ""
 fi
 
 # If the OIDC client secret was just generated, compute its PBKDF2-SHA512
-# digest via the Authelia CLI. The backend needs the plaintext (already
-# written to .secrets/authelia_oidc_client_secret.gen); Authelia's
-# configuration.yml needs the digest, which the user must paste in
-# manually because it lives in YAML rather than a mounted secret.
+# digest via the Authelia CLI and inject it into authelia/configuration.yml
+# under identity_providers.oidc.clients[soliplex].client_secret. The
+# backend needs the plaintext (already written to
+# .secrets/authelia_oidc_client_secret.gen); Authelia's YAML needs the
+# digest — which must live inline there since it isn't mounted as a
+# Docker secret.
 client_secret_file="${SECRETS_DIR}/authelia_oidc_client_secret.gen"
+authelia_config_file="${DOCKER_DIR}/authelia/configuration.yml"
 if [ -f "$client_secret_file" ]; then
     echo -e "${CYAN}=== OIDC Client Secret Digest ===${NC}"
     echo ""
@@ -159,9 +185,28 @@ if [ -f "$client_secret_file" ]; then
             authelia crypto hash generate pbkdf2 --variant sha512 \
             --password "$client_secret_plain" 2>&1 || true)
         digest=$(echo "$digest_output" | awk -F': ' '/Digest/ {print $2}')
-        if [ -n "$digest" ]; then
-            echo -e "${YELLOW}Paste this digest into authelia/configuration.yml${NC}"
-            echo -e "${YELLOW}under identity_providers.oidc.clients[soliplex].client_secret:${NC}"
+        if [ -n "$digest" ] && [ -f "$authelia_config_file" ]; then
+            tmp_config=$(mktemp)
+            # Replace the first client_secret line whose value begins
+            # with $pbkdf2-sha512$ (placeholder or previously injected
+            # digest), preserving leading whitespace. Char 39 is '.
+            awk -v digest="$digest" '
+            !done && /^[[:space:]]*client_secret:[[:space:]]*.\$pbkdf2-sha512\$/ {
+                match($0, /^[[:space:]]*/)
+                indent = substr($0, RSTART, RLENGTH)
+                printf "%sclient_secret: %c%s%c\n", indent, 39, digest, 39
+                done = 1
+                next
+            }
+            { print }
+            ' "$authelia_config_file" > "$tmp_config"
+            mv "$tmp_config" "$authelia_config_file"
+            echo -e "${GREEN}✓ Injected OIDC client secret digest into:${NC}"
+            echo -e "  ${authelia_config_file#${DOCKER_DIR}/}"
+            echo ""
+        elif [ -n "$digest" ]; then
+            echo -e "${YELLOW}WARNING: ${authelia_config_file} not found — digest not injected.${NC}"
+            echo -e "${YELLOW}Paste this digest into identity_providers.oidc.clients[soliplex].client_secret manually:${NC}"
             echo ""
             echo "  $digest"
             echo ""
