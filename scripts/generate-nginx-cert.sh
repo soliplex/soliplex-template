@@ -48,6 +48,19 @@ fi
 
 mkdir -p "$SECRETS_DIR"
 
+# If docker compose ran before this script, it bind-mounted the missing
+# source paths and Docker auto-created each as an empty root-owned
+# directory. openssl would later fail with a confusing "Expecting:
+# TRUSTED CERTIFICATE" error on nginx startup. Detect and bail early.
+for stub in "$CERT" "$KEY"; do
+    if [ -d "$stub" ]; then
+        echo -e "${RED}ERROR: ${stub} is a directory (likely created by 'docker compose up' before this script ran).${NC}" >&2
+        echo -e "${RED}Remove it first (may need sudo because Docker created it as root):${NC}" >&2
+        echo -e "${RED}  sudo rmdir '${stub}'${NC}" >&2
+        exit 1
+    fi
+done
+
 echo -e "${CYAN}Generating nginx self-signed cert (RSA-2048, 365 days)...${NC}"
 # SAN entries match the Authelia requirements: 'localhost' for
 # convenience, IP:127.0.0.1 because Authelia rejects a bare 'localhost'
