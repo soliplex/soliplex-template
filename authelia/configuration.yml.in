@@ -101,13 +101,19 @@ identity_providers:
     # hmac_secret injected via AUTHELIA_IDENTITY_PROVIDERS_OIDC_HMAC_SECRET_FILE
     hmac_secret: ''
     jwks:
-      # RS256 private key for signing ID tokens. Generate once with:
-      #   docker run --rm authelia/authelia:latest \
-      #     authelia crypto pair rsa generate --directory /tmp/keys
-      # and copy the resulting private.pem into
-      #   .secrets/authelia_oidc_jwks_key.gen
-      # Injected via AUTHELIA_IDENTITY_PROVIDERS_OIDC_JWKS_0_KEY_FILE.
-      - key: ''
+      # RS256 private key for signing ID tokens. Authelia does not
+      # support a '_FILE' env var for jwks list entries, so the PEM is
+      # inlined here: scripts/generate-secrets.sh generates the RSA
+      # keypair, writes the private key between the BEGIN/END PRIVATE
+      # KEY markers below (replacing the REPLACE_ME_JWKS_KEY
+      # placeholder), and injects the matching public key into
+      # backend/environment/oidc/config.yaml. This file (gitignored) is
+      # rebuilt from configuration.yml.in on every run — don't
+      # hand-edit the output.
+      - key: |
+          -----BEGIN PRIVATE KEY-----
+          REPLACE_ME_JWKS_KEY
+          -----END PRIVATE KEY-----
     clients:
       - client_id: 'soliplex'
         client_name: 'Soliplex'
