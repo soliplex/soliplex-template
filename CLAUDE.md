@@ -15,11 +15,19 @@ First-time setup (required before `up`):
 ./scripts/generate-nginx-cert.sh    # generates nginx TLS cert + appends to backend cacert.pem
 ```
 
-After `generate-secrets.sh` runs, the console prints a PBKDF2 digest for the
-OIDC client secret — paste it into `authelia/configuration.yml` under
-`identity_providers.oidc.clients[soliplex].client_secret`, replacing the
-`$pbkdf2-sha512$REPLACE_ME` placeholder. The plaintext stays in
-`.secrets/authelia_oidc_client_secret.gen` for the backend.
+`generate-secrets.sh` auto-injects two derived values into version-controlled
+config files (idempotent — safe to re-run):
+
+- The OIDC JWKS **public key** PEM into `backend/environment/oidc/config.yaml`
+  under `auth_systems[authelia].token_validation_pem`, replacing whatever
+  sits between the `BEGIN/END PUBLIC KEY` markers.
+- The PBKDF2-SHA512 **digest** of the OIDC client secret into
+  `authelia/configuration.yml` under
+  `identity_providers.oidc.clients[soliplex].client_secret`, replacing the
+  `$pbkdf2-sha512$REPLACE_ME` placeholder (or a previously injected digest).
+
+The plaintext OIDC client secret stays in
+`.secrets/authelia_oidc_client_secret.gen` for the backend to mount.
 
 Run the stack:
 
@@ -42,7 +50,7 @@ Ports exposed to the host: `9000` (nginx HTTP), `9443` (nginx HTTPS, self-signed
 
 - **nginx** — serves the Flutter web frontend (built from the `soliplex/frontend` release tarball inside `nginx/Dockerfile`) and reverse-proxies `/api/` and `/mcp/` to `backend:8000`. Terminates TLS on 9443 with a self-signed cert generated on the host by `scripts/generate-nginx-cert.sh` (into `.secrets/nginx-server.{crt,key}.gen`) and bind-mounted into the container — so cert rotation is `./scripts/generate-nginx-cert.sh && docker compose restart nginx backend`, no rebuild required. Also proxies `/authelia/` through to the Authelia container (portal UI + OIDC endpoints). **No longer enforces auth** at the edge — the backend is now the OIDC relying party and enforces auth itself.
 - **backend** — runs `soliplex-cli serve /environment`. **Currently launched with `--no-auth-mode`** (see `docker-compose.yml`; marked temporary — drop the flag once the OIDC client registration is verified). The `--reload=config` flag means edits under `backend/environment/` take effect without rebuild. Acts as an OIDC relying party against Authelia — config in `backend/environment/oidc/config.yaml`, `authelia_oidc_client_secret` mounted at `/run/secrets/authelia_oidc_client_secret`, and the nginx self-signed cert appended to `backend/environment/oidc/cacert.pem` so it trusts the HTTPS path to `/authelia/.well-known/openid-configuration`.
-- **authelia** — acts as the OpenID Connect Provider for the backend. Portal + OIDC endpoints (`/.well-known/openid-configuration`, `/api/oidc/*`) served at `https://127.0.0.1:9443/authelia/` (path prefix, same origin — no hosts-file edits required). File-based user backend at `authelia/users_database.yml`; Postgres storage in DB `soliplex_authelia`; secrets injected via `AUTHELIA_*_FILE` (`authelia_jwt_secret`, `authelia_session_secret`, `authelia_storage_encryption_key`, `authelia_db_password`, `authelia_oidc_hmac_secret`, `authelia_oidc_jwks_key`). OIDC client is registered in `authelia/configuration.yml` under `identity_providers.oidc.clients`; the client-secret digest lives inline there (regenerate via `scripts/generate-secrets.sh`, which prints the PBKDF2 hash to paste in). Default dev credentials `admin` / `authelia` — rotate the argon2 hash before any non-local use. Authelia requires HTTPS, so the OIDC flow only works on 9443. **Access the stack via `https://127.0.0.1:9443/`, not `localhost`** — Authelia's validator rejects `localhost` as a session cookie domain, so the template uses `127.0.0.1` and the nginx cert carries an `IP:127.0.0.1` SAN.
+- **authelia** — acts as the OpenID Connect Provider for the backend. Portal + OIDC endpoints (`/.well-known/openid-configuration`, `/api/oidc/*`) served at `https://127.0.0.1:9443/authelia/` (path prefix, same origin — no hosts-file edits required). File-based user backend at `authelia/users_database.yml`; Postgres storage in DB `soliplex_authelia`; secrets injected via `AUTHELIA_*_FILE` (`authelia_jwt_secret`, `authelia_session_secret`, `authelia_storage_encryption_key`, `authelia_db_password`, `authelia_oidc_hmac_secret`, `authelia_oidc_jwks_key`). OIDC client is registered in `authelia/configuration.yml` under `identity_providers.oidc.clients`; the client-secret digest lives inline there and is written in-place by `scripts/generate-secrets.sh` (which also injects the matching JWKS public-key PEM into `backend/environment/oidc/config.yaml`). Default dev credentials `admin` / `authelia` — rotate the argon2 hash before any non-local use. Authelia requires HTTPS, so the OIDC flow only works on 9443. **Access the stack via `https://127.0.0.1:9443/`, not `localhost`** — Authelia's validator rejects `localhost` as a session cookie domain, so the template uses `127.0.0.1` and the nginx cert carries an `IP:127.0.0.1` SAN.
 - **haiku-rag** — watches `rag/docs/` and writes a LanceDB to `rag/db/`. That same `rag/db/` directory is bind-mounted into the backend at `/db` so the backend's `rag` skill can query it. Delegates document conversion/chunking to docling-serve.
 - **docling-serve** — stateless document converter. CPU image by default; comment swap in `docker-compose.yml` for GPU.
 - **postgres** — four databases created on first boot by `postgres/config/init.sh`: `soliplex_agui` (thread persistence), `soliplex_authz` (soliplex's own authorization policy — distinct from Authelia), `soliplex_ingester`, `soliplex_authelia` (Authelia session/config storage). Each gets a dedicated low-privilege role whose password is read from `/run/secrets/<name>_db_password`. Init runs only on an empty data volume; to re-run, `docker compose down -v`.
