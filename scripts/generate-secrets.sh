@@ -280,6 +280,57 @@ if [ -f "$client_secret_file" ]; then
     fi
 fi
 
+# Rebuild authelia/users_database.yml (gitignored) from its template,
+# injecting a fresh argon2id hash of the default dev password
+# ('authelia') in place of the 'REPLACE ME' placeholder. Regenerating
+# the hash on every run prevents it from going stale across Authelia
+# version bumps (argon2 parameter changes have caused the widely
+# cited docs hash to stop validating in practice). To use a different
+# admin password, change the '--password' argument below — the
+# plaintext lives in this script, not on disk.
+users_db_in="${DOCKER_DIR}/authelia/users_database.yml.in"
+users_db="${DOCKER_DIR}/authelia/users_database.yml"
+if [ -f "$users_db_in" ]; then
+    echo -e "${CYAN}=== Authelia Admin Password Hash ===${NC}"
+    echo ""
+    if command -v docker >/dev/null 2>&1; then
+        argon2_output=$(docker run --rm docker.io/authelia/authelia:latest \
+            authelia crypto hash generate argon2 --password authelia 2>&1 || true)
+        argon2_hash=$(echo "$argon2_output" | awk -F': ' '/Digest/ {print $2}')
+        if [ -n "$argon2_hash" ]; then
+            tmp_db=$(mktemp)
+            # Replace the first password line whose value is the
+            # 'REPLACE ME' placeholder, preserving leading whitespace.
+            # Char 39 is '.
+            awk -v hash="$argon2_hash" '
+            !done && /^[[:space:]]*password:[[:space:]]*.REPLACE ME./ {
+                match($0, /^[[:space:]]*/)
+                indent = substr($0, RSTART, RLENGTH)
+                printf "%spassword: %c%s%c\n", indent, 39, hash, 39
+                done = 1
+                next
+            }
+            { print }
+            ' "$users_db_in" > "$tmp_db"
+            mv "$tmp_db" "$users_db"
+            echo -e "${GREEN}✓ Wrote Authelia users database with fresh argon2id hash:${NC}"
+            echo -e "  ${users_db#${DOCKER_DIR}/}"
+            echo ""
+        else
+            echo -e "${RED}Failed to compute argon2 hash via Authelia CLI.${NC}"
+            echo -e "${YELLOW}Run manually and paste the digest into ${users_db#${DOCKER_DIR}/}:${NC}"
+            echo "  docker run --rm docker.io/authelia/authelia:latest \\"
+            echo "    authelia crypto hash generate argon2 --password authelia"
+            echo ""
+        fi
+    else
+        echo -e "${YELLOW}Docker not available — hash the admin password manually:${NC}"
+        echo "  docker run --rm docker.io/authelia/authelia:latest \\"
+        echo "    authelia crypto hash generate argon2 --password authelia"
+        echo ""
+    fi
+fi
+
 # Provide next steps
 echo -e "${CYAN}=== Next Steps ===${NC}"
 echo ""
