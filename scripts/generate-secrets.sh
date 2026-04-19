@@ -46,13 +46,21 @@ generate_password() {
 # tokens Authelia signs.
 jwks_key_file="${SECRETS_DIR}/authelia_oidc_jwks_key.gen"
 jwks_pubkey_file="${SECRETS_DIR}/authelia_oidc_jwks_pubkey.gen"
-echo -e "${CYAN}Generating OIDC JWKS RSA-4096 keypair...${NC}"
-openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 \
-    -out "$jwks_key_file" 2>/dev/null
-chmod 600 "$jwks_key_file"
-openssl rsa -in "$jwks_key_file" -pubout -out "$jwks_pubkey_file" 2>/dev/null
-chmod 644 "$jwks_pubkey_file"
-echo -e "${GREEN}✓ Wrote: $(basename "$jwks_key_file"), $(basename "$jwks_pubkey_file")${NC}"
+if [ -s "$jwks_key_file" ]; then
+    echo -e "${YELLOW}◦ Keeping existing OIDC JWKS keypair ($(basename "$jwks_key_file"))${NC}"
+    # Re-derive the public key from the existing private key in case
+    # the pubkey file is missing or stale.
+    openssl rsa -in "$jwks_key_file" -pubout -out "$jwks_pubkey_file" 2>/dev/null
+    chmod 644 "$jwks_pubkey_file"
+else
+    echo -e "${CYAN}Generating OIDC JWKS RSA-4096 keypair...${NC}"
+    openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 \
+        -out "$jwks_key_file" 2>/dev/null
+    chmod 600 "$jwks_key_file"
+    openssl rsa -in "$jwks_key_file" -pubout -out "$jwks_pubkey_file" 2>/dev/null
+    chmod 644 "$jwks_pubkey_file"
+    echo -e "${GREEN}✓ Wrote: $(basename "$jwks_key_file"), $(basename "$jwks_pubkey_file")${NC}"
+fi
 
 # Parse docker-compose.yml and generate secrets
 echo -e "${CYAN}Scanning $COMPOSE_FILE for .gen secret files...${NC}"
@@ -75,6 +83,18 @@ while IFS= read -r secret_file_path; do
 
     secret_file="${DOCKER_DIR}/${secret_file_path}"
     secret_name=$(basename "$secret_file")
+
+    # Preserve existing secrets across re-runs: rotating DB passwords
+    # after Postgres has initialised breaks auth for every service
+    # using that DB (the old hash lives in postgres_data). Only
+    # generate when the file is missing or empty.
+    if [ -s "$secret_file" ]; then
+        password=$(cat "$secret_file")
+        echo "${secret_name}|${password}" >> "$TEMP_PASSWORDS"
+        echo -e "${YELLOW}◦ Kept: ${secret_name}${NC}"
+        secret_count=$((secret_count + 1))
+        continue
+    fi
 
     # Branch on secret name: most are random passwords; the OIDC HMAC
     # secret gets a longer password per Authelia guidance.
