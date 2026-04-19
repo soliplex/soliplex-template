@@ -62,13 +62,17 @@ for stub in "$CERT" "$KEY"; do
 done
 
 echo -e "${CYAN}Generating nginx self-signed cert (RSA-2048, 365 days)...${NC}"
-# SAN entries match the Authelia requirements: 'localhost' for
-# convenience, IP:127.0.0.1 because Authelia rejects a bare 'localhost'
-# as a session cookie domain (needs a period or an IP).
+# Primary SAN is 'soliplex.localhost', the canonical external URL of
+# the stack: it resolves to 127.0.0.1 on the host (systemd-resolved /
+# glibc auto-map '*.localhost') and to host-gateway inside the backend
+# container (via docker-compose extra_hosts), so the browser and the
+# backend's server-side OIDC calls hit the same URL and Authelia's
+# issuer claim stays consistent. 'localhost' and IP:127.0.0.1 are kept
+# as fallback SANs for direct-access tooling / debugging.
 openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
     -keyout "$KEY" -out "$CERT" \
-    -subj "/C=US/ST=State/L=City/O=Organization/CN=localhost" \
-    -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" \
+    -subj "/C=US/ST=State/L=City/O=Organization/CN=soliplex.localhost" \
+    -addext "subjectAltName=DNS:soliplex.localhost,DNS:localhost,IP:127.0.0.1" \
     2>/dev/null
 chmod 600 "$KEY"
 chmod 644 "$CERT"

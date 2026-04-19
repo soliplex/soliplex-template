@@ -96,6 +96,17 @@ services:
       timeout: 10s
       retries: 4
 
+    # Make 'soliplex.localhost' (the canonical external URL of the
+    # stack) reachable from inside the container so the backend's
+    # server-side OIDC discovery / token calls hit nginx via the host
+    # gateway. Without this, 'soliplex.localhost' resolves to the
+    # container's own loopback and the OIDC flow fails with
+    # httpx.ConnectError. On the host, '.localhost' names auto-resolve
+    # to 127.0.0.1 (systemd-resolved / glibc), so the browser uses the
+    # same URL — keeping the issuer claim consistent across sides.
+    extra_hosts:
+      - "soliplex.localhost:host-gateway"
+
     secrets:
       - agui_db_password
       - authz_db_password

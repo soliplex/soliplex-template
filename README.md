@@ -58,10 +58,21 @@ docker compose down              # stop (keeps postgres_data volume)
 docker compose down -v           # stop AND wipe postgres volume
 ```
 
-Access the UI at **`https://127.0.0.1:9443/`** — not `localhost`. Authelia
-rejects `localhost` as a session-cookie domain, and the nginx cert carries
-an `IP:127.0.0.1` SAN. You'll have to accept the self-signed cert on
-first load.
+Access the UI at **`https://soliplex.localhost:9443/`** — not `localhost`
+or `127.0.0.1`. The OIDC flow requires the same URL to be reachable from
+both the browser (host side) and the backend container; `soliplex.localhost`
+auto-resolves to 127.0.0.1 on the host (systemd-resolved / modern glibc
+handle `*.localhost` per RFC 6761) and is routed to the host via
+`extra_hosts` from inside the backend container. Authelia also accepts it
+as a cookie domain (contains a period). You'll have to accept the
+self-signed cert on first load.
+
+If your host OS does not auto-resolve `*.localhost`, add this to
+`/etc/hosts`:
+
+```
+127.0.0.1 soliplex.localhost
+```
 
 Default Authelia dev credentials: **`admin` / `authelia`**. Rotate the
 argon2 hash in `authelia/users_database.yml` before any non-local use.

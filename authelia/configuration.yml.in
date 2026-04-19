@@ -3,7 +3,7 @@
 # Authelia Configuration
 #
 # Minimal template config suitable for local development behind
-# the nginx front-end proxy on `https://127.0.0.1:9443/`.
+# the nginx front-end proxy on `https://soliplex.localhost:9443/`.
 #
 # Docs: https://www.authelia.com/configuration/
 # Secrets (jwt, session, storage_encryption_key, postgres password,
@@ -17,8 +17,8 @@ theme: 'light'
 server:
   # Path prefix '/authelia' lets nginx serve the portal and the OIDC
   # endpoints (/.well-known/openid-configuration, /api/oidc/*) at
-  # https://127.0.0.1:9443/authelia/ on the same origin as the Flutter
-  # app, avoiding hosts-file edits.
+  # https://soliplex.localhost:9443/authelia/ on the same origin as the
+  # Flutter app, avoiding hosts-file edits.
   address: 'tcp://0.0.0.0:9091/authelia'
 
 log:
@@ -59,14 +59,16 @@ session:
   inactivity: '5m'
   remember_me: '1M'
   cookies:
-    # Authelia's validator rejects 'localhost' (requires a period or
-    # IP). 127.0.0.1 satisfies the IP rule and avoids hosts-file edits
-    # or cert SAN juggling for fake FQDNs. The session cookie now
-    # primarily covers the OIDC authorization flow (Authelia's portal
-    # and /api/oidc/* endpoints).
-    - domain: '127.0.0.1'
-      authelia_url: 'https://127.0.0.1:9443/authelia/'
-      default_redirection_url: 'https://127.0.0.1:9443/'
+    # Authelia's validator rejects bare 'localhost' (requires a period
+    # or an IP). 'soliplex.localhost' satisfies the period rule and is
+    # reachable from both the browser (host-side '.localhost' resolves
+    # to 127.0.0.1) and the backend container (extra_hosts maps
+    # 'soliplex.localhost' to host-gateway), keeping the OIDC issuer
+    # claim consistent. The session cookie primarily covers the OIDC
+    # authorization flow (Authelia's portal and /api/oidc/* endpoints).
+    - domain: 'soliplex.localhost'
+      authelia_url: 'https://soliplex.localhost:9443/authelia/'
+      default_redirection_url: 'https://soliplex.localhost:9443/'
 
 regulation:
   max_retries: 3
@@ -94,7 +96,7 @@ notifier:
 #
 # Authelia acts as the OpenID Connect Provider for the soliplex
 # backend. Discovery document is served at:
-#   https://127.0.0.1:9443/authelia/.well-known/openid-configuration
+#   https://soliplex.localhost:9443/authelia/.well-known/openid-configuration
 ###############################################################
 identity_providers:
   oidc:
@@ -126,13 +128,27 @@ identity_providers:
         public: false
         authorization_policy: 'one_factor'
         redirect_uris:
-          # TODO: confirm exact callback path the soliplex backend posts.
-          - 'https://127.0.0.1:9443/api/auth/callback/authelia'
+          # Soliplex's OIDC callback is /api/auth/{system} and the
+          # backend appends a ?return_to=... query (see
+          # soliplex.views.authn:65-68). Authelia's matcher is strict
+          # on the full URI including the query, so the 'return_to'
+          # value must match exactly. In practice the Flutter frontend
+          # uses hash-based routing, so the server-visible 'return_to'
+          # is almost always the bare origin ('.../') — the in-app
+          # route lives in the #fragment, which is never sent to the
+          # server. If another server-side return_to becomes common,
+          # add it here (exact URL-encoded match required).
+          - 'https://soliplex.localhost:9443/api/auth/authelia?return_to=https%3A%2F%2Fsoliplex.localhost%3A9443%2F'
         scopes:
           - 'openid'
           - 'profile'
           - 'email'
           - 'groups'
+          # Required for Authelia to issue a refresh_token alongside
+          # the access_token. Soliplex's callback unconditionally reads
+          # tokendict['refresh_token'] (soliplex.views.authn:124), so
+          # without this scope the callback KeyErrors.
+          - 'offline_access'
         grant_types:
           - 'authorization_code'
           - 'refresh_token'
@@ -140,3 +156,9 @@ identity_providers:
           - 'code'
         token_endpoint_auth_method: 'client_secret_basic'
         consent_mode: 'implicit'
+        # Soliplex's backend validates the access_token as a signed
+        # RS256 JWT (see soliplex.authn.validate_access_token).
+        # Without this override Authelia would issue opaque access
+        # tokens ('authelia_at_...') and the JWT decode would fail
+        # with "invalid token".
+        access_token_signed_response_alg: 'RS256'
