@@ -17,7 +17,13 @@ services:
     # SSL cert + key are generated on the host by
     # scripts/generate-nginx-cert.sh (into .secrets/) and bind-mounted
     # here so cert rotation does not require a container rebuild.
+    # nginx.conf is also bind-mounted so config edits take effect via
+    # `docker compose restart nginx` (no rebuild required).
     volumes:
+      - type: bind
+        source: "./nginx/nginx.conf"
+        target: "/etc/nginx/nginx.conf"
+        read_only: true
       - type: bind
         source: "./.secrets/nginx-server.crt.gen"
         target: "/etc/nginx/ssl/server.crt"

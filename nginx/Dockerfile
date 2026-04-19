@@ -54,8 +54,9 @@ ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
 # Copy built flutter web app to nginx html directory
 COPY --from=builder /app/build/web /app/build/web
 
-# Copy nginx configuration
-COPY nginx.conf /etc/nginx/nginx.conf
+# nginx.conf is bind-mounted from the host by docker-compose.yml at
+# /etc/nginx/nginx.conf so edits take effect via
+# `docker compose restart nginx` (no rebuild).
 COPY mime.types /etc/nginx/mime.types
 COPY error-pages /app/error-pages
 
