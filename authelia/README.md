@@ -8,12 +8,15 @@ into the upstream request.
 
 ## Portal URL
 
-`https://127.0.0.1:9443/authelia/` — served on the same origin as the Flutter
-app via the `server.address` path prefix in `configuration.yml`.
+`https://soliplex.localhost:9443/authelia/` — served on the same origin as the
+Flutter app via the `server.address` path prefix in `configuration.yml`.
 
-Access the whole stack via `https://127.0.0.1:9443/` (not `localhost`):
-Authelia rejects `localhost` as a cookie domain (the config validator requires
-a period or an IP), and the nginx cert carries a `IP:127.0.0.1` SAN to match.
+Access the whole stack via `https://soliplex.localhost:9443/` (not `localhost`
+or `127.0.0.1`): the OIDC flow needs the same URL to resolve from both the
+browser and the backend container, and `soliplex.localhost` is wired up on
+both sides (host auto-resolves `*.localhost`; the backend uses `extra_hosts`
+in `docker-compose.yml` to route it through host-gateway). Authelia's cookie
+validator accepts it because the domain contains a period.
 
 ## Default credentials (dev only)
 
