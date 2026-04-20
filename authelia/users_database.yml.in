@@ -16,6 +16,8 @@ users:
   admin:
     disabled: false
     displayname: 'Default Admin'
+    given_name: 'Default'
+    family_name: 'Admin'
     password: 'REPLACE ME'
     email: 'admin@example.com'
     groups:
