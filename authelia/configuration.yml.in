@@ -102,6 +102,32 @@ identity_providers:
   oidc:
     # hmac_secret injected via AUTHELIA_IDENTITY_PROVIDERS_OIDC_HMAC_SECRET_FILE
     hmac_secret: ''
+    # By OIDC 1.0 default, Authelia exposes profile/email/groups claims only
+    # at the UserInfo endpoint — they are NOT placed in the access_token or
+    # id_token. The soliplex backend derives user claims by JWT-decoding the
+    # access_token (soliplex.views.authn.get_user_info →
+    # authn.validate_access_token), so without an explicit policy the
+    # /api/user_info endpoint returns "<unknown>" for every field. This
+    # policy copies the standard profile/email/groups claims into both
+    # tokens; it is bound to the 'soliplex' client below via 'claims_policy'.
+    claims_policies:
+      soliplex:
+        access_token:
+          - 'email'
+          - 'email_verified'
+          - 'groups'
+          - 'preferred_username'
+          - 'name'
+          - 'given_name'
+          - 'family_name'
+        id_token:
+          - 'email'
+          - 'email_verified'
+          - 'groups'
+          - 'preferred_username'
+          - 'name'
+          - 'given_name'
+          - 'family_name'
     jwks:
       # RS256 private key for signing ID tokens. Authelia does not
       # support a '_FILE' env var for jwks list entries, so the PEM is
@@ -156,6 +182,10 @@ identity_providers:
           - 'code'
         token_endpoint_auth_method: 'client_secret_basic'
         consent_mode: 'implicit'
+        # Bind the 'soliplex' claims policy defined above so the standard
+        # profile/email/groups claims land in the access_token (which the
+        # backend decodes for /api/user_info).
+        claims_policy: 'soliplex'
         # Soliplex's backend validates the access_token as a signed
         # RS256 JWT (see soliplex.authn.validate_access_token).
         # Without this override Authelia would issue opaque access

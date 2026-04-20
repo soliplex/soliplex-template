@@ -40,6 +40,8 @@ loggers:
 
   soliplex.authz:
     level: "INFO"
+  # filters:
+  #   - "update_debug_to_info"
 
 root:
   level: "INFO"
