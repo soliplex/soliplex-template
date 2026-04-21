@@ -12,6 +12,7 @@ services:
 
     depends_on:
       - backend
+      - tui
 
     ports:
       - "9000:9000"
@@ -30,6 +31,22 @@ services:
         source: ./nginx/error-pages
         target: /app/error-pages
         read_only: true
+
+  tui:
+
+    build:
+      context: tui
+      dockerfile: Dockerfile
+
+    depends_on:
+      - backend
+
+    user: "1000:1000"
+
+    # No host port mapping: the TUI is reached only through nginx so that the
+    # '--public-url' baked into the served HTML (used for static assets and
+    # the websocket) stays consistent with what the browser sees.
+    command: "/app/.venv/bin/soliplex-tui-serve --backend-url http://backend:8000 --host 0.0.0.0 --port 8002 --public-url https://soliplex.localhost:9443/tui"
 
   backend:
 
