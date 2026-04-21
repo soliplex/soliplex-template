@@ -57,10 +57,9 @@ ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
 # Copy built flutter web app to nginx html directory
 COPY --from=builder /app/build/web /app/build/web
 
-# Copy nginx configuration
-COPY nginx.conf /etc/nginx/nginx.conf
-COPY mime.types /etc/nginx/mime.types
-COPY error-pages /app/error-pages
+# nginx configuration (nginx.conf, mime.types, error-pages) is bind-mounted
+# from the host at runtime (see docker-compose.yml), so edits don't require
+# an image rebuild.
 
 EXPOSE 9000 9443
 RUN groupadd -g 1000 soliplex && useradd -m  -u 1000 -g 1000 soliplex

@@ -17,6 +17,20 @@ services:
       - "9000:9000"
       - "9443:9443"
 
+    volumes:
+      - type: bind
+        source: ./nginx/nginx.conf
+        target: /etc/nginx/nginx.conf
+        read_only: true
+      - type: bind
+        source: ./nginx/mime.types
+        target: /etc/nginx/mime.types
+        read_only: true
+      - type: bind
+        source: ./nginx/error-pages
+        target: /app/error-pages
+        read_only: true
+
   backend:
 
     build:
