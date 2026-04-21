@@ -25,7 +25,7 @@ docker compose down              # stop (keeps postgres_data volume)
 docker compose down -v           # stop AND wipe postgres volume (nukes created users/DBs)
 ```
 
-Ports exposed to the host: `9000` (nginx HTTP), `9443` (nginx HTTPS, self-signed), `8000` (backend direct), `8001` (haiku-rag MCP), `5001` (docling-serve), `5432` (postgres).
+Ports exposed to the host: `9000` (nginx HTTP), `9443` (nginx HTTPS, self-signed), `8000` (backend direct), `8001` (haiku-rag MCP), `5001` (docling-serve), `5432` (postgres), `3000` (gitea HTTP), `2222` (gitea SSH).
 
 `.env` must define `OLLAMA_BASE_URL` (points at the Ollama server that serves `gpt-oss:*` models referenced in `installation.yaml`).
 
@@ -37,7 +37,8 @@ Ports exposed to the host: `9000` (nginx HTTP), `9443` (nginx HTTPS, self-signed
 - **backend** — runs `soliplex-cli serve /environment`. **Currently launched with `--no-auth-mode`** (see `docker-compose.yml`; marked temporary). The `--reload=config` flag means edits under `backend/environment/` take effect without rebuild.
 - **haiku-rag** — watches `rag/docs/` and writes a LanceDB to `rag/db/`. That same `rag/db/` directory is bind-mounted into the backend at `/db` so the backend's `rag` skill can query it. Delegates document conversion/chunking to docling-serve.
 - **docling-serve** — stateless document converter. CPU image by default; comment swap in `docker-compose.yml` for GPU.
-- **postgres** — three databases created on first boot by `postgres/config/init.sh`: `soliplex_agui` (thread persistence), `soliplex_authz` (authorization policy), `soliplex_ingester`. Each gets a dedicated low-privilege role whose password is read from `/run/secrets/<name>_db_password`. Init runs only on an empty data volume; to re-run, `docker compose down -v`.
+- **postgres** — four databases created on first boot by `postgres/config/init.sh`: `soliplex_agui` (thread persistence), `soliplex_authz` (authorization policy), `soliplex_ingester`, `soliplex_gitea`. Each gets a dedicated low-privilege role whose password is read from `/run/secrets/<name>_db_password`. Init runs only on an empty data volume; to re-run, `docker compose down -v`.
+- **gitea** — rootless Gitea instance (`docker.gitea.com/gitea:*-rootless`) backed by the `soliplex_gitea` Postgres DB. State lives in two named volumes: `gitea_data` (`/var/lib/gitea`, repos + LFS) and `gitea_config` (`/etc/gitea`, `app.ini`). `docker compose down -v` wipes them along with `postgres_data`. HTTP on `:3000`, built-in SSH on `:2222` (the rootless image requires its own SSH server; don't swap in host OpenSSH).
 
 ### Secrets
 
