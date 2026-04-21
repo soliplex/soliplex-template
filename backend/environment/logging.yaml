@@ -12,6 +12,24 @@ formatters:
     defaults:
         some_key: null
 
+  soliplex-authn:
+    format: "{name}|{asctime}|{levelname}|{message}"
+    datefmt: "%Y-%m-%dT%H:%M:%S"
+    style: "{"
+    validate: true
+    defaults:
+        header_id: "<no-header-id>"
+
+  soliplex:
+    #format: "{name}|{asctime}|{levelname}|{email}|{message}"
+    format: "{name}|{asctime}|{levelname}|{user_id}|{message}"
+    datefmt: "%Y-%m-%dT%H:%M:%S"
+    style: "{"
+    validate: true
+    defaults:
+        header_id: "<no-header-id>"
+        user_id: "<no-user-id>"
+
 filters:
 
   # Add this filter to update log level on a logger from 'DEBUG' to 'INFO'.
@@ -22,9 +40,21 @@ filters:
 
 handlers:
 
-  console:
+  console-default:
     class: "logging.StreamHandler"
     formatter: "default"
+    #filters: []
+    stream: "ext://sys.stdout"
+
+  console-soliplex-authn:
+    class: "logging.StreamHandler"
+    formatter: "soliplex-authn"
+    #filters: []
+    stream: "ext://sys.stdout"
+
+  console-soliplex:
+    class: "logging.StreamHandler"
+    formatter: "soliplex"
     #filters: []
     stream: "ext://sys.stdout"
 
@@ -32,16 +62,27 @@ loggers:
 
   soliplex:
     level: "INFO"
+    propagate: false
+    handlers:
+      - "console-soliplex"
 
   soliplex.authn:
     level: "INFO"
+    propagate: false
+    handlers:
+      - "console-soliplex-authn"
   # filters:
   #   - "update_debug_to_info"
 
   soliplex.authz:
     level: "INFO"
+    propagate: false
+    handlers:
+      - "console-soliplex"
+  # filters:
+  #   - "update_debug_to_info"
 
 root:
   level: "INFO"
   handlers:
-    - "console"
+    - "console-default"

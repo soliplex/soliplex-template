@@ -1,0 +1,40 @@
+#
+# OIDC Auth Systems
+#
+# `cacert.pem` carries the Mozilla CA bundle plus the nginx self-signed
+# cert (appended by `scripts/generate-nginx-cert.sh`), so the backend
+# trusts the HTTPS path to Authelia's OIDC endpoints.
+#
+oidc_client_pem_path: "./cacert.pem"
+
+auth_systems:
+
+  - id: "authelia"
+    title: "Authenticate with Authelia"
+    # Authelia's OIDC base — discovery doc at:
+    #   https://soliplex.localhost:9443/authelia/.well-known/openid-configuration
+    # 'soliplex.localhost' is used instead of '127.0.0.1' so the URL
+    # resolves identically from the browser (host-side: '.localhost'
+    # auto-maps to 127.0.0.1) and from inside this container (via
+    # extra_hosts: soliplex.localhost → host-gateway in docker-compose.yml).
+    # The OIDC issuer claim depends on this alignment.
+    server_url: "https://soliplex.localhost:9443/authelia"
+    client_id: "soliplex"
+    # Plaintext client secret mounted at
+    #   /run/secrets/authelia_oidc_client_secret
+    # and declared in installation.yaml as AUTHELIA_OIDC_CLIENT_SECRET.
+    # Authelia stores the PBKDF2 digest of the same plaintext in its
+    # own configuration.yml.
+    client_secret: "secret:AUTHELIA_OIDC_CLIENT_SECRET"
+    # 'offline_access' is required for Authelia to issue a refresh
+    # token; Soliplex's OIDC callback unconditionally reads
+    # tokendict['refresh_token'] and would KeyError without it.
+    scope: "openid email profile groups offline_access"
+    # RS256 public key corresponding to Authelia's OIDC JWKS signing
+    # key (`.secrets/authelia_oidc_jwks_key.gen`). Re-derive and paste
+    # from `.secrets/authelia_oidc_jwks_pubkey.gen` after running
+    # `scripts/generate-secrets.sh`.
+    token_validation_pem: |
+        -----BEGIN PUBLIC KEY-----
+        REPLACE_ME
+        -----END PUBLIC KEY-----

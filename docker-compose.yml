@@ -13,6 +13,26 @@ services:
     depends_on:
       - backend
       - tui
+      - authelia
+
+    # SSL cert + key are generated on the host by
+    # scripts/generate-nginx-cert.sh (into .secrets/) and bind-mounted
+    # here so cert rotation does not require a container rebuild.
+    # nginx.conf is also bind-mounted so config edits take effect via
+    # `docker compose restart nginx` (no rebuild required).
+    volumes:
+      - type: bind
+        source: "./nginx/nginx.conf"
+        target: "/etc/nginx/nginx.conf"
+        read_only: true
+      - type: bind
+        source: "./.secrets/nginx-server.crt.gen"
+        target: "/etc/nginx/ssl/server.crt"
+        read_only: true
+      - type: bind
+        source: "./.secrets/nginx-server.key.gen"
+        target: "/etc/nginx/ssl/server.key"
+        read_only: true
 
     ports:
       - "9000:9000"
@@ -48,6 +68,46 @@ services:
     # the websocket) stays consistent with what the browser sees.
     command: "/app/.venv/bin/soliplex-tui-serve --backend-url http://backend:8000 --host 0.0.0.0 --port 8002 --public-url https://soliplex.localhost:9443/tui"
 
+  authelia:
+
+    build:
+      context: authelia
+      dockerfile: Dockerfile
+
+    image: docker.io/authelia/authelia:latest
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    user: "1000:1000"
+
+    secrets:
+      - authelia_jwt_secret
+      - authelia_session_secret
+      - authelia_storage_encryption_key
+      - authelia_db_password
+      - authelia_oidc_hmac_secret
+
+    # NOTE: the OIDC JWKS signing key is NOT mounted as a Docker secret.
+    # Authelia does not recognise a '_FILE' env var for list entries
+    # (jwks[]), so the key PEM is inlined into authelia/configuration.yml
+    # by scripts/generate-secrets.sh (which also derives and injects the
+    # matching public key into backend/environment/oidc/config.yaml).
+    environment:
+      AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET_FILE: /run/secrets/authelia_jwt_secret
+      AUTHELIA_SESSION_SECRET_FILE: /run/secrets/authelia_session_secret
+      AUTHELIA_STORAGE_ENCRYPTION_KEY_FILE: /run/secrets/authelia_storage_encryption_key
+      AUTHELIA_STORAGE_POSTGRES_PASSWORD_FILE: /run/secrets/authelia_db_password
+      AUTHELIA_IDENTITY_PROVIDERS_OIDC_HMAC_SECRET_FILE: /run/secrets/authelia_oidc_hmac_secret
+
+    volumes:
+      - type: bind
+        source: "authelia"
+        target: "/config"
+
+    restart: unless-stopped
+
   backend:
 
     build:
@@ -67,10 +127,22 @@ services:
       timeout: 10s
       retries: 4
 
+    # Make 'soliplex.localhost' (the canonical external URL of the
+    # stack) reachable from inside the container so the backend's
+    # server-side OIDC discovery / token calls hit nginx via the host
+    # gateway. Without this, 'soliplex.localhost' resolves to the
+    # container's own loopback and the OIDC flow fails with
+    # httpx.ConnectError. On the host, '.localhost' names auto-resolve
+    # to 127.0.0.1 (systemd-resolved / glibc), so the browser uses the
+    # same URL — keeping the issuer claim consistent across sides.
+    extra_hosts:
+      - "soliplex.localhost:host-gateway"
+
     secrets:
       - agui_db_password
       - authz_db_password
       - url_safe_token_secret
+      - authelia_oidc_client_secret
 
     environment:
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL}
@@ -95,8 +167,7 @@ services:
     ports:
       - "8000:8000"
 
-    # Temporary: run with '--no-auth-mode'
-    command: "/app/.venv/bin/soliplex-cli serve --no-auth-mode --reload=config --host=0.0.0.0 --proxy-headers --forwarded-allow-ips=* /environment"
+    command: "/app/.venv/bin/soliplex-cli serve --reload=config --host=0.0.0.0 --proxy-headers --forwarded-allow-ips=* /environment"
 
   haiku-rag:
 
@@ -172,6 +243,7 @@ services:
     environment:
       AUTO_CREATE_DATABASE: ${AUTO_CREATE_DATABASE:-1}
       AGUI_DB_PASS_FILE: /run/secrets/agui_db_password
+      AUTHELIA_DB_PASS_FILE: /run/secrets/authelia_db_password
       AUTHZ_DB_PASS_FILE: /run/secrets/authz_db_password
       INGESTION_DB_PASS_FILE: /run/secrets/ingestion_db_password
       POSTGRES_INITDB_ARGS: "-A scram-sha-256"
@@ -194,6 +266,7 @@ services:
       - /tmp
     secrets:
       - source: agui_db_password
+      - source: authelia_db_password
       - source: authz_db_password
       - source: ingestion_db_password
       - source: postgres_password
@@ -214,6 +287,18 @@ secrets:
 #------------------------------------------------------------------------------
     agui_db_password:
       file: ./.secrets/agui_db_password.gen
+    authelia_db_password:
+      file: ./.secrets/authelia_db_password.gen
+    authelia_jwt_secret:
+      file: ./.secrets/authelia_jwt_secret.gen
+    authelia_oidc_client_secret:
+      file: ./.secrets/authelia_oidc_client_secret.gen
+    authelia_oidc_hmac_secret:
+      file: ./.secrets/authelia_oidc_hmac_secret.gen
+    authelia_session_secret:
+      file: ./.secrets/authelia_session_secret.gen
+    authelia_storage_encryption_key:
+      file: ./.secrets/authelia_storage_encryption_key.gen
     authz_db_password:
       file: ./.secrets/authz_db_password.gen
     ingestion_db_password:
@@ -222,19 +307,3 @@ secrets:
       file: ./.secrets/postgres_password.gen
     url_safe_token_secret:
       file: ./.secrets/url_safe_token_secret.gen
-#
-#------------------------------------------------------------------------------
-#  Secrets in '.env' file / environment
-#------------------------------------------------------------------------------
-#  See above for using file-based secrets instead.
-#------------------------------------------------------------------------------
-#   agui_db_password:
-#     environment: "SOLIPLEX_AGUI_DB_PASSWORD"
-#   authz_db_password:
-#     environment: "SOLIPLEX_AUTHZ_DB_PASSWORD"
-#   ingestion_db_password:
-#     environment: "SOLIPLEX_INGESTION_DB_PASSWORD"
-#   postgres_password:
-#     environment: "SOLIPLEX_POSTGRES_PASSWORD"
-#   url_safe_token_secret:
-#     environment: "SOLIPLEX_URL_SAFE_TOKEN_SECRET"

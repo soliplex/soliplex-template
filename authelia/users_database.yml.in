@@ -1,0 +1,25 @@
+---
+###############################################################
+# Authelia file-based users database.
+#
+# Default admin user — password: "authelia" — INTENDED FOR
+# LOCAL DEVELOPMENT ONLY. Regenerate the hash before exposing
+# this stack to anything real:
+#
+#   docker compose run --rm --no-deps authelia \
+#     authelia crypto hash generate argon2 --password <your-pw>
+#
+# Paste the resulting $argon2id$... string into `password:` below
+# and restart the authelia container.
+###############################################################
+users:
+  admin:
+    disabled: false
+    displayname: 'Default Admin'
+    given_name: 'Default'
+    family_name: 'Admin'
+    password: 'REPLACE ME'
+    email: 'admin@example.com'
+    groups:
+      - 'admins'
+      - 'users'

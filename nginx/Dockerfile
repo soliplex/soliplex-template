@@ -30,25 +30,22 @@ FROM debian:trixie
 
 # Install:
 # - iputils-ping for network debugging
-# - openssl for certificate generation,
 # - ca-certificates
 # - curl for healthcheck
 # - headers-more module to suppress the Server header
 RUN apt-get update && \
     apt-get install --no-install-recommends -y \
-        openssl ca-certificates curl \
+        ca-certificates curl \
         libnginx-mod-http-headers-more-filter \
         libnginx-mod-http-ndk \
         libnginx-mod-http-lua && \
     rm -rf /var/lib/apt/lists/*
 
-# Generate self-signed SSL certificate
-RUN mkdir -p /etc/nginx/ssl && \
-    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-    -keyout /etc/nginx/ssl/server.key \
-    -out /etc/nginx/ssl/server.crt \
-    -subj "/C=US/ST=State/L=City/O=Organization/CN=localhost" && \
-    chown -R 1000:1000 /etc/nginx/ssl
+# The SSL server cert+key are generated on the host by
+# scripts/generate-nginx-cert.sh and bind-mounted by
+# docker-compose.yml at /etc/nginx/ssl/{server.crt,server.key}.
+# Only the mount point needs to exist in the image.
+RUN mkdir -p /etc/nginx/ssl
 
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 ENV SSL_CERT_DIR=/etc/ssl/certs
