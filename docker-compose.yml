@@ -157,6 +157,41 @@ services:
       start_period: 40s
       start_interval: 5s
 
+  seaweedfs:
+
+    # Single-process SeaweedFS: master + volume + filer + S3 gateway.
+    # See https://github.com/seaweedfs/seaweedfs/blob/master/docker/README.md
+    # for the multi-service layout if you outgrow this.
+    image: chrislusf/seaweedfs:latest
+
+    command: >
+      server
+      -dir=/data
+      -s3
+      -ip=seaweedfs
+      -ip.bind=0.0.0.0
+      -master.volumeSizeLimitMB=1024
+
+    ports:
+      - "9333:9333"   # master HTTP
+      - "8080:8080"   # volume HTTP
+      - "8888:8888"   # filer HTTP
+      - "8333:8333"   # S3 API
+
+    volumes:
+      - type: volume
+        source: seaweedfs_data
+        target: /data
+
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9333/cluster/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+    restart: unless-stopped
+
   postgres:
 
     build:
@@ -203,6 +238,7 @@ services:
 volumes:
   postgres_data:
   lancedb_data:
+  seaweedfs_data:
 
 secrets:
 
