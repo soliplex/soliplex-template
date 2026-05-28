@@ -120,11 +120,3 @@ echo "3. Verify secrets are working:"
 echo "   docker compose exec postgres env | grep PASSWORD_FILE"
 echo ""
 
-# Optional: Update .env file reminder for ingester
-if grep -q "ingestion_db_password.gen" "$COMPOSE_FILE" 2>/dev/null; then
-    echo -e "${YELLOW}NOTE: The ingester service may still need DOC_DB_PASS in .env:${NC}"
-    echo -e "${YELLOW}Add to .env file:${NC}"
-    ingestion_db_pass_file="${SECRETS_DIR}/ingestion_db_password.gen"
-    echo -e "${YELLOW}  DOC_DB_PASS=\$(cat \"${ingestion_db_pass_file}\")${NC}"
-    echo ""
-fi
