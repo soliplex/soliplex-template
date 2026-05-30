@@ -1,0 +1,50 @@
+# haiku.rag configuration for Docker deployment
+# See https://ggozad.github.io/haiku.rag/configuration/ for details
+
+environment: production
+
+storage:
+  data_dir: /data
+
+# Continuous ingestion (haiku-ingester service). One filesystem source
+# pointed at the bind-mounted /docs; the persistent SQLite queue lives
+# under /data so it survives container restarts.
+#
+# The literal string '__INGESTER_TOKEN__' is replaced with the value
+# of the INGESTER_TOKEN env var at container start (see the
+# 'haiku-ingester' command in docker-compose.yml). haiku.rag's YAML
+# loader has no env-var interpolation of its own.
+ingester:
+  queue:
+    path: /data/ingester.db
+  api:
+    host: 0.0.0.0
+    auth_token: __INGESTER_TOKEN__
+  sources:
+    - type: fs
+      id: local-docs
+      root: /docs
+      delete_orphans: true
+
+# Remote document processing with docling-serve
+processing:
+  converter: docling-serve
+  chunker: docling-serve
+  chunk_size: ${chunk_size}
+  chunker_type: hybrid
+  chunking_tokenizer: "Qwen/Qwen3-Embedding-0.6B"
+  chunking_merge_peers: true
+  chunking_use_markdown_tables: false
+
+providers:
+  docling_serve:
+    base_url: http://docling-serve:5001
+    api_key: ""
+
+# Use environment: OLLAMA_BASE_URL
+# ollama:
+#   base_url: http://host.docker.internal:11434
+
+
+# For other providers (OpenAI, Anthropic, VoyageAI, etc.),
+# see: https://ggozad.github.io/haiku.rag/configuration/

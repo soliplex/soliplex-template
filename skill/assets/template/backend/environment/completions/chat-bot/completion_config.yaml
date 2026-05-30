@@ -1,0 +1,9 @@
+id: "chat-bot"
+agent:
+  system_prompt: "./prompt.txt"
+  template_id: "default_chat"
+tools:
+  - tool_name: "soliplex.tools.get_current_datetime"
+  - tool_name: "soliplex.tools.get_current_user"
+# - tool_name: "<yourapp>.tools.search_documents"
+#     search_path: "/path/to/documents"

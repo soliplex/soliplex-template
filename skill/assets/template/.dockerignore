@@ -1,0 +1,38 @@
+# Large directories that should never be in build context
+data/
+images/
+sampledata/
+
+.secrets
+
+# Development artifacts
+.venv
+.env
+.ruff_cache
+.pytest_cache
+.git
+.gitignore
+devenv
+*.db
+db/
+lancedb/
+file-store/
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Cache and build artifacts
+__pycache__/
+*.pyc
+*.pyo
+.mypy_cache/
+.coverage
+htmlcov/
+
+# OS files
+.DS_Store
+Thumbs.db

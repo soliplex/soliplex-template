@@ -34,3 +34,14 @@ The skill should:
    `postgres/config/init.sh`, `.env`, `.gitignore`, etc.
 
 This template repo itself is the reference for the files the skill should emit.
+
+### Deferred follow-ups (after the generator itself is finished)
+
+- **Refresh skill templates from the repo exemplars.** Sync the embedded
+  templates under `skill/assets/template/` with the live template files in this
+  repo so the generator can be exercised against current exemplars during manual
+  testing. (A `refresh-template.sh`-style helper that re-derives the `.mako`
+  templates from the repo root is the intended mechanism.)
+- **CI workflow to publish the skill.** Add the CI job that runs
+  `scripts/build_skill.py` and publishes the assembled
+  `dist/soliplex-project-generator/` as a GitHub Release asset (tarball).

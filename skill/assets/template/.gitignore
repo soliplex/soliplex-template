@@ -16,9 +16,6 @@
 tmp/
 db/
 
-# Built skill artifact (assembled by build-skill.sh, published by CI)
-/dist/
-
 #logs
 info.log
 
