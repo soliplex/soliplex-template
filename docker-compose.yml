@@ -98,24 +98,39 @@ services:
     # Temporary: run with '--no-auth-mode'
     command: "/app/.venv/bin/soliplex-cli serve --no-auth-mode --reload=config --host=0.0.0.0 --proxy-headers --forwarded-allow-ips=* /environment"
 
-  haiku-rag:
+  haiku-ingester:
 
-    image: ghcr.io/ggozad/haiku.rag-slim:latest
+    image: ghcr.io/ggozad/haiku.rag-slim:0.51.0
 
     build:
       context: haiku.rag
       dockerfile: Dockerfile
 
+    # Render the bind-mounted yaml into /tmp with INGESTER_TOKEN
+    # substituted, then exec the ingester against the rendered copy.
+    # haiku.rag's yaml loader has no env-var interpolation so we do
+    # the substitution before haiku-ingester reads the config.
+    command:
+      - sh
+      - -c
+      - |
+        sed "s|__INGESTER_TOKEN__|$$INGESTER_TOKEN|" /app/haiku.rag.yaml > /tmp/haiku.rag.yaml
+        exec haiku-ingester --config /tmp/haiku.rag.yaml serve
+
     ports:
-      - "8001:8001"  # MCP server
+      - "8765:8765"  # control plane: /health, /jobs, /sources, /dlq, /stats
 
     volumes:
-      - ./rag/db:/data  # Persist database
-      - ./rag/docs:/docs  # Mount documents directory for monitoring
-      - ./haiku.rag/haiku.rag.yaml:/app/haiku.rag.yaml:ro  # Mount config file
+      - ./rag/db:/data
+      - ./rag/docs:/docs
+      - ./haiku.rag/haiku.rag.yaml:/app/haiku.rag.yaml:ro
 
     environment:
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL}
+      # Bearer token clients must send to /jobs, /sources, /dlq, etc.
+      # Override in '.env'; the default 'secret' is intentionally weak
+      # so unhardened deployments fail an obvious security review.
+      INGESTER_TOKEN: ${INGESTER_TOKEN:-secret}
       # API keys (set as needed)
       #- OPENAI_API_KEY=${OPENAI_API_KEY}
       #- ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
@@ -125,9 +140,24 @@ services:
     user: "1000:1000"
 
     depends_on:
-
       docling-serve:
         condition: service_healthy
+
+    # shutdown_grace_s defaults to 60s — give Docker enough to drain
+    # in-flight jobs before SIGKILL.
+    stop_grace_period: 180s
+
+    healthcheck:
+      # slim image has no curl; use stdlib instead.
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8765/health', timeout=2).status == 200 else 1)"
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
 
     restart: unless-stopped
 
@@ -173,7 +203,6 @@ services:
       AUTO_CREATE_DATABASE: ${AUTO_CREATE_DATABASE:-1}
       AGUI_DB_PASS_FILE: /run/secrets/agui_db_password
       AUTHZ_DB_PASS_FILE: /run/secrets/authz_db_password
-      INGESTION_DB_PASS_FILE: /run/secrets/ingestion_db_password
       POSTGRES_INITDB_ARGS: "-A scram-sha-256"
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
       POSTGRES_USER: postgres
@@ -195,7 +224,6 @@ services:
     secrets:
       - source: agui_db_password
       - source: authz_db_password
-      - source: ingestion_db_password
       - source: postgres_password
     ports:
       - "5432:5432"
@@ -216,8 +244,6 @@ secrets:
       file: ./.secrets/agui_db_password.gen
     authz_db_password:
       file: ./.secrets/authz_db_password.gen
-    ingestion_db_password:
-      file: ./.secrets/ingestion_db_password.gen
     postgres_password:
       file: ./.secrets/postgres_password.gen
     url_safe_token_secret:
@@ -232,8 +258,6 @@ secrets:
 #     environment: "SOLIPLEX_AGUI_DB_PASSWORD"
 #   authz_db_password:
 #     environment: "SOLIPLEX_AUTHZ_DB_PASSWORD"
-#   ingestion_db_password:
-#     environment: "SOLIPLEX_INGESTION_DB_PASSWORD"
 #   postgres_password:
 #     environment: "SOLIPLEX_POSTGRES_PASSWORD"
 #   url_safe_token_secret:

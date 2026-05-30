@@ -6,9 +6,25 @@ environment: production
 storage:
   data_dir: /data
 
-monitor:
-  directories:
-    - /docs
+# Continuous ingestion (haiku-ingester service). One filesystem source
+# pointed at the bind-mounted /docs; the persistent SQLite queue lives
+# under /data so it survives container restarts.
+#
+# The literal string '__INGESTER_TOKEN__' is replaced with the value
+# of the INGESTER_TOKEN env var at container start (see the
+# 'haiku-ingester' command in docker-compose.yml). haiku.rag's YAML
+# loader has no env-var interpolation of its own.
+ingester:
+  queue:
+    path: /data/ingester.db
+  api:
+    host: 0.0.0.0
+    auth_token: __INGESTER_TOKEN__
+  sources:
+    - type: fs
+      id: local-docs
+      root: /docs
+      delete_orphans: true
 
 # Remote document processing with docling-serve
 processing:
