@@ -21,6 +21,8 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest",
+    # Builds the documentation site under docs/ (`uv run zensical build`).
+    "zensical",
 ]
 
 # src/ layout: the importable package lives at src/${package_name}/. The

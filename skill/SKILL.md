@@ -105,3 +105,6 @@ Set `GITHUB_TOKEN`/`GH_TOKEN` to raise the GitHub API rate limit.
   `ollama_base_url`, and checks DB identifiers before writing anything.
 - `.env` and `.secrets/` in the generated project are gitignored, so the initial
   commit never captures secrets.
+- The generated project includes its own Zensical documentation site under
+  `docs/` (parameterized for that project) plus `zensical` in its `dev`
+  dependency group; the owner can preview it with `uv run zensical serve`.

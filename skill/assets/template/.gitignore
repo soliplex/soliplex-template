@@ -16,6 +16,9 @@
 tmp/
 db/
 
+# Zensical docs build output (`zensical build`)
+/site/
+
 #logs
 info.log
 
