@@ -2,55 +2,7 @@
 
 ## Future work
 
-- **Run the docker-gated functional cases in CI.** `python-test.yaml` currently
-  excludes the `needs_docker` cases (the `postgres` bring-up); running them
-  needs a docker-enabled CI job. Deferred alongside the full-stack bring-up
-  item below.
-
-- **Expand supported Python to match soliplex/soliplex.** This repo pins
-  `requires-python = ">=3.13"` and the CI workflows run a single 3.13
-  (`python-version-file`). soliplex tests a matrix (3.12, 3.13, 3.14, coverage
-  only on >= 3.13). To match:
-  - Lower `requires-python` toward `>=3.12` (reconcile with the scripts' PEP 723
-    `requires-python`: `build_skill.py`/`refresh_skill_template.py` already say
-    `>=3.11`, `generate_soliplex_project.py` says `>=3.13`; decide the real floor
-    and align all of them + `[tool.ruff] target-version`).
-  - Switch `python-lint.yaml` and `python-test.yaml` to a `strategy.matrix`
-    over the supported versions (mirroring soliplex), running coverage only on
-    `>= 3.13` (e.g. `--no-cov` on the lowest, as soliplex does for 3.12).
-  - Verify the suites + the generator actually pass on each version (3.12 may
-    need syntax/typing checks; `uv sync` against each interpreter).
-
-- **Extend the functional test toward a full-stack bring-up.** The current
-  functional test brings up only `postgres` (deterministic, no network beyond a
-  base image). A full `docker compose up -d --wait` of the whole stack would be
-  the strongest signal but is heavy and flaky: 4 local builds + 2 multi-GB image
-  pulls, network egress to GitHub/PyPI/ghcr, the non-reproducible "latest
-  frontend release", and a **live Ollama** serving `qwen3-embedding:4b`
-  (haiku-ingester health) / `gpt-oss:*`. If added, gate it behind an explicit
-  opt-in env flag plus daemon/network/Ollama skip-conditions, never in the
-  default functional run.
-
-- **Documentation.** Write docs covering the three ways this repo is used:
-  1. **Using the main repo configuration as-is** — clone the template, run
-     `scripts/generate-secrets.sh`, set `OLLAMA_BASE_URL`, `docker compose up`;
-     the architecture/services/ports/secrets already sketched in `CLAUDE.md`.
-  2. **Using the `soliplex-template` skill** — install/point an agent at the
-     published skill, gather parameters, run `generate_soliplex_project.py` to
-     scaffold a new project; how to fetch/upgrade the skill via
-     `scripts/skill_versions.py`.
-  3. **Copying an appropriate subset of the repo-level docs into the generated
-     project** — decide which docs belong in a scaffolded project (vs. this
-     template repo), and have the generator emit that subset (as `.mako`
-     templates under `skill/assets/template/`, parameterized like the rest) so
-     each generated project ships its own right-sized documentation.
-
-- **Restore the Slack failure notification.** A `Notify Slack on failure` step
-  (mirroring the `soliplex-docs` workflow) was omitted from all three workflows
-  (`build-skill.yaml`, `python-lint.yaml`, `python-test.yaml`) because the
-  `SLACK_NOTIFY_URL` secret isn't available yet. Add it once the secret exists —
-  it posts to `#soliplex` via `slackapi/slack-github-action@v2.1.0` on
-  `if: failure()`.
+Tracked as [GitHub issues](https://github.com/soliplex/soliplex-template/issues).
 
 ## Done
 
