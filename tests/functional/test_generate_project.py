@@ -3,10 +3,10 @@
 Unlike the unit suite (which mocks the seams), this drives the real CLI
 end-to-end: it runs ``skill/scripts/generate_soliplex_project.py`` as a
 subprocess with ``--run-secrets`` and real ``git``, then verifies the generated
-project renders cleanly, the parameters propagate consistently, the secret and
-git side effects actually happened, the rendered ``docker-compose.yml`` is valid
-to Docker, and the ``postgres`` service (whose ``init.sh`` + secret wiring is
-itself generated) starts and reports healthy.
+project renders cleanly, the parameters propagate consistently, the secret
+and git side effects actually happened, the rendered ``docker-compose.yml`` is
+valid to Docker, and the ``postgres`` service (whose ``init.sh`` + secret
+wiring is itself generated) starts and reports healthy.
 
 Every live dependency is gated and **skips with a warning** when absent:
 git/bash/openssl for the generation step, and the docker CLI/daemon for the
@@ -57,7 +57,7 @@ _GEN_TOOLS = ("git", "bash", "openssl")
 # Helpers
 # --------------------------------------------------------------------------
 def _compose(cwd, *args):
-    """Run ``docker compose <args>`` in ``cwd`` and return the CompletedProcess."""
+    """Run ``docker compose <args>`` in ``cwd``; return its result."""
     return subprocess.run(
         ["docker", "compose", *args],
         cwd=cwd,
@@ -75,14 +75,18 @@ def _read(out, *parts):
 # --------------------------------------------------------------------------
 @pytest.fixture
 def docker_required():
-    """Skip (with a warning) unless the docker CLI + compose plugin are usable."""
+    """Skip (with a warning) unless docker CLI + compose plugin are usable."""
     if shutil.which("docker") is None:
         warnings.warn(
-            "docker not on PATH; skipping live-Docker functional tests"
+            "docker not on PATH; skipping live-Docker functional tests",
+            stacklevel=2,
         )
         pytest.skip("docker CLI not available")
     if _compose(_REPO_ROOT, "version").returncode != 0:
-        warnings.warn("`docker compose` unusable; skipping live-Docker tests")
+        warnings.warn(
+            "`docker compose` unusable; skipping live-Docker tests",
+            stacklevel=2,
+        )
         pytest.skip("docker compose plugin not usable")
 
 
@@ -96,7 +100,8 @@ def docker_daemon_required(docker_required):
         != 0
     ):
         warnings.warn(
-            "docker daemon unreachable; skipping `up` functional test"
+            "docker daemon unreachable; skipping `up` functional test",
+            stacklevel=2,
         )
         pytest.skip("docker daemon not reachable")
 
@@ -110,7 +115,8 @@ def generated_project(tmp_path_factory):
     missing = [t for t in _GEN_TOOLS if shutil.which(t) is None]
     if missing:
         warnings.warn(
-            f"missing {missing}; skipping generation functional tests"
+            f"missing {missing}; skipping generation functional tests",
+            stacklevel=2,
         )
         pytest.skip(f"generation needs {', '.join(_GEN_TOOLS)}")
 
@@ -199,8 +205,10 @@ def test_cross_file_consistency(generated_project):
     init_sh = _read(out, "postgres/config/init.sh")
 
     # DB names are driven from one parameter into both files.
-    assert params["agui_db"] in installation and params["agui_db"] in init_sh
-    assert params["authz_db"] in installation and params["authz_db"] in init_sh
+    assert params["agui_db"] in installation
+    assert params["agui_db"] in init_sh
+    assert params["authz_db"] in installation
+    assert params["authz_db"] in init_sh
     # Every chosen host port lands in the compose mapping.
     for key in (
         "nginx_http",

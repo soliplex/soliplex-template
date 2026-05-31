@@ -28,6 +28,7 @@ import difflib
 import hashlib
 import json
 import os
+import pathlib
 import re
 import shutil
 import sys
@@ -36,8 +37,7 @@ import tempfile
 import urllib.error as urllib_error
 import urllib.parse as urllib_parse
 import urllib.request as urllib_request
-from collections.abc import Iterator
-from pathlib import Path
+from collections import abc
 
 OWNER = "soliplex"
 REPO = "soliplex-template"
@@ -55,7 +55,7 @@ _USER_AGENT = "soliplex-template-skill"
 _ALLOWED_SCHEMES = frozenset({"https", "file"})
 
 # The skill root is the parent of this script's ``scripts/`` directory.
-_SKILL_ROOT = Path(__file__).resolve().parent.parent
+_SKILL_ROOT = pathlib.Path(__file__).resolve().parent.parent
 _SKILL_MD = _SKILL_ROOT / "SKILL.md"
 
 # Files compared by ``diff`` / not worth showing as drift.
@@ -171,7 +171,7 @@ def _classify(release: dict) -> tuple[str, str]:
     return "release", commit
 
 
-def _commit_of(skill_md: Path) -> str | None:
+def _commit_of(skill_md: pathlib.Path) -> str | None:
     """Return the 7-char ``source_commit`` recorded in a ``SKILL.md``."""
     if not skill_md.exists():
         return None
@@ -271,7 +271,7 @@ def cmd_list(args: argparse.Namespace) -> int:
     return 0
 
 
-def _sha256(path: Path) -> str:
+def _sha256(path: pathlib.Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         for block in iter(lambda: handle.read(65536), b""):
@@ -280,8 +280,8 @@ def _sha256(path: Path) -> str:
 
 
 def _download_and_extract(
-    tag: str, dest: Path, *, asset_url: str | None, sha256: str | None
-) -> Path:
+    tag: str, dest: pathlib.Path, *, asset_url: str | None, sha256: str | None
+) -> pathlib.Path:
     """Download a version's tarball into ``dest`` and unpack it.
 
     Returns the directory the archive was extracted into; the skill itself
@@ -304,8 +304,8 @@ def _download_and_extract(
 
 
 def _fetch_skill(
-    tag: str, dest: Path, *, asset_url: str | None, sha256: str | None
-) -> Path:
+    tag: str, dest: pathlib.Path, *, asset_url: str | None, sha256: str | None
+) -> pathlib.Path:
     """Download + extract a version's tarball; return its skill root.
 
     The skill root is the directory containing ``SKILL.md`` -- i.e. what gets
@@ -320,7 +320,7 @@ def _fetch_skill(
     return matches[0].parent
 
 
-def _tree_text(root: Path) -> dict[str, list[str]]:
+def _tree_text(root: pathlib.Path) -> dict[str, list[str]]:
     """Map every file under ``root`` to its lines (decoded leniently)."""
     out: dict[str, list[str]] = {}
     for path in root.rglob("*"):
@@ -329,7 +329,9 @@ def _tree_text(root: Path) -> dict[str, list[str]]:
         if _IGNORE_PARTS & set(path.relative_to(root).parts):
             continue
         rel = str(path.relative_to(root)).replace("\\", "/")
-        out[rel] = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        out[rel] = path.read_text(
+            encoding="utf-8", errors="replace"
+        ).splitlines()
     return out
 
 
@@ -380,8 +382,9 @@ def _resolve_target(
     """Resolve ``target``, expanding ``latest`` via the pointer manifest.
 
     Returns ``(tag, asset_url, sha256)``. When ``target`` is ``latest`` and
-    no explicit ``asset_url`` was supplied, the ``template-skill-latest`` pointer
-    is consulted; :class:`PointerUnavailable` is raised if it cannot be read.
+    no explicit ``asset_url`` was supplied, the ``template-skill-latest``
+    pointer is consulted; :class:`PointerUnavailable` is raised if it cannot
+    be read.
     """
     if target == "latest" and asset_url is None:
         pointer = _read_pointer()
@@ -396,10 +399,10 @@ def _resolve_target(
 
 
 @contextlib.contextmanager
-def _temp_dest() -> Iterator[Path]:
+def _temp_dest() -> abc.Iterator[pathlib.Path]:
     """Yield a fresh temporary directory as a ``Path`` (removed on exit)."""
     with tempfile.TemporaryDirectory() as tmp:
-        yield Path(tmp)
+        yield pathlib.Path(tmp)
 
 
 def cmd_diff(args: argparse.Namespace) -> int:
@@ -438,7 +441,7 @@ def cmd_diff(args: argparse.Namespace) -> int:
         )
 
 
-def _install_over(src: Path, dst: Path) -> None:
+def _install_over(src: pathlib.Path, dst: pathlib.Path) -> None:
     """Replace ``dst``'s skill files with those from ``src`` in place.
 
     Each top-level entry of the freshly extracted skill root (``SKILL.md``,

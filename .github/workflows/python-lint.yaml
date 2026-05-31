@@ -1,0 +1,55 @@
+name: Python linting
+
+# Mirrors soliplex/soliplex's python-lint.yaml: enforce `ruff format --check`
+# and `ruff check` (same rule config, see pyproject.toml) on the repo's Python.
+# The pre-commit `ruff-check`/`ruff-format` hooks gate this locally; this job is
+# the CI backstop on push/PR. (The Slack-on-failure step from the soliplex
+# version is omitted until SLACK_NOTIFY_URL exists -- see TODO.md, same as
+# build-skill.yaml.)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - 'scripts/**'
+      - 'skill/scripts/**'
+      - 'tests/**'
+      - '.github/workflows/python-lint.yaml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - 'scripts/**'
+      - 'skill/scripts/**'
+      - 'tests/**'
+      - '.github/workflows/python-lint.yaml'
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version-file: "pyproject.toml"
+
+      - name: Install dependencies
+        run: uv sync --frozen --group dev
+
+      - name: Check formatting
+        run: uv run ruff format --check
+
+      - name: Run ruff linter
+        run: uv run ruff check

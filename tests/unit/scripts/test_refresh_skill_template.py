@@ -219,7 +219,10 @@ def test_t_tui_constraints_no_match_raises():
 
 
 def test_t_nginx_conf():
-    text = "server { server_name localhost; }\nserver { server_name localhost; }\n"
+    text = (
+        "server { server_name localhost; }\n"
+        "server { server_name localhost; }\n"
+    )
 
     out = rst.t_nginx_conf(text)
 
@@ -239,7 +242,7 @@ def test_t_nginx_dockerfile():
     assert out == (
         '<%text>RUN openssl req -subj "</%text>'
         "${tls_subject}"
-        '<%text>" -out cert\n</%text>'
+        '<%text>" -out cert</%text>\n'
     )
 
 

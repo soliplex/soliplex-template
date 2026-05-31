@@ -28,32 +28,40 @@ rather than emitting a broken template.
 
 from __future__ import annotations
 
+import pathlib
 import re
 import shutil
 import subprocess
 import sys
-from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
+REPO = pathlib.Path(__file__).resolve().parent.parent
 TEMPLATE = REPO / "skill" / "assets" / "template"
 
 # Tracked paths NOT copied into the template (git pathspecs, repo-relative).
 EXCLUDE_PATHSPECS = [
     ":!TODO.md",
     ":!.claude",
-    ":!.github",                            # this repo's CI, not a project file
-    ":!skill",                              # the skill source itself (no recursion)
-    ":!dist",                               # build artifact
-    ":!scripts/build_skill.py",             # skill-build tooling, not project files
+    ":!.github",  # this repo's CI, not a project file
+    ":!.pre-commit-config.yaml",  # repo pre-commit config, not a project file
+    ":!skill",  # the skill source itself (no recursion)
+    ":!dist",  # build artifact
+    ":!tests",  # this repo's test suite, not project files
+    ":!scripts/build_skill.py",  # skill-build tooling, not project files
     ":!scripts/refresh_skill_template.py",
-    ":!pyproject.toml",                     # repo tooling; project gets pyproject.toml.mako
-    ":!uv.lock",                            # repo tooling lockfile
-    ":!README.md",                          # replaced by the authored README.md.mako
+    ":!pyproject.toml",  # repo tooling; project gets pyproject.toml.mako
+    ":!uv.lock",  # repo tooling lockfile
+    ":!README.md",  # replaced by the authored README.md.mako
 ]
 
 
 class RefreshError(Exception):
-    pass
+    @classmethod
+    def wrap(cls, rel, exc):
+        return cls(f"{rel}: {exc}")
+
+    @classmethod
+    def render_failures(cls, count):
+        return cls(f"{count} template(s) failed the render check")
 
 
 def require(cond: bool, msg: str) -> None:
@@ -62,7 +70,8 @@ def require(cond: bool, msg: str) -> None:
 
 
 def esc(text: str, *literals: str) -> str:
-    """Wrap literal ``${...}`` runs in ``<%text>`` so Mako passes them through."""
+    """Wrap literal ``${...}`` runs in ``<%text>`` so Mako passes them
+    through untouched."""
     for lit in literals:
         require(lit in text, f"expected literal {lit!r} to escape")
         text = text.replace(lit, f"<%text>{lit}</%text>")
@@ -77,53 +86,79 @@ def repl(text: str, pairs: list[tuple[str, str]]) -> str:
 
 
 # --------------------------------------------------------------------------
-# Per-file transforms: repo-relative path -> function(original text) -> mako text
+# Per-file transforms: repo-relative path -> fn(text) -> mako text
 # Output path is the key + ".mako".
 # --------------------------------------------------------------------------
 def t_compose(text: str) -> str:
     text = esc(
         text,
-        "${OLLAMA_BASE_URL}", "${INGESTER_TOKEN:-secret}", "${AUTO_CREATE_DATABASE:-1}",
-        "${OPENAI_API_KEY}", "${ANTHROPIC_API_KEY}", "${VOYAGE_API_KEY}", "${CO_API_KEY}",
+        "${OLLAMA_BASE_URL}",
+        "${INGESTER_TOKEN:-secret}",
+        "${AUTO_CREATE_DATABASE:-1}",
+        "${OPENAI_API_KEY}",
+        "${ANTHROPIC_API_KEY}",
+        "${VOYAGE_API_KEY}",
+        "${CO_API_KEY}",
     )
-    return repl(text, [
-        ("name: soliplex-template", "name: ${project_name}"),
-        ('- "9000:9000"', '- "${nginx_http}:9000"'),
-        ('- "9443:9443"', '- "${nginx_https}:9443"'),
-        ("--public-url https://soliplex.localhost:9443/tui",
-         "--public-url https://${server_name}:${nginx_https}/tui"),
-        ("soliplex-cli serve --no-auth-mode --reload=config",
-         "soliplex-cli serve ${backend_auth_flag}--reload=config"),
-        ('- "8765:8765"', '- "${ingester_port}:8765"'),
-        ('- "5001:5001"', '- "${docling_port}:5001"'),
-        ('- "5432:5432"', '- "${postgres_port}:5432"'),
-        ("- ./rag/docs:/docs", "- ./${docs_dir}:/docs"),
-    ])
+    return repl(
+        text,
+        [
+            ("name: soliplex-template", "name: ${project_name}"),
+            ('- "9000:9000"', '- "${nginx_http}:9000"'),
+            ('- "9443:9443"', '- "${nginx_https}:9443"'),
+            (
+                "--public-url https://soliplex.localhost:9443/tui",
+                "--public-url https://${server_name}:${nginx_https}/tui",
+            ),
+            (
+                "soliplex-cli serve --no-auth-mode --reload=config",
+                "soliplex-cli serve ${backend_auth_flag}--reload=config",
+            ),
+            ('- "8765:8765"', '- "${ingester_port}:8765"'),
+            ('- "5001:5001"', '- "${docling_port}:5001"'),
+            ('- "5432:5432"', '- "${postgres_port}:5432"'),
+            ("- ./rag/docs:/docs", "- ./${docs_dir}:/docs"),
+        ],
+    )
 
 
 def t_installation(text: str) -> str:
-    return repl(text, [
-        ('id: "soliplex-conf-minimal"', 'id: "${setup_id}"'),
-        ('  - id: "default_chat"\n    model_name: "gpt-oss:latest"',
-         '  - id: "default_chat"\n    model_name: "${chat_model}"'),
-        ('  - id: "title"\n    model_name: "gpt-oss:latest"',
-         '  - id: "title"\n    model_name: "${title_model}"'),
-        ('"gpt-oss:20b"', '"${chat_model_alt}"'),
-        ("soliplex_agui", "${agui_db}"),
-        ("soliplex_authz", "${authz_db}"),
-    ])
+    return repl(
+        text,
+        [
+            ('id: "soliplex-conf-minimal"', 'id: "${setup_id}"'),
+            (
+                '  - id: "default_chat"\n    model_name: "gpt-oss:latest"',
+                '  - id: "default_chat"\n    model_name: "${chat_model}"',
+            ),
+            (
+                '  - id: "title"\n    model_name: "gpt-oss:latest"',
+                '  - id: "title"\n    model_name: "${title_model}"',
+            ),
+            ('"gpt-oss:20b"', '"${chat_model_alt}"'),
+            ("soliplex_agui", "${agui_db}"),
+            ("soliplex_authz", "${authz_db}"),
+        ],
+    )
 
 
 def t_backend_haiku(text: str) -> str:
-    return repl(text, [
-        ("name: qwen3-embedding:4b", "name: ${rag_embed_model}"),
-        ("vector_dim: 2560", "vector_dim: ${rag_embed_dim}"),
-        ("qa:\n  model:\n    name: gpt-oss:latest",
-         "qa:\n  model:\n    name: ${rag_qa_model}"),
-        ("research:\n  model:\n    name: gpt-oss:latest",
-         "research:\n  model:\n    name: ${rag_research_model}"),
-        ("chunk_size: 256", "chunk_size: ${chunk_size}"),
-    ])
+    return repl(
+        text,
+        [
+            ("name: qwen3-embedding:4b", "name: ${rag_embed_model}"),
+            ("vector_dim: 2560", "vector_dim: ${rag_embed_dim}"),
+            (
+                "qa:\n  model:\n    name: gpt-oss:latest",
+                "qa:\n  model:\n    name: ${rag_qa_model}",
+            ),
+            (
+                "research:\n  model:\n    name: gpt-oss:latest",
+                "research:\n  model:\n    name: ${rag_research_model}",
+            ),
+            ("chunk_size: 256", "chunk_size: ${chunk_size}"),
+        ],
+    )
 
 
 def t_ingester_haiku(text: str) -> str:
@@ -131,41 +166,67 @@ def t_ingester_haiku(text: str) -> str:
 
 
 def t_backend_constraints(text: str) -> str:
-    new, n = re.subn(r"(?m)^soliplex .*$",
-                     "soliplex ${soliplex_backend_constraint}", text)
-    require(n == 1, f"expected one 'soliplex ...' line in backend constraints, got {n}")
+    new, n = re.subn(
+        r"(?m)^soliplex .*$", "soliplex ${soliplex_backend_constraint}", text
+    )
+    require(
+        n == 1,
+        f"expected one 'soliplex ...' line in backend constraints, got {n}",
+    )
     return new
 
 
 def t_tui_constraints(text: str) -> str:
-    new, n = re.subn(r"(?m)^soliplex .*$",
-                     "soliplex ${soliplex_tui_constraint}", text)
-    require(n == 1, f"expected one 'soliplex ...' line in tui constraints, got {n}")
+    new, n = re.subn(
+        r"(?m)^soliplex .*$", "soliplex ${soliplex_tui_constraint}", text
+    )
+    require(
+        n == 1, f"expected one 'soliplex ...' line in tui constraints, got {n}"
+    )
     return new
 
 
 def t_nginx_conf(text: str) -> str:
-    require(text.count("server_name localhost;") == 2,
-            "expected two 'server_name localhost;' in nginx.conf")
-    return text.replace("server_name localhost;", "server_name ${server_name};")
+    require(
+        text.count("server_name localhost;") == 2,
+        "expected two 'server_name localhost;' in nginx.conf",
+    )
+    return text.replace(
+        "server_name localhost;", "server_name ${server_name};"
+    )
 
 
 def t_nginx_dockerfile(text: str) -> str:
     # Wrap everything literal in <%text> (preserves backslash-newlines and the
     # builder's shell ${...} expansions); break out only for the cert subject.
     m = re.search(r'-subj "([^"]*)"', text)
-    require(m is not None, "expected a -subj \"...\" line in nginx/Dockerfile")
+    require(m is not None, 'expected a -subj "..." line in nginx/Dockerfile')
     subj = m.group(1)
     require(text.count(subj) == 1, f"cert subject {subj!r} is not unique")
     before, after = text.split(subj, 1)
-    return "<%text>" + before + "</%text>${tls_subject}<%text>" + after + "</%text>"
+    # Move any trailing newline outside the final <%text> block so the
+    # generated .mako file ends with a newline (keeps end-of-file-fixer happy
+    # and refresh idempotent) while the rendered Dockerfile stays identical.
+    stripped = after.rstrip("\n")
+    trailing = after[len(stripped) :]
+    return (
+        "<%text>"
+        + before
+        + "</%text>${tls_subject}<%text>"
+        + stripped
+        + "</%text>"
+        + trailing
+    )
 
 
 def t_init_sh(text: str) -> str:
-    return repl(text, [
-        ("soliplex_agui", "${agui_db}"),
-        ("soliplex_authz", "${authz_db}"),
-    ])
+    return repl(
+        text,
+        [
+            ("soliplex_agui", "${agui_db}"),
+            ("soliplex_authz", "${authz_db}"),
+        ],
+    )
 
 
 def t_gitignore(text: str) -> str:
@@ -174,9 +235,14 @@ def t_gitignore(text: str) -> str:
     # artifacts' comment, any further comment lines, and the /dist/ entry).
     new, n = re.subn(
         r"\n# Skill build artifacts[^\n]*\n(?:#[^\n]*\n)*/dist/\n\n?",
-        "\n", text, count=1,
+        "\n",
+        text,
+        count=1,
     )
-    require(n == 1, "expected the '/dist/' skill build artifacts block in .gitignore")
+    require(
+        n == 1,
+        "expected the '/dist/' skill build artifacts block in .gitignore",
+    )
     return new
 
 
@@ -258,30 +324,51 @@ dependencies = [
 
 # Probe parameters for the post-refresh render check (values are arbitrary).
 PROBE = dict(
-    project_name="probe", setup_id="probe", nginx_http=1, nginx_https=2,
-    ingester_port=3, docling_port=4, postgres_port=5, server_name="probe",
-    backend_auth_flag="", tls_subject="probe", chat_model="m", chat_model_alt="m",
-    title_model="m", rag_embed_model="m", rag_embed_dim=1, rag_qa_model="m",
-    rag_research_model="m", chunk_size=1, agui_db="db", authz_db="db2",
-    soliplex_backend_constraint="c", soliplex_tui_constraint="c", docs_dir="d",
+    project_name="probe",
+    setup_id="probe",
+    nginx_http=1,
+    nginx_https=2,
+    ingester_port=3,
+    docling_port=4,
+    postgres_port=5,
+    server_name="probe",
+    backend_auth_flag="",
+    tls_subject="probe",
+    chat_model="m",
+    chat_model_alt="m",
+    title_model="m",
+    rag_embed_model="m",
+    rag_embed_dim=1,
+    rag_qa_model="m",
+    rag_research_model="m",
+    chunk_size=1,
+    agui_db="db",
+    authz_db="db2",
+    soliplex_backend_constraint="c",
+    soliplex_tui_constraint="c",
+    docs_dir="d",
 )
 
 
 def tracked_files() -> list[str]:
     out = subprocess.check_output(
         ["git", "ls-files", "-z", "--", ".", *EXCLUDE_PATHSPECS],
-        cwd=REPO, text=True,
+        cwd=REPO,
+        text=True,
     )
     return [p for p in out.split("\0") if p]
 
 
-def render_check(root: Path) -> int:
-    from mako.template import Template
+def render_check(root: pathlib.Path) -> int:
     from mako import exceptions
+    from mako import template
+
     bad = 0
     for mako in sorted(root.rglob("*.mako")):
         try:
-            Template(filename=str(mako), strict_undefined=True).render(**PROBE)
+            template.Template(
+                filename=str(mako), strict_undefined=True
+            ).render(**PROBE)
         except Exception:
             bad += 1
             print(f"render FAILED: {mako.name}", file=sys.stderr)
@@ -289,8 +376,8 @@ def render_check(root: Path) -> int:
     return bad
 
 
-def _build_into(dest_root: Path, files: list[str]) -> tuple[int, int]:
-    """Assemble the template under ``dest_root``. Returns (derived, authored)."""
+def _build_into(dest_root: pathlib.Path, files: list[str]) -> tuple[int, int]:
+    """Assemble template into ``dest_root``; return (derived, authored)."""
     # copy verbatim
     for rel in files:
         src = REPO / rel
@@ -301,22 +388,27 @@ def _build_into(dest_root: Path, files: list[str]) -> tuple[int, int]:
     # in-place edits to files kept under their original name
     for rel, fn in VERBATIM_EDITS.items():
         copied = dest_root / rel
-        require(copied.is_file(), f"verbatim-edit source {rel} not found (committed?)")
+        require(
+            copied.is_file(),
+            f"verbatim-edit source {rel} not found (committed?)",
+        )
         try:
             copied.write_text(fn(copied.read_text()))
         except RefreshError as exc:
-            raise RefreshError(f"{rel}: {exc}") from exc
+            raise RefreshError.wrap(rel, exc) from exc
 
     # rewrite parameterized files as .mako
     derived = 0
     for rel, fn in DERIVED.items():
         copied = dest_root / rel
-        require(copied.is_file(),
-                f"derived source {rel} not found among tracked files (committed?)")
+        require(
+            copied.is_file(),
+            f"derived source {rel} not found among tracked files (committed?)",
+        )
         try:
             mako_text = fn(copied.read_text())
         except RefreshError as exc:
-            raise RefreshError(f"{rel}: {exc}") from exc
+            raise RefreshError.wrap(rel, exc) from exc
         copied.with_name(copied.name + ".mako").write_text(mako_text)
         copied.unlink()
         derived += 1
@@ -326,6 +418,15 @@ def _build_into(dest_root: Path, files: list[str]) -> tuple[int, int]:
         (dest_root / name).write_text(content)
 
     return derived, len(AUTHORED)
+
+
+def _assemble(staging: pathlib.Path, files: list[str]) -> tuple[int, int]:
+    """Build the template into ``staging`` and render-check it."""
+    derived, authored = _build_into(staging, files)
+    bad = render_check(staging)
+    if bad:
+        raise RefreshError.render_failures(bad)
+    return derived, authored
 
 
 def main() -> int:
@@ -340,10 +441,7 @@ def main() -> int:
         shutil.rmtree(staging)
     staging.mkdir(parents=True)
     try:
-        derived, authored = _build_into(staging, files)
-        bad = render_check(staging)
-        if bad:
-            raise RefreshError(f"{bad} template(s) failed the render check")
+        derived, authored = _assemble(staging, files)
     except BaseException:
         shutil.rmtree(staging, ignore_errors=True)
         raise
@@ -353,9 +451,11 @@ def main() -> int:
     staging.rename(TEMPLATE)  # atomic on the same filesystem
 
     total_mako = sum(1 for _ in TEMPLATE.rglob("*.mako"))
-    print(f"refreshed {TEMPLATE.relative_to(REPO)}: "
-          f"{len(files)} files copied, {derived} derived + "
-          f"{authored} authored = {total_mako} .mako templates, render-check OK")
+    print(
+        f"refreshed {TEMPLATE.relative_to(REPO)}: "
+        f"{len(files)} files copied, {derived} derived + "
+        f"{authored} authored = {total_mako} .mako templates, render-check OK"
+    )
     return 0
 
 
@@ -364,4 +464,4 @@ if __name__ == "__main__":  # pragma: no cover
         raise SystemExit(main())
     except RefreshError as exc:
         print(f"refresh_skill_template: error: {exc}", file=sys.stderr)
-        raise SystemExit(1)
+        raise SystemExit(1) from exc

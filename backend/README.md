@@ -40,7 +40,7 @@ docker compose up -d backend
 2. (Optional but recommended) pin the version in
    `backend/constraints.txt` so builds are reproducible:
 
-   ```
+   ```text
    soliplex >= 0.60.3, < 0.61
    httpx >= 0.28, < 0.29
    pydantic-settings >= 2.7, < 3
@@ -71,7 +71,7 @@ it as an editable path dependency.
    `backend/vendor/<pkgname>/`. It must contain a `pyproject.toml` (or
    `setup.py`). For example:
 
-   ```
+   ```text
    backend/
      Dockerfile
      constraints.txt

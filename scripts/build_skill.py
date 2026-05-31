@@ -30,19 +30,20 @@ or, without uv (falls back to ``uvx --from skills-ref agentskills``):
 from __future__ import annotations
 
 import argparse
+import pathlib
 import shutil
 import subprocess
 import sys
-from pathlib import Path
+import typing
 
 SKILL_NAME = "soliplex-template"
-REPO_DIR = Path(__file__).resolve().parent.parent
+REPO_DIR = pathlib.Path(__file__).resolve().parent.parent
 SRC = REPO_DIR / "skill"
 DIST = REPO_DIR / "dist"
 OUT = DIST / SKILL_NAME
 
 
-def die(msg: str) -> "NoReturn":  # type: ignore[name-defined]
+def die(msg: str) -> typing.NoReturn:
     print(f"build_skill: error: {msg}", file=sys.stderr)
     raise SystemExit(1)
 
@@ -54,14 +55,16 @@ def git_head_commit() -> str | None:
     try:
         out = subprocess.run(
             ["git", "-C", str(REPO_DIR), "rev-parse", "HEAD"],
-            capture_output=True, text=True, check=True,
+            capture_output=True,
+            text=True,
+            check=True,
         )
     except subprocess.CalledProcessError:
         return None
     return out.stdout.strip() or None
 
 
-def stamp_source_commit(skill_md: Path, commit: str) -> None:
+def stamp_source_commit(skill_md: pathlib.Path, commit: str) -> None:
     """Record ``metadata.source_commit: "<commit>"`` in SKILL.md frontmatter.
 
     Mirrors the soliplex-docs skill so scripts/skill_versions.py can identify
@@ -73,18 +76,19 @@ def stamp_source_commit(skill_md: Path, commit: str) -> None:
     if len(fences) < 2:
         die(f"{skill_md} has no YAML frontmatter to stamp")
     start, close = fences[0], fences[1]
-    front = lines[start + 1:close]
+    front = lines[start + 1 : close]
     if any(line.strip().startswith("source_commit:") for line in front):
         return  # already stamped
     entry = f'  source_commit: "{commit}"'
     meta_idx = next(
-        (i for i, line in enumerate(front) if line.strip() == "metadata:"), None
+        (i for i, line in enumerate(front) if line.strip() == "metadata:"),
+        None,
     )
     if meta_idx is not None:
         front.insert(meta_idx + 1, entry)
     else:
         front += ["metadata:", entry]
-    lines[start + 1:close] = front
+    lines[start + 1 : close] = front
     skill_md.write_text("\n".join(lines), encoding="utf-8")
 
 
@@ -101,15 +105,19 @@ def validator_cmd() -> list[str]:
     uvx = shutil.which("uvx")
     if uvx:
         return [uvx, "--from", "skills-ref", "agentskills", "validate"]
-    die("cannot find the agent-skills validator; install 'skills-ref' "
-        "(pip install skills-ref) or run this script with 'uv run'")
+    die(
+        "cannot find the agent-skills validator; install 'skills-ref' "
+        "(pip install skills-ref) or run this script with 'uv run'"
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Assemble + validate the skill.")
+    parser = argparse.ArgumentParser(
+        description="Assemble + validate the skill."
+    )
     parser.add_argument(
         "--commit",
-        help="Source commit to stamp into SKILL.md metadata (default: git HEAD).",
+        help="Commit to stamp into SKILL.md metadata (default: git HEAD).",
     )
     args = parser.parse_args(argv)
 
@@ -128,8 +136,11 @@ def main(argv: list[str] | None = None) -> int:
     if commit:
         stamp_source_commit(OUT / "SKILL.md", commit)
     else:
-        print("build_skill: warning: no commit available; SKILL.md left unstamped",
-              file=sys.stderr)
+        print(
+            "build_skill: warning: no commit available; "
+            "SKILL.md left unstamped",
+            file=sys.stderr,
+        )
 
     # Validate the assembled skill (directory name must match the frontmatter
     # 'name', required fields present, etc.). Fail the build on any error.
@@ -138,7 +149,10 @@ def main(argv: list[str] | None = None) -> int:
     if result.returncode != 0:
         die("skill validation failed")
 
-    print(f"built & validated: {OUT}" + (f" (commit {commit[:7]})" if commit else ""))
+    print(
+        f"built & validated: {OUT}"
+        + (f" (commit {commit[:7]})" if commit else "")
+    )
     return 0
 
 

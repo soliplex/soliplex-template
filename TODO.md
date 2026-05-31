@@ -3,7 +3,7 @@
 ## `soliplex-template` filesystem skill
 
 Write a **filesystem skill** (per the agent-skills spec,
-https://agentskills.io/home) that scaffolds a new Soliplex Docker
+<https://agentskills.io/home>) that scaffolds a new Soliplex Docker
 Compose project.
 
 The skill should:
@@ -45,12 +45,32 @@ asset (mirroring the `soliplex-docs` skill workflow).
 
 ## Future work
 
-- **Run the test suites in CI (or pre-commit).** The `tests/unit/scripts/` suite
-  (and the opt-in `tests/functional/` suite) are currently local-only; wire them
-  into a GitHub Actions job and/or a `pre-commit` hook so the 100% unit gate is
-  enforced on push/PR. The functional job needs a docker-enabled runner and runs
-  `uv run --group dev pytest tests/functional --no-cov`. Folds naturally into the
-  pre-commit work below.
+  **Done — `python-test.yaml` CI workflow** (parallel to soliplex/soliplex's).
+  `.github/workflows/python-test.yaml` runs, on push/PR to `main` (+ dispatch):
+  `uv run pytest` (tests/unit under the pyproject addopts, so the
+  `--cov-fail-under=100` gate is enforced in CI) then
+  `uv run pytest --no-cov -m "not needs_docker" tests/functional/` (the hermetic
+  functional cases; the docker-gated ones are excluded in CI — the analogue of
+  soliplex's `not needs_llm`). actionlint-clean; Slack omitted (see restore-Slack
+  item).
+
+  **Still open:** running the **docker-gated** functional cases in CI (the
+  `needs_docker` postgres bring-up) — would need a docker-enabled job; deferred
+  alongside the full-stack bring-up item below.
+
+- **Expand supported Python to match soliplex/soliplex.** This repo currently
+  pins `requires-python = ">=3.13"` and the CI workflows run a single 3.13
+  (`python-version-file`). soliplex supports/tests a matrix (3.12, 3.13, 3.14,
+  coverage only on >= 3.13). To match:
+  - Lower `requires-python` toward `>=3.12` (reconcile with the scripts' PEP 723
+    `requires-python`: `build_skill.py`/`refresh_skill_template.py` already say
+    `>=3.11`, `generate_soliplex_project.py` says `>=3.13`; decide the real floor
+    and align all of them + `[tool.ruff] target-version`).
+  - Switch `python-lint.yaml` and `python-test.yaml` to a `strategy.matrix`
+    over the supported versions (mirroring soliplex), running coverage only on
+    `>= 3.13` (e.g. `--no-cov` on the lowest, as soliplex does for 3.12).
+  - Verify the suites + the generator actually pass on each version (3.12 may
+    need syntax/typing checks; `uv sync` against each interpreter).
 
 - **Extend the functional test toward a full-stack bring-up (deferred).** The
   current functional test brings up only `postgres` (deterministic, no network
@@ -123,14 +143,43 @@ asset (mirroring the `soliplex-docs` skill workflow).
   removed for now because the `SLACK_NOTIFY_URL` secret isn't available yet.
   Re-add it once the secret exists — it posts to `#soliplex` via
   `slackapi/slack-github-action@v2.1.0` on `if: failure()`.
-- **Add `.pre-commit-config.yaml`.** Set up pre-commit hooks for this repo,
-  including:
-  - `actionlint` — lint the GitHub Actions workflow(s) under
-    `.github/workflows/` (we could not run it during the workflow's authoring).
-  - other germane checks, e.g. `ruff` (lint/format the Python scripts under
-    `scripts/` and `skill/scripts/`), `check-yaml`/`check-json` and the usual
-    `pre-commit-hooks` hygiene hooks, `shellcheck` for the shell scripts
-    (`scripts/generate-secrets.sh`, `postgres/config/init.sh`), and a
-    hook that runs `scripts/build_skill.py` (skill validation via `skills-ref`).
-  - See the `.pre-commit-config.yaml` added in soliplex/soliplex#1028 for a
-    reference shape.
+  **Done — linting / pre-commit** (mirrors soliplex/soliplex `pyproject.toml` +
+  `.pre-commit-config.yaml`). `pyproject.toml` carries the `[tool.ruff*]`
+  (line-length 79, `F/E/B/U/I/PD/TRY/PT`, single-line isort) and
+  `[tool.pymarkdown]` config; `ruff` is in the `dev` group.
+  `.pre-commit-config.yaml` runs ruff-check + ruff-format, the `pre-commit-hooks`
+  hygiene set (incl. `no-commit-to-branch` main/master, trailing-whitespace,
+  end-of-file, check-toml, check-yaml, debug-statements), gitleaks, a local
+  `pip-audit`, pymarkdown, and actionlint. `uvx pre-commit run --all-files` is
+  green. Notes:
+  - check-yaml caught a **real bug** — a duplicate `processing:` key in
+    `backend/environment/haiku.rag.yaml` that silently dropped `chunk_size`;
+    merged into one block.
+  - `refresh_skill_template.py` now excludes `tests/` and
+    `.pre-commit-config.yaml` (they aren't project files), and
+    `t_nginx_dockerfile` emits a newline-terminated `.mako` (keeps end-of-file
+    and refresh from fighting) while the rendered Dockerfile stays
+    byte-identical.
+  - `ruff check` (lint) is **clean** repo-wide and gated by the `ruff-check`
+    pre-commit hook. (This goes one step beyond soliplex, whose pre-commit only
+    formats and enforces `ruff check` via CI; here it's enforced locally too.)
+    Clearing the findings: `TRY003` messages were moved into
+    `GenError`/`RefreshError` factory classmethods (no inline raise messages);
+    `B904` (`raise ... from exc`), `B028` (`warnings.warn(..., stacklevel=2)`),
+    `PT018` (split composite asserts), `TRY301` (extracted `refresh._assemble`),
+    and `E501` (wrapped) all fixed in code — no `# noqa`, no rule ignores.
+  - Imports are module-style repo-wide (`import pathlib` → `pathlib.Path`,
+    `from mako import template`, `from collections import abc`); the four
+    scripts were converted, the tests were already compliant.
+  - `shellcheck` and a `build_skill.py` hook (from the earlier sketch) are not
+    in soliplex's pre-commit, so left out to match. soliplex#1028 is historical
+    reference only.
+
+  **Done — `python-lint.yaml` CI workflow** (parallel to soliplex/soliplex's).
+  `.github/workflows/python-lint.yaml` runs `uv run ruff format --check` +
+  `uv run ruff check` on push/PR to `main` (paths: `pyproject.toml`, `uv.lock`,
+  `scripts/**`, `skill/scripts/**`, `tests/**`, the workflow itself) and on
+  `workflow_dispatch`. Uses the repo's `setup-uv` + `python-version-file`
+  convention (like `build-skill.yaml`); actionlint-clean. The Slack-on-failure
+  step from the soliplex version is omitted until `SLACK_NOTIFY_URL` exists —
+  see the restore-Slack item.

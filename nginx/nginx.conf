@@ -26,8 +26,8 @@ http {
     proxy_hide_header Server;
     proxy_hide_header X-AspNet-Version;
     proxy_hide_header X-Runtime;
-    
-    
+
+
     # Use Docker's internal DNS resolver with short cache TTL
     # This prevents stale IP caching when containers restart
     resolver 127.0.0.11 valid=10s;
@@ -52,7 +52,7 @@ http {
     # Rate limiting for API and MCP endpoints (50 req/s per client IP, burst to 100)
     limit_req_zone $binary_remote_addr zone=api:10m rate=50r/s;
     limit_req_status 429;
-    
+
     # Concurrent connection limit (10 per client IP)
     limit_conn_zone $binary_remote_addr zone=conn:10m;
     limit_conn_status 429;

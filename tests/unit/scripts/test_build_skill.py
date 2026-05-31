@@ -35,7 +35,7 @@ _GIT_REV_PARSE = ["git", "-C", str(bs.REPO_DIR), "rev-parse", "HEAD"]
 # Helpers
 # --------------------------------------------------------------------------
 def _skill_md(extra_meta: bool = False) -> str:
-    """A minimal valid SKILL.md frontmatter, optionally with a metadata block."""
+    """A minimal valid SKILL.md frontmatter, optionally with metadata."""
     lines = ["---", "name: soliplex-template", "description: scaffold a stack"]
     if extra_meta:
         lines.append("metadata:")

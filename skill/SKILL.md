@@ -24,21 +24,25 @@ is to collect parameters from the user and invoke it.
    - models (`chat_model`, `title_model`, `rag_embed_model`, …)
 
    You can show the defaults with:
+
    ```bash
    uv run scripts/generate_soliplex_project.py --print-defaults
    ```
 
 2. **Write the answers to a JSON file** (omit keys to accept defaults), e.g.
    `params.json`:
+
    ```json
    { "project_name": "acme", "ollama_base_url": "http://ollama:11434",
      "nginx_http": 9100, "auth_mode": "auth" }
    ```
 
 3. **Run the generator:**
+
    ```bash
    uv run scripts/generate_soliplex_project.py --out <output_dir> --params params.json
    ```
+
    - Without `uv`: `pip install mako && python3 scripts/generate_soliplex_project.py --out <dir> --params params.json`
    - Add `--interactive` to be prompted on stdin instead of (or in addition to)
      a params file.

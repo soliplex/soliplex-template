@@ -1,0 +1,45 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # Ruff version matching your devenv setup
+    rev: v0.15.10
+    hooks:
+      - id: ruff-check
+        types: [python]
+      - id: ruff-format
+        types: [python]
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0 # Use the latest stable version
+    hooks:
+      - id: no-commit-to-branch
+        args: ["--branch", "main", "--branch", "master"]
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-merge-conflict
+      - id: check-toml
+      - id: check-yaml
+      - id: debug-statements
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.0
+    hooks:
+      - id: gitleaks
+  - repo: local
+    hooks:
+      - id: pip-audit
+        name: pip-audit
+        entry: uv run --with pip-audit pip-audit --skip-editable
+        language: system
+        pass_filenames: false
+        files: (^pyproject\.toml$|^uv\.lock|^.pre-commit-config.yaml$)
+
+  - repo: https://github.com/jackdewinter/pymarkdown
+    rev: v0.9.36
+    hooks:
+      - id: pymarkdown
+        args:
+          - "scan"
+
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.7
+    hooks:
+      - id: actionlint

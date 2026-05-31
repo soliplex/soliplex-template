@@ -41,7 +41,7 @@ _spec.loader.exec_module(sv)
 def _write_skill(
     root: pathlib.Path, *, commit: str, files: dict[str, str]
 ) -> pathlib.Path:
-    """Build a skill tree at ``root`` (SKILL.md + references/*) and return it."""
+    """Build a skill tree (SKILL.md + references/*) at ``root``; return it."""
     root.mkdir(parents=True)
     (root / "SKILL.md").write_text(
         "---\n"

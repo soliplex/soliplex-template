@@ -54,7 +54,7 @@ as JSON.
 
 - `setup_id` ← `<project_name>-conf` when not supplied.
 - `tls_subject` ← `/C=US/ST=State/L=City/O=Soliplex/CN=<server_name>` when not supplied.
-- `backend_auth_flag` ← `--no-auth-mode ` when `auth_mode == "no-auth"`, else empty
+- `backend_auth_flag` ← `--no-auth-mode` plus a trailing space when `auth_mode == "no-auth"`, else empty
   (consumed by `docker-compose.yml.mako`).
 
 ## Notes

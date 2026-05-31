@@ -17,11 +17,12 @@ dependencies = []
 #                 (`uv run --group dev pytest`)
 [dependency-groups]
 dev = [
+    "coverage",
     "mako",
     "skills-ref",
     "pytest",
     "pytest-cov",
-    "coverage",
+    "ruff",
 ]
 
 # This repo is configuration + Dockerfiles + skill source, not an installable
@@ -48,3 +49,52 @@ markers = [
 
 [tool.coverage.report]
 show_missing = true
+
+# Lint/format config mirrors soliplex/soliplex (same rule selection, line length,
+# single-line imports, and pytest-style tweaks). ruff-format is enforced by the
+# pre-commit hook; `ruff check` uses these rules on demand.
+[tool.ruff]
+line-length = 79
+exclude = [
+]
+target-version = "py313"
+
+[tool.ruff.lint]
+select = [
+    # flake8
+    "F",
+    # pycodestyle
+    "E",
+    # flake8-bugbear
+    "B",
+    # pyupgrade
+    "U",
+    # isort
+    "I",
+    # pandas vet
+    "PD",
+    # tryceratops
+    "TRY",
+    # flake8-pytest-style
+    "PT",
+]
+ignore = [
+    "PT019",  # incorrecly flags '@mock.patch' args as fixtures
+]
+
+[tool.ruff.lint.isort]
+force-single-line = true
+
+[tool.ruff.lint.flake8-pytest-style]
+parametrize-names-type = "csv"
+
+# pymarkdown config mirrors soliplex/soliplex (front-matter on; the noisy
+# stylistic rules disabled).
+[tool.pymarkdown]
+extensions.front-matter.enabled = true
+plugins.line-length.enabled = false             # md013
+plugins.no-duplicate-heading.enabled = false    # md024
+plugins.no-inline-html.enabled = false          # md033
+plugins.no-emphasis-as-heading.enabled = false  # md036
+plugins.first-line-heading.enabled = false      # md041
+plugins.code-block-style.enabled = false        # md046
