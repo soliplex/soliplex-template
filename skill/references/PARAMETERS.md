@@ -15,7 +15,7 @@ as JSON.
 | `--params FILE` | JSON object of parameter overrides. |
 | `--interactive` | Prompt for each parameter on stdin (blank keeps the default). |
 | `--force` | Allow writing into a non-empty `--out`. |
-| `--run-secrets` | Run `scripts/generate-secrets.sh` in the new project after scaffolding. |
+| `--generate-secrets` / `--no-generate-secrets` | Run `scripts/generate-secrets.sh` in the new project after scaffolding. **Default: enabled**; pass `--no-generate-secrets` to skip. |
 | `--no-git` | Skip `git init` / initial commit. |
 | `--disable-gpg-sign` | Pass `commit.gpgsign=false` for the initial commit. Default: respect the host git config. |
 | `--print-defaults` | Print default parameters as JSON and exit. |

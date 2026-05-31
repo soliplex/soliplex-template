@@ -46,7 +46,7 @@ def _args(**overrides) -> argparse.Namespace:
         params=None,
         interactive=False,
         force=False,
-        run_secrets=False,
+        generate_secrets=True,
         no_git=False,
         disable_gpg_sign=False,
         print_defaults=False,
@@ -566,7 +566,7 @@ def test_parse_args_flags():
             "x",
             "--interactive",
             "--force",
-            "--run-secrets",
+            "--no-generate-secrets",
             "--no-git",
             "--disable-gpg-sign",
             "--print-defaults",
@@ -576,10 +576,16 @@ def test_parse_args_flags():
     assert args.out == "x"
     assert args.interactive
     assert args.force
-    assert args.run_secrets
+    assert args.generate_secrets is False
     assert args.no_git
     assert args.disable_gpg_sign
     assert args.print_defaults
+
+
+def test_parse_args_generate_secrets_defaults_on():
+    args = gen.parse_args(["--out", "x"])
+
+    assert args.generate_secrets is True
 
 
 # --------------------------------------------------------------------------
@@ -746,7 +752,7 @@ def test_main_happy_no_secrets_no_git(
     maybe_git_init,
     capsys,
 ):
-    rc = gen.main(["--out", str(out_path)])
+    rc = gen.main(["--out", str(out_path), "--no-generate-secrets"])
 
     captured = capsys.readouterr().out
     assert rc == 0
@@ -787,5 +793,6 @@ def test_main_happy_with_secrets_and_git(
     assert rc == 0
     assert "initial commit created" in captured
     assert "generate-secrets.sh" not in captured
-    maybe_run_secrets.assert_called_once_with(out_path.resolve(), False)
+    # secrets generation now defaults on, so main() passes True with no flag.
+    maybe_run_secrets.assert_called_once_with(out_path.resolve(), True)
     maybe_git_init.assert_called_once_with(out_path.resolve(), True, False)

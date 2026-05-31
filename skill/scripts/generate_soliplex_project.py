@@ -447,9 +447,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="allow writing into a non-empty --out",
     )
     p.add_argument(
-        "--run-secrets",
-        action="store_true",
-        help="run scripts/generate-secrets.sh after scaffolding",
+        "--generate-secrets",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="run scripts/generate-secrets.sh after scaffolding "
+        "(default: enabled; use --no-generate-secrets to skip)",
     )
     p.add_argument(
         "--no-git",
@@ -498,7 +500,7 @@ def main(argv: list[str]) -> int:
     render_tree(template_root, out, params)
     ensure_runtime_dirs(out, str(params["docs_dir"]))
     write_env(out, params)
-    ran_secrets = maybe_run_secrets(out, args.run_secrets)
+    ran_secrets = maybe_run_secrets(out, args.generate_secrets)
     did_git = maybe_git_init(out, not args.no_git, args.disable_gpg_sign)
 
     print(f"\n✓ Scaffolded {params['project_name']} at {out}\n")
