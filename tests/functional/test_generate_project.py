@@ -19,6 +19,7 @@ This tree is opt-in -- it is not in ``testpaths``. Run it with:
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import pathlib
@@ -361,6 +362,94 @@ def test_generated_package_is_importable(generated_project):
 
     assert result.returncode == 0, result.stderr
     assert "Ada" in result.stdout
+
+
+# --------------------------------------------------------------------------
+# Documentation site (Zensical)
+#
+# The generated project ships a parameterized Zensical docs site under docs/
+# (paralleling the upstream template repo's site) plus a zensical.toml.
+# --------------------------------------------------------------------------
+_DOC_PAGES = (
+    "docs/index.md",
+    "docs/getting-started/installation.md",
+    "docs/architecture/services.md",
+    "docs/architecture/configuration.md",
+    "docs/architecture/backend.md",
+    "docs/operations/secrets.md",
+    "docs/operations/rag.md",
+    "docs/operations/ingester.md",
+    "docs/custom-package.md",
+)
+
+
+def test_docs_site_synthesized(generated_project):
+    out, _params = generated_project
+
+    missing = [
+        rel
+        for rel in (*_DOC_PAGES, "zensical.toml")
+        if not (out / rel).is_file()
+    ]
+
+    assert missing == []
+
+
+def test_docs_are_parameterized(generated_project):
+    out, params = generated_project
+
+    zensical = _read(out, "zensical.toml")
+    index = _read(out, "docs/index.md")
+    custom = _read(out, "docs/custom-package.md")
+
+    assert f'site_name = "{params["project_name"]}"' in zensical
+    assert str(params["nginx_http"]) in index
+    assert f"src/{_PACKAGE}" in custom
+
+
+def test_docs_markdown_headings_survive_rendering(generated_project):
+    # Mako treats a leading '##' as a comment; the templates wrap headings in
+    # <%text> so Markdown headings survive. Guard against that regression in
+    # both an authored doc and the README.
+    out, _params = generated_project
+
+    install = _read(out, "docs/getting-started/installation.md")
+    readme = _read(out, "README.md")
+
+    assert "## Prerequisites" in install
+    assert "## Exposed ports" in install
+    assert "## Documentation" in readme
+
+
+def test_pyproject_includes_zensical_dev_dep(generated_project):
+    out, _params = generated_project
+
+    pyproject = _read(out, "pyproject.toml")
+
+    assert "zensical" in pyproject
+
+
+def test_docs_build_with_zensical(generated_project):
+    out, params = generated_project
+    # Hermetic: zensical is pure-Python (in this repo's dev group) and builds
+    # the static site offline. Skip-with-warning if it isn't importable.
+    if importlib.util.find_spec("zensical") is None:
+        warnings.warn(
+            "zensical not importable; skipping docs build test",
+            stacklevel=2,
+        )
+        pytest.skip("zensical not installed")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "zensical", "build", "--strict"],
+        cwd=out,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (out / "site" / "index.html").is_file()
+    assert params["project_name"] in _read(out, "site", "index.html")
 
 
 # --------------------------------------------------------------------------

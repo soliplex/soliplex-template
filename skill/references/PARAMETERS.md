@@ -81,6 +81,22 @@ the custom code. The bundled `tools.greeting` tool and `views.router` FastAPI
 router are referenced by dotted name from the Soliplex config (which is why
 those config files are Mako templates).
 
+## The generated project's documentation site
+
+The scaffolded project also ships its own [Zensical](https://zensical.org) docs
+site under `docs/` (with a `zensical.toml`), paralleling this template repo's
+own site but with the project's parameters substituted in (name, ports,
+`package_name`, …). `zensical` is added to the project's `dev` dependency group,
+so the owner can build or preview it locally:
+
+```bash
+uv run zensical serve     # preview at http://localhost:8000
+uv run zensical build     # static site under site/ (gitignored)
+```
+
+No publishing workflow is generated (the owner's eventual repository URL is
+unknown at generation time).
+
 ## Notes
 
 - Container-internal ports (backend `8000`, TUI `8002`, and the internal nginx
