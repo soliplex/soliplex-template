@@ -45,12 +45,18 @@ asset (mirroring the `soliplex-docs` skill workflow).
 
 ## Future work
 
-- **Run the test suites in CI (or pre-commit).** The `tests/unit/scripts/` suite
-  (and the opt-in `tests/functional/` suite) are currently local-only; wire them
-  into a GitHub Actions job and/or a `pre-commit` hook so the 100% unit gate is
-  enforced on push/PR. The functional job needs a docker-enabled runner and runs
-  `uv run --group dev pytest tests/functional --no-cov`. Folds naturally into the
-  pre-commit work below.
+  **Done — `python-test.yaml` CI workflow** (parallel to soliplex/soliplex's).
+  `.github/workflows/python-test.yaml` runs, on push/PR to `main` (+ dispatch):
+  `uv run pytest` (tests/unit under the pyproject addopts, so the
+  `--cov-fail-under=100` gate is enforced in CI) then
+  `uv run pytest --no-cov -m "not needs_docker" tests/functional/` (the hermetic
+  functional cases; the docker-gated ones are excluded in CI — the analogue of
+  soliplex's `not needs_llm`). actionlint-clean; Slack omitted (see restore-Slack
+  item).
+
+  **Still open:** running the **docker-gated** functional cases in CI (the
+  `needs_docker` postgres bring-up) — would need a docker-enabled job; deferred
+  alongside the full-stack bring-up item below.
 
 - **Extend the functional test toward a full-stack bring-up (deferred).** The
   current functional test brings up only `postgres` (deterministic, no network
