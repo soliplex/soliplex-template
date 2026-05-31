@@ -35,8 +35,29 @@ The skill should:
 
 This template repo itself is the reference for the files the skill should emit.
 
-### Deferred follow-ups (after the generator itself is finished)
+### Status
 
-- **CI workflow to publish the skill.** Add the CI job that runs
-  `scripts/build_skill.py` and publishes the assembled
-  `dist/soliplex-project-generator/` as a GitHub Release asset (tarball).
+Done: the skill source lives under `skill/`, `scripts/build_skill.py` assembles
+and validates it into `dist/`, `scripts/refresh_skill_template.py` re-derives the
+embedded template from the repo exemplars, and
+`.github/workflows/build-skill.yaml` publishes the skill as a GitHub Release
+asset (mirroring the `soliplex-docs` skill workflow).
+
+## Future work
+
+- **Restore the Slack failure notification in `build-skill.yaml`.** The
+  `Notify Slack on failure` step (mirroring the `soliplex-docs` workflow) was
+  removed for now because the `SLACK_NOTIFY_URL` secret isn't available yet.
+  Re-add it once the secret exists — it posts to `#soliplex` via
+  `slackapi/slack-github-action@v2.1.0` on `if: failure()`.
+- **Add `.pre-commit-config.yaml`.** Set up pre-commit hooks for this repo,
+  including:
+  - `actionlint` — lint the GitHub Actions workflow(s) under
+    `.github/workflows/` (we could not run it during the workflow's authoring).
+  - other germane checks, e.g. `ruff` (lint/format the Python scripts under
+    `scripts/` and `skill/scripts/`), `check-yaml`/`check-json` and the usual
+    `pre-commit-hooks` hygiene hooks, `shellcheck` for the shell scripts
+    (`scripts/generate-secrets.sh`, `postgres/config/init.sh`), and a
+    hook that runs `scripts/build_skill.py` (skill validation via `skills-ref`).
+  - See the `.pre-commit-config.yaml` added in soliplex/soliplex#1028 for a
+    reference shape.

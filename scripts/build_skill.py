@@ -3,16 +3,16 @@
 # requires-python = ">=3.11"
 # dependencies = ["skills-ref"]
 # ///
-"""Assemble the soliplex-project-generator skill into dist/.
+"""Assemble and validate the soliplex-project-generator skill into dist/.
 
-Packages the tracked source under ``skill/`` into:
+Copies the tracked source under ``skill/`` into the published skill directory:
 
-    dist/soliplex-project-generator/        (the published skill directory)
-    dist/soliplex-project-generator.tar.gz  (release asset, later published by CI)
+    dist/soliplex-project-generator/
 
-The assembled skill is validated with the agent-skills reference tool
-(``skills-ref`` package, ``agentskills`` CLI). ``dist/`` is gitignored; this
-script is the single source of truth for assembly.
+and validates it with the agent-skills reference tool (``skills-ref`` package,
+``agentskills`` CLI). Packaging into release assets (tarball/zip) is the CI
+workflow's job (see .github/workflows/build-skill.yaml), which writes those
+under ``dist/`` too. ``dist/`` is gitignored.
 
 Run with uv (provisions the validator automatically):
 
@@ -28,7 +28,6 @@ from __future__ import annotations
 import shutil
 import subprocess
 import sys
-import tarfile
 from pathlib import Path
 
 SKILL_NAME = "soliplex-project-generator"
@@ -36,7 +35,6 @@ REPO_DIR = Path(__file__).resolve().parent.parent
 SRC = REPO_DIR / "skill"
 DIST = REPO_DIR / "dist"
 OUT = DIST / SKILL_NAME
-TARBALL = DIST / f"{SKILL_NAME}.tar.gz"
 
 
 def die(msg: str) -> "NoReturn":  # type: ignore[name-defined]
@@ -79,12 +77,7 @@ def main() -> int:
     if result.returncode != 0:
         die("skill validation failed")
 
-    # Package the release asset with a top-level <skill name>/ directory.
-    with tarfile.open(TARBALL, "w:gz") as tar:
-        tar.add(OUT, arcname=SKILL_NAME)
-
-    print(f"built: {OUT}")
-    print(f"asset: {TARBALL}")
+    print(f"built & validated: {OUT}")
     return 0
 
 

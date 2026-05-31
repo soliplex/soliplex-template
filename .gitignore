@@ -16,7 +16,9 @@
 tmp/
 db/
 
-# Built skill artifact (assembled by build-skill.sh, published by CI)
+# Skill build artifacts:
+# 'scripts/build_skill.py' generates files here
+# CI publishes from here
 /dist/
 
 #logs

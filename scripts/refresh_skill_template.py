@@ -41,10 +41,13 @@ TEMPLATE = REPO / "skill" / "assets" / "template"
 EXCLUDE_PATHSPECS = [
     ":!TODO.md",
     ":!.claude",
+    ":!.github",                            # this repo's CI, not a project file
     ":!skill",                              # the skill source itself (no recursion)
     ":!dist",                               # build artifact
     ":!scripts/build_skill.py",             # skill-build tooling, not project files
     ":!scripts/refresh_skill_template.py",
+    ":!pyproject.toml",                     # repo tooling; project gets pyproject.toml.mako
+    ":!uv.lock",                            # repo tooling lockfile
     ":!README.md",                          # replaced by the authored README.md.mako
 ]
 
@@ -166,10 +169,10 @@ def t_init_sh(text: str) -> str:
 
 
 def t_gitignore(text: str) -> str:
-    # The repo ignores its own skill build artifact (/dist/); a generated
+    # The repo ignores its own skill build artifacts under /dist/; a generated
     # project has no such artifact, so strip that block from its .gitignore.
-    new, n = re.subn(r"\n# Built skill artifact[^\n]*\n/dist/\n\n?", "\n", text, count=1)
-    require(n == 1, "expected the '/dist/' skill-artifact block in .gitignore")
+    new, n = re.subn(r"\n# Skill build artifacts[^\n]*\n/dist/\n\n?", "\n", text, count=1)
+    require(n == 1, "expected the '/dist/' skill build artifacts block in .gitignore")
     return new
 
 
