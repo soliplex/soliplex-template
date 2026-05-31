@@ -45,10 +45,34 @@ asset (mirroring the `soliplex-docs` skill workflow).
 
 ## Future work
 
-- **Run the unit-test suite in CI (or pre-commit).** The `tests/unit/scripts/`
-  suite is currently local-only (`uv run --group dev pytest`); wire it into a
-  GitHub Actions job and/or a `pre-commit` hook so the 100% gate is enforced on
-  push/PR. Folds naturally into the pre-commit work below.
+- **Run the test suites in CI (or pre-commit).** The `tests/unit/scripts/` suite
+  (and the opt-in `tests/functional/` suite) are currently local-only; wire them
+  into a GitHub Actions job and/or a `pre-commit` hook so the 100% unit gate is
+  enforced on push/PR. The functional job needs a docker-enabled runner and runs
+  `uv run --group dev pytest tests/functional --no-cov`. Folds naturally into the
+  pre-commit work below.
+
+- **Extend the functional test toward a full-stack bring-up (deferred).** The
+  current functional test brings up only `postgres` (deterministic, no network
+  beyond a base image). A full `docker compose up -d --wait` of the whole stack
+  would be the strongest signal but is heavy and flaky: 4 local builds + 2
+  multi-GB image pulls, network egress to GitHub/PyPI/ghcr, the non-reproducible
+  "latest frontend release", and a **live Ollama** serving `qwen3-embedding:4b`
+  (haiku-ingester health) / `gpt-oss:*`. If added, gate it behind an explicit
+  opt-in env flag plus daemon/network/Ollama skip-conditions, never in the
+  default functional run.
+
+  **Done — functional test for the generator.**
+  `tests/functional/test_generate_project.py` runs the real CLI
+  (`generate_soliplex_project.py`) as a subprocess with `--run-secrets` +
+  `--disable-gpg-sign`, then asserts: no leftover `*.mako`; parameters
+  substituted and cross-file consistent; `<%text>` literals survived;
+  runtime dirs + `.gitkeep`; `.env`; the four `.secrets/*.gen` (mode 0600); a
+  single clean `git` commit; `docker compose config -q` valid; and `postgres`
+  brought up (`up -d --wait`) to **healthy** then `down -v`. Live deps
+  skip-with-warning when absent (git/bash/openssl; docker CLI/daemon). The tree
+  is opt-in (not in `testpaths`); `needs_docker` marker registered. Run with
+  `uv run --group dev pytest tests/functional --no-cov`.
 
   **Done — unit-test coverage for the Python scripts** (following
   soliplex/soliplex#1033). All four scripts are covered, hermetic, loaded by

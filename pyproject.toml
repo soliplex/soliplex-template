@@ -35,8 +35,16 @@ package = false
 # files themselves dead-code-free.
 [tool.pytest.ini_options]
 python_files = "test_*.py"
+# Functional tests live under tests/functional/ and are opt-in (they generate a
+# real project and shell out to git/openssl/docker). Run them explicitly with
+#   uv run --group dev pytest tests/functional --no-cov
+# (--no-cov because the generator runs in a child process, so it isn't measured
+# and would otherwise trip --cov-fail-under). They are not collected by default.
 testpaths = ["tests/unit"]
 addopts = "--cov=scripts --cov=skill/scripts --cov=tests/unit --cov-branch --cov-fail-under=100"
+markers = [
+    "needs_docker: functional test requiring the docker CLI + daemon",
+]
 
 [tool.coverage.report]
 show_missing = true
