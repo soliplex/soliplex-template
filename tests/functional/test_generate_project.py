@@ -49,6 +49,9 @@ _PARAMS = {
     # A docs dir the template does NOT ship, so ensure_runtime_dirs creates it
     # empty and drops a .gitkeep (exercising that branch + the compose mount).
     "docs_dir": "rag/inbox",
+    # Pin a (fictional) frontend release tag to prove version selection lands
+    # in nginx/Dockerfile as a /releases/tags/<tag> API URL.
+    "frontend_version": "v9.9.9-test",
 }
 
 _GEN_TOOLS = ("git", "bash", "openssl")
@@ -219,6 +222,15 @@ def test_cross_file_consistency(generated_project):
         "postgres_port",
     ):
         assert f"{params[key]}:" in compose
+
+
+def test_frontend_version_pinned_in_nginx_dockerfile(generated_project):
+    out, params = generated_project
+
+    dockerfile = _read(out, "nginx/Dockerfile")
+
+    assert f"releases/tags/{params['frontend_version']}" in dockerfile
+    assert "releases/latest" not in dockerfile
 
 
 def test_escaped_literals_survived(generated_project):

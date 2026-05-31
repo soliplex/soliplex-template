@@ -185,6 +185,7 @@ def test_coerce_derives_defaults():
     assert result["tls_subject"].endswith("CN=localhost")
     assert result["backend_auth_flag"] == "--no-auth-mode "
     assert result["nginx_http"] == 9000
+    assert result["frontend_release_path"] == "latest"
 
 
 def test_coerce_int_error():
@@ -216,6 +217,16 @@ def test_coerce_derives_package_name_from_project_name():
     result = gen.coerce_and_derive(params)
 
     assert result["package_name"] == "my_cool_app"
+
+
+def test_coerce_derives_frontend_release_path_for_pinned_version():
+    params = dict(gen.DEFAULTS)
+    params["ollama_base_url"] = "http://x"
+    params["frontend_version"] = "v0.60.0"
+
+    result = gen.coerce_and_derive(params)
+
+    assert result["frontend_release_path"] == "tags/v0.60.0"
 
 
 # --------------------------------------------------------------------------
@@ -265,6 +276,15 @@ def test_validate_bad_package_name(package_name):
     params["package_name"] = package_name
 
     with pytest.raises(gen.GenError, match="not a valid Python identifier"):
+        gen.validate(params)
+
+
+@pytest.mark.parametrize("frontend_version", ["", "v 1", 'has"quote'])
+def test_validate_bad_frontend_version(frontend_version):
+    params = _valid_params()
+    params["frontend_version"] = frontend_version
+
+    with pytest.raises(gen.GenError, match="must be 'latest' or"):
         gen.validate(params)
 
 

@@ -1,6 +1,6 @@
 ---
 name: soliplex-template
-description: Scaffold a new, runnable Soliplex Docker Compose project (nginx + Soliplex backend + Flutter frontend + haiku-ingester + Postgres, plus docling-serve and a TUI). Prompts for parameters (project name, host ports, OLLAMA_BASE_URL, models, Postgres DB names, version pins, auth mode, docs dir, ingester token) and generates the full stack from an embedded template. Use when a user wants to stand up, bootstrap, or create a new Soliplex deployment / compose stack.
+description: Scaffold a new, runnable Soliplex Docker Compose project (nginx + Soliplex backend + Flutter frontend + haiku-ingester + Postgres, plus docling-serve and a TUI). Prompts for parameters (project name, host ports, OLLAMA_BASE_URL, models, Postgres DB names, version pins, frontend version, auth mode, docs dir, ingester token) and generates the full stack from an embedded template. Use when a user wants to stand up, bootstrap, or create a new Soliplex deployment / compose stack.
 ---
 
 # Soliplex project generator
@@ -22,12 +22,25 @@ is to collect parameters from the user and invoke it.
      `postgres_port`
    - `auth_mode` (`no-auth` or `auth`)
    - models (`chat_model`, `title_model`, `rag_embed_model`, …)
+   - `frontend_version` (`latest`, or a `soliplex/frontend` release tag to pin)
 
    You can show the defaults with:
 
    ```bash
    uv run scripts/generate_soliplex_project.py --print-defaults
    ```
+
+   For `frontend_version`, **offer the user real choices** instead of asking
+   them to recall a tag: list recent `soliplex/frontend` releases (newest
+   first) and present them alongside `latest` (the default):
+
+   ```bash
+   curl -s https://api.github.com/repos/soliplex/frontend/releases \
+     | jq -r '.[].tag_name' | head
+   ```
+
+   Fall back to `latest` (or free-text tag entry) if the API is unreachable or
+   rate-limited; set `GITHUB_TOKEN`/`GH_TOKEN` to raise the rate limit.
 
 2. **Write the answers to a JSON file** (omit keys to accept defaults), e.g.
    `params.json`:
