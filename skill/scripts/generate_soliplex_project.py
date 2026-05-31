@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import keyword
 import os
 import pathlib
 import re
@@ -135,6 +136,15 @@ class GenError(Exception):
         return cls(f"{key}={value!r} must be a valid SQL identifier")
 
     @classmethod
+    def bad_package_name(cls, project_name, package_name):
+        return cls(
+            f"project_name={project_name!r} yields package name "
+            f"{package_name!r}, which is not a valid Python identifier "
+            "(use letters, digits, '-'/'_'; must not start with a digit "
+            "or be a Python keyword)"
+        )
+
+    @classmethod
     def dbs_must_differ(cls):
         return cls("agui_db and authz_db must differ")
 
@@ -224,6 +234,13 @@ def coerce_and_derive(params: dict[str, object]) -> dict[str, object]:
         except (TypeError, ValueError) as exc:
             raise GenError.not_int(key, params[key]) from exc
 
+    # Import name for the synthesized src/ package: lower-case the project
+    # name and turn hyphens into underscores. ``project_name`` itself (which
+    # may keep hyphens) stays the distribution / compose name.
+    params["package_name"] = (
+        str(params["project_name"]).lower().replace("-", "_")
+    )
+
     # Derived defaults
     if not params.get("setup_id"):
         params["setup_id"] = f"{params['project_name']}-conf"
@@ -244,6 +261,10 @@ def coerce_and_derive(params: dict[str, object]) -> dict[str, object]:
 def validate(params: dict[str, object]) -> None:
     if not str(params.get("ollama_base_url") or "").strip():
         raise GenError.ollama_required()
+
+    package = str(params["package_name"])
+    if not package.isidentifier() or keyword.iskeyword(package):
+        raise GenError.bad_package_name(params["project_name"], package)
 
     seen: dict[int, str] = {}
     for key in PORT_KEYS:
@@ -279,8 +300,19 @@ def validate(params: dict[str, object]) -> None:
 def render_tree(
     template_root: pathlib.Path, out: pathlib.Path, ctx: dict[str, object]
 ) -> None:
+    package_name = ctx.get("package_name")
     for src in sorted(template_root.rglob("*")):
         rel = src.relative_to(template_root)
+        # The package tree ships under a literal ``__package__`` directory; map
+        # that segment onto the resolved import name so it lands at
+        # ``src/<package_name>/...``.
+        if package_name:
+            rel = pathlib.Path(
+                *[
+                    package_name if part == "__package__" else part
+                    for part in rel.parts
+                ]
+            )
         if src.is_dir():
             (out / rel).mkdir(parents=True, exist_ok=True)
             continue

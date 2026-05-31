@@ -24,7 +24,7 @@ as JSON.
 
 | Parameter | Default | Notes / validation | Where it lands |
 |-----------|---------|--------------------|----------------|
-| `project_name` | `soliplex` | — | compose `name:`, `pyproject.toml`, `README.md` |
+| `project_name` | `soliplex` | derived `package_name` must be a valid Python identifier | compose `name:`, `pyproject.toml` `[project] name`, `README.md` |
 | `setup_id` | `<project_name>-conf` | derived if unset | `installation.yaml` `id:` |
 | `nginx_http` | `9000` | int 1–65535, unique among host ports | compose host port, `README.md` |
 | `nginx_https` | `9443` | int, unique | compose host port, TUI public-url, `README.md` |
@@ -56,6 +56,25 @@ as JSON.
 - `tls_subject` ← `/C=US/ST=State/L=City/O=Soliplex/CN=<server_name>` when not supplied.
 - `backend_auth_flag` ← `--no-auth-mode` plus a trailing space when `auth_mode == "no-auth"`, else empty
   (consumed by `docker-compose.yml.mako`).
+- `package_name` ← `project_name` lower-cased with hyphens turned into underscores.
+  This is the **import name** of the generated `src/<package_name>/` package, so it
+  must be a valid Python identifier (and not a keyword); generation fails otherwise.
+  It lands in: the package path `src/<package_name>/`, `pyproject.toml`
+  (`[tool.hatch.build.targets.wheel]`), the backend `PYTHONPATH` bind mount in
+  `docker-compose.yml`, and the dotted names referenced from `installation.yaml`
+  (`app_router_operations`, commented `meta:` examples) and
+  `rooms/custom/room_config.yaml` (`tool_name`).
+
+## The generated project as an installable library
+
+The scaffolded project ships a `src/<package_name>/` package (`tools.py`,
+`views.py`) and a `tests/unit/` tree, and its `pyproject.toml` declares a
+build backend (`hatchling`) plus a `dev` dependency group, so it is
+`uv sync` / `uv pip install -e .`-able. The backend reads the package over a
+read-only `./src` bind mount on `PYTHONPATH` — no image rebuild needed to edit
+the custom code. The bundled `tools.greeting` tool and `views.router` FastAPI
+router are referenced by dotted name from the Soliplex config (which is why
+those config files are Mako templates).
 
 ## Notes
 
