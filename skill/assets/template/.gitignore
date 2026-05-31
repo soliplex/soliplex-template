@@ -16,11 +16,6 @@
 tmp/
 db/
 
-# Skill build artifacts:
-# 'scripts/build_skill.py' generates files here
-# CI publishes from here
-/dist/
-
 #logs
 info.log
 

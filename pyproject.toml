@@ -1,0 +1,50 @@
+[project]
+name = "soliplex-template"
+version = "0.1.0"
+description = "Docker Compose template for a Soliplex stack, plus the soliplex-template Agent Skill and its build tooling."
+requires-python = ">=3.13"
+dependencies = []
+
+# Tooling for the soliplex-template skill. The scripts also carry PEP 723
+# inline metadata so they can run standalone via `uv run <script>`, but the
+# CI workflow installs this group with `uv sync --frozen --group dev`:
+#   - mako:       scripts/refresh_skill_template.py and
+#                 skill/scripts/generate_soliplex_project.py
+#                 render the .mako template tree
+#   - skills-ref: scripts/build_skill.py validates the assembled skill against
+#                 the Agent Skills spec (provides the `agentskills` CLI)
+#   - pytest / pytest-cov / coverage: run the tests/unit/scripts/ suite
+#                 (`uv run --group dev pytest`)
+[dependency-groups]
+dev = [
+    "mako",
+    "skills-ref",
+    "pytest",
+    "pytest-cov",
+    "coverage",
+]
+
+# This repo is configuration + Dockerfiles + skill source, not an installable
+# Python package; don't try to build/install the root project.
+[tool.uv]
+package = false
+
+# Hermetic unit tests for the repo's Python scripts. The suite holds 100% branch
+# coverage; --cov=scripts measures the repo-level build tooling, --cov=skill/scripts
+# the bundled generator/version helpers, and --cov=tests/unit keeps the test
+# files themselves dead-code-free.
+[tool.pytest.ini_options]
+python_files = "test_*.py"
+# Functional tests live under tests/functional/ and are opt-in (they generate a
+# real project and shell out to git/openssl/docker). Run them explicitly with
+#   uv run --group dev pytest tests/functional --no-cov
+# (--no-cov because the generator runs in a child process, so it isn't measured
+# and would otherwise trip --cov-fail-under). They are not collected by default.
+testpaths = ["tests/unit"]
+addopts = "--cov=scripts --cov=skill/scripts --cov=tests/unit --cov-branch --cov-fail-under=100"
+markers = [
+    "needs_docker: functional test requiring the docker CLI + daemon",
+]
+
+[tool.coverage.report]
+show_missing = true

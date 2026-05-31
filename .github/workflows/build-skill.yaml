@@ -1,0 +1,163 @@
+name: Build & publish soliplex-template skill
+
+# Assembles the 'soliplex-template' filesystem Agent Skill
+# (https://agentskills.io/) from skill/ and publishes it. The skill is plain
+# Markdown + a Mako template tree the agent reads on demand -- no embeddings,
+# vector database, or GPU -- so this runs in well under a minute.
+#
+# Publishing has two modes:
+#
+# * On a software release ('release: published'): the skill snapshot is
+#   attached to that release, pinned to the released version.
+# * On skill changes to main (and manual dispatch): an immutable rolling
+#   build 'template-skill-YYYY.MM.DD-<sha>' is published, the 'template-skill-latest'
+#   pointer is updated to it, and old rolling builds are pruned.
+
+on:
+  release:
+    types: [published]
+  push:
+    branches: [main]
+    paths:
+      - 'skill/**'
+      - 'scripts/build_skill.py'
+      - 'scripts/refresh_skill_template.py'
+      - '.github/workflows/build-skill.yaml'
+  workflow_dispatch:
+
+# Serialize publishes so concurrent runs do not race on the rolling pointer
+# or the prune step.
+concurrency:
+  group: build-skill
+  cancel-in-progress: false
+
+env:
+  DIST: dist
+  SKILL_DIR: soliplex-template
+  ASSET_TARBALL: soliplex-template-skill.tar.gz
+  ASSET_ZIP: soliplex-template-skill.zip
+  POINTER_TAG: template-skill-latest
+  KEEP_ROLLING: "10"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version-file: "pyproject.toml"
+
+      # The 'dev' group provides 'skills-ref' (skill validation) and 'mako'
+      # (template rendering); build_skill.py uses the former.
+      - name: Install dependencies
+        run: uv sync --frozen --group dev
+
+      - name: Build & validate skill
+        run: uv run --group dev python scripts/build_skill.py --commit "${{ github.sha }}"
+
+      # All release assets are written under dist/ (gitignored) alongside the
+      # assembled skill directory.
+      - name: Package skill
+        run: |
+          tar czf "$DIST/$ASSET_TARBALL" -C "$DIST" "$SKILL_DIR"
+          (cd "$DIST" && zip -qr "$ASSET_ZIP" "$SKILL_DIR")
+
+      - name: Compute build identity
+        run: |
+          {
+            echo "SHORT_SHA=${GITHUB_SHA::7}"
+            echo "GEN_DATE=$(date -u +%Y-%m-%d)"
+            echo "ROLLING_TAG=template-skill-$(date -u +%Y.%m.%d)-${GITHUB_SHA::7}"
+            echo "SHA256=$(sha256sum "$DIST/$ASSET_TARBALL" | cut -d' ' -f1)"
+          } >> "$GITHUB_ENV"
+
+      # version.json identifies a published build so consumers can detect
+      # drift and verify the download. Written for whichever tag we publish.
+      - name: Write version manifest
+        env:
+          TARGET_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || env.ROLLING_TAG }}
+        run: |
+          jq -n \
+            --arg tag "$TARGET_TAG" \
+            --arg commit "$SHORT_SHA" \
+            --arg generated "$GEN_DATE" \
+            --arg sha256 "$SHA256" \
+            --arg url "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TARGET_TAG}/${ASSET_TARBALL}" \
+            '{tag:$tag, source_commit:$commit, generated:$generated, sha256:$sha256, asset_url:$url}' \
+            > "$DIST/version.json"
+          cat "$DIST/version.json"
+
+      # --- Software-release mode -------------------------------------------
+      - name: Attach skill to software release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: >
+          gh release upload "$TAG"
+          "$DIST/$ASSET_TARBALL" "$DIST/$ASSET_ZIP" "$DIST/version.json" --clobber
+
+      # --- Rolling mode ----------------------------------------------------
+      - name: Publish immutable rolling build
+        if: github.event_name != 'release'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view "$ROLLING_TAG" >/dev/null 2>&1 || \
+            gh release create "$ROLLING_TAG" \
+              --prerelease \
+              --target "$GITHUB_SHA" \
+              --title "soliplex-template skill $ROLLING_TAG" \
+              --notes "Rolling soliplex-template Agent Skill built from ${GITHUB_SHA}."
+          gh release upload "$ROLLING_TAG" \
+            "$DIST/$ASSET_TARBALL" "$DIST/$ASSET_ZIP" "$DIST/version.json" --clobber
+
+      - name: Update 'latest' pointer
+        if: github.event_name != 'release'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view "$POINTER_TAG" >/dev/null 2>&1 || \
+            gh release create "$POINTER_TAG" \
+              --prerelease \
+              --title "soliplex-template skill (latest)" \
+              --notes "Rolling pointer to the newest soliplex-template Agent Skill build."
+          # latest.json points at the immutable build; the tarball/zip are
+          # re-hosted here too so the pointer URL is a one-request download.
+          cp "$DIST/version.json" "$DIST/latest.json"
+          gh release upload "$POINTER_TAG" \
+            "$DIST/latest.json" "$DIST/$ASSET_TARBALL" "$DIST/$ASSET_ZIP" --clobber
+
+      - name: Prune old rolling builds
+        if: github.event_name != 'release'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release list --limit 200 --json tagName --jq '.[].tagName' \
+            | grep -E '^template-skill-[0-9]{4}\.' \
+            | sort -r \
+            | tail -n +$((KEEP_ROLLING + 1)) \
+            | while read -r tag; do
+                echo "Pruning $tag"
+                gh release delete "$tag" --cleanup-tag --yes
+              done
+
+      - name: Upload workflow artifact
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: soliplex-template-skill
+          path: |
+            dist/soliplex-template-skill.tar.gz
+            dist/soliplex-template-skill.zip
+            dist/version.json
+          retention-days: 7
