@@ -155,10 +155,11 @@ asset (mirroring the `soliplex-docs` skill workflow).
     in soliplex's pre-commit, so left out to match. soliplex#1028 is historical
     reference only.
 
-- **Add the `python-lint.yaml` CI workflow (deferred).** soliplex enforces
-  `ruff format --check` + `ruff check` on push/PR via
-  `.github/workflows/python-lint.yaml`. This repo's code already passes both;
-  add the mirroring workflow (paths: `scripts/**`, `skill/scripts/**`,
-  `tests/**`, `pyproject.toml`, `uv.lock`) when wiring up CI — fold in with the
-  unit/functional CI jobs. (Slack-on-failure omitted until `SLACK_NOTIFY_URL`
-  exists, same as `build-skill.yaml`.)
+  **Done — `python-lint.yaml` CI workflow** (parallel to soliplex/soliplex's).
+  `.github/workflows/python-lint.yaml` runs `uv run ruff format --check` +
+  `uv run ruff check` on push/PR to `main` (paths: `pyproject.toml`, `uv.lock`,
+  `scripts/**`, `skill/scripts/**`, `tests/**`, the workflow itself) and on
+  `workflow_dispatch`. Uses the repo's `setup-uv` + `python-version-file`
+  convention (like `build-skill.yaml`); actionlint-clean. The Slack-on-failure
+  step from the soliplex version is omitted until `SLACK_NOTIFY_URL` exists —
+  see the restore-Slack item.
