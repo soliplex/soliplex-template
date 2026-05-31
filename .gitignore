@@ -21,6 +21,9 @@ db/
 # CI publishes from here
 /dist/
 
+# Zensical docs build output (`zensical build`)
+/site/
+
 #logs
 info.log
 

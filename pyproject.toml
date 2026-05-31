@@ -15,6 +15,8 @@ dependencies = []
 #                 the Agent Skills spec (provides the `agentskills` CLI)
 #   - pytest / pytest-cov / coverage: run the tests/unit/scripts/ suite
 #                 (`uv run --group dev pytest`)
+#   - zensical:   builds the documentation site under docs/ into site/
+#                 (`uv run zensical build`); also drives the docs CI workflow
 [dependency-groups]
 dev = [
     "coverage",
@@ -23,6 +25,7 @@ dev = [
     "pytest",
     "pytest-cov",
     "ruff",
+    "zensical",
 ]
 
 # This repo is configuration + Dockerfiles + skill source, not an installable
