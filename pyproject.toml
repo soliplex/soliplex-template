@@ -1,0 +1,24 @@
+[project]
+name = "soliplex-template"
+version = "0.1.0"
+description = "Docker Compose template for a Soliplex stack, plus the soliplex-project-generator Agent Skill and its build tooling."
+requires-python = ">=3.13"
+dependencies = []
+
+# Tooling for the project-generator skill. The scripts also carry PEP 723
+# inline metadata so they can run standalone via `uv run <script>`, but the
+# CI workflow installs this group with `uv sync --frozen --group dev`:
+#   - mako:       scripts/refresh_skill_template.py and skill/scripts/generate.py
+#                 render the .mako template tree
+#   - skills-ref: scripts/build_skill.py validates the assembled skill against
+#                 the Agent Skills spec (provides the `agentskills` CLI)
+[dependency-groups]
+dev = [
+    "mako",
+    "skills-ref",
+]
+
+# This repo is configuration + Dockerfiles + skill source, not an installable
+# Python package; don't try to build/install the root project.
+[tool.uv]
+package = false
