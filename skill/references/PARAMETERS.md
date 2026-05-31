@@ -88,3 +88,8 @@ those config files are Mako templates).
   side of each mapping.
 - `agui_db` / `authz_db` are used as both the Postgres role name and the
   database name (the template uses identical names for each).
+- The backend `soliplex` version pin (`soliplex_backend_constraint`) lands in
+  `backend/constraints.txt`. Choose it from the published releases on PyPI
+  (`https://pypi.org/pypi/soliplex/json`) rather than guessing — pin one
+  release (e.g. `== 0.68.3`) or keep a range (e.g. `>= 0.68, < 0.69`); the
+  skill's interview step (see `SKILL.md`) lists them for you.
