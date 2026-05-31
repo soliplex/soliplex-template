@@ -45,25 +45,25 @@ asset (mirroring the `soliplex-docs` skill workflow).
 
 ## Future work
 
-- **Add unit-test coverage for the repo-level `scripts/`.** Cover
-  `scripts/build_skill.py` and `scripts/refresh_skill_template.py` (and, by the
-  same pattern, the bundled `skill/scripts/generate.py` and
-  `skill/scripts/skill_versions.py`), following soliplex/soliplex#1033:
-  - Put tests under `tests/unit/scripts/` (`test_build_skill.py`,
-    `test_refresh_skill_template.py`, …). Since these scripts aren't part of an
-    importable package, load each by file path via `importlib.util` (as the PR's
-    `test_skill_versions.py` does).
-  - Keep tests **hermetic**: drive a `tmp_path` repo/skill tree, mock the
-    external seams (`subprocess` for git/`agentskills`, `urllib` / GitHub API,
-    `file://` tarballs for downloads) — no network, no real `git`/Docker.
-  - Use the setup / act / assert layout (one act per test; parametrize or split
-    otherwise), matching the PR's convention.
-  - Wire it into `pyproject.toml`: add `pytest` + `pytest-cov` to the `dev`
-    group and a `[tool.pytest.ini_options]` block with
-    `testpaths = ["tests/unit"]`, `python_files = "test_*.py"`, and
-    `addopts = "--cov=scripts --cov-branch --cov-fail-under=100"` (the PR holds
-    100% branch coverage).
-  - Add a CI step (or fold into the pre-commit work below) to run the suite.
+- **Run the unit-test suite in CI (or pre-commit).** The `tests/unit/scripts/`
+  suite is currently local-only (`uv run --group dev pytest`); wire it into a
+  GitHub Actions job and/or a `pre-commit` hook so the 100% gate is enforced on
+  push/PR. Folds naturally into the pre-commit work below.
+
+  **Done — unit-test coverage for the Python scripts** (following
+  soliplex/soliplex#1033). All four scripts are covered, hermetic, loaded by
+  file path via `importlib.util`, AAA layout (one act per test):
+  - `scripts/build_skill.py` → `tests/unit/scripts/test_build_skill.py`
+  - `scripts/refresh_skill_template.py` → `test_refresh_skill_template.py`
+  - `skill/scripts/generate.py` → `test_generate.py`
+  - `skill/scripts/skill_versions.py` → `test_skill_versions.py` (GitHub seams
+    mocked; published versions served from local `file://` tarballs)
+
+  `pyproject.toml` carries the `pytest`/`pytest-cov`/`coverage` `dev` deps and a
+  `[tool.pytest.ini_options]` block (`testpaths = ["tests/unit"]`,
+  `--cov=scripts --cov=skill/scripts --cov=tests/unit --cov-branch
+  --cov-fail-under=100`). 154 tests, 100% branch coverage on all four scripts.
+  Run with `uv run --group dev pytest`.
 - **Documentation.** Write docs covering the three ways this repo is used:
   1. **Using the main repo configuration as-is** — clone the template, run
      `scripts/generate-secrets.sh`, set `OLLAMA_BASE_URL`, `docker compose up`;

@@ -12,13 +12,30 @@ dependencies = []
 #                 render the .mako template tree
 #   - skills-ref: scripts/build_skill.py validates the assembled skill against
 #                 the Agent Skills spec (provides the `agentskills` CLI)
+#   - pytest / pytest-cov / coverage: run the tests/unit/scripts/ suite
+#                 (`uv run --group dev pytest`)
 [dependency-groups]
 dev = [
     "mako",
     "skills-ref",
+    "pytest",
+    "pytest-cov",
+    "coverage",
 ]
 
 # This repo is configuration + Dockerfiles + skill source, not an installable
 # Python package; don't try to build/install the root project.
 [tool.uv]
 package = false
+
+# Hermetic unit tests for the repo's Python scripts. The suite holds 100% branch
+# coverage; --cov=scripts measures the repo-level build tooling, --cov=skill/scripts
+# the bundled generator/version helpers, and --cov=tests/unit keeps the test
+# files themselves dead-code-free.
+[tool.pytest.ini_options]
+python_files = "test_*.py"
+testpaths = ["tests/unit"]
+addopts = "--cov=scripts --cov=skill/scripts --cov=tests/unit --cov-branch --cov-fail-under=100"
+
+[tool.coverage.report]
+show_missing = true
