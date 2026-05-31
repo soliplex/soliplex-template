@@ -118,8 +118,56 @@ def t_compose(text: str) -> str:
             ('- "5001:5001"', '- "${docling_port}:5001"'),
             ('- "5432:5432"', '- "${postgres_port}:5432"'),
             ("- ./rag/docs:/docs", "- ./${docs_dir}:/docs"),
+            # Put this project's own src/ package on the backend's import
+            # path (read-only bind mount + PYTHONPATH) so Soliplex can resolve
+            # dotted names like '${package_name}.tools.greeting'. The anchors
+            # below are unique to the backend service (the ingester uses the
+            # short './rag/db:/data' volume form and a different environment).
+            (
+                "      - type: bind\n"
+                '        source: "rag/db/"\n'
+                '        target: "/db"\n',
+                "      - type: bind\n"
+                '        source: "rag/db/"\n'
+                '        target: "/db"\n'
+                "\n"
+                "      - type: bind\n"
+                '        source: "./src"\n'
+                '        target: "/app/src"\n'
+                "        read_only: true\n",
+            ),
+            (
+                "      OLLAMA_BASE_URL: <%text>${OLLAMA_BASE_URL}</%text>\n"
+                "\n"
+                "    volumes:\n",
+                "      OLLAMA_BASE_URL: <%text>${OLLAMA_BASE_URL}</%text>\n"
+                "      # Put this project's own src/ package on the\n"
+                "      # backend's import path so Soliplex can resolve\n"
+                "      # dotted tool / router names (see './src' below).\n"
+                "      PYTHONPATH: /app/src\n"
+                "\n"
+                "    volumes:\n",
+            ),
         ],
     )
+
+
+_ROUTER_BLOCK = (
+    'haiku_rag_config_file: "./haiku.rag.yaml"\n'
+    "\n"
+    "#" + "=" * 74 + "\n"
+    "# FastAPI routers (custom)\n"
+    "#" + "=" * 74 + "\n"
+    "# Add this project's own router (defined in src/${package_name}/"
+    "views.py)\n"
+    "# by dotted name, without clearing the default Soliplex routers.\n"
+    "#" + "=" * 74 + "\n"
+    "app_router_operations:\n"
+    '  - kind: "add"\n'
+    '    group_name: "${package_name}"\n'
+    '    router_name: "${package_name}.views.router"\n'
+    '    prefix: "/api"\n'
+)
 
 
 def t_installation(text: str) -> str:
@@ -138,6 +186,17 @@ def t_installation(text: str) -> str:
             ('"gpt-oss:20b"', '"${chat_model_alt}"'),
             ("soliplex_agui", "${agui_db}"),
             ("soliplex_authz", "${authz_db}"),
+            # The hypothetical 'my_package' meta-config examples become a
+            # dotted reference into this project's own package, so the
+            # commented examples point somewhere real once uncommented.
+            ("my_package", "${package_name}"),
+            # Load the demonstration room that wires in the custom tool.
+            (
+                '  - "./rooms/bwrap_sandbox"',
+                '  - "./rooms/bwrap_sandbox"\n  - "./rooms/custom"',
+            ),
+            # Register this project's FastAPI router by dotted name.
+            ('haiku_rag_config_file: "./haiku.rag.yaml"', _ROUTER_BLOCK),
         ],
     )
 
@@ -304,27 +363,160 @@ docker compose down -v       # stop AND wipe the postgres volume
 
 Open the app at <http://localhost:${nginx_http}/> (or
 <https://${server_name}:${nginx_https}/> for TLS).
+
+## Custom Python package
+
+This project is also an installable Python library: your own code lives under
+`src/${package_name}/` and its tests under `tests/unit/`.
+
+```bash
+uv sync                 # create/refresh the dev environment (installs pytest)
+uv run pytest           # run the project's tests
+uv pip install -e .     # or a plain editable install into another environment
+```
+
+The Soliplex backend bind-mounts `./src` into its container and puts it on
+`PYTHONPATH` (see `docker-compose.yml`), so anything you define here is
+importable by **dotted name** from the Soliplex config under
+`backend/environment/`. Two examples ship wired up:
+
+- a tool, `${package_name}.tools.greeting`, referenced from
+  `backend/environment/rooms/custom/room_config.yaml`;
+- a FastAPI router, `${package_name}.views.router`, registered via
+  `app_router_operations` in `backend/environment/installation.yaml`.
+
+Dotted names into this package can equally be used in the `installation.yaml`
+`meta:` section (tool/agent/skill config classes, MCP wrappers, secret
+sources) — see the commented `${package_name}.*` examples there.
 """,
     "pyproject.toml.mako": """\
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "${project_name}"
 version = "0.1.0"
 requires-python = ">=3.13"
-# Dependencies for running this project's own tooling outside Docker
-# (e.g. `soliplex-cli` against the Postgres backing store). The container
-# images install their own pinned deps; this file is for host-side use:
-#   uv sync     # or: pip install -e .
+# Host-side dependencies for this project's own tooling and the custom code
+# under src/${package_name}/ (e.g. running `soliplex-cli` against the Postgres
+# backing store, or this project's tests). The container images install their
+# own pinned deps; this file is for host-side use:
+#   uv sync                 # create/refresh the dev environment
+#   uv pip install -e .     # or a plain editable install
 dependencies = [
     "soliplex ${soliplex_backend_constraint}",
     "psycopg[binary]",
     "asyncpg",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest",
+]
+
+# src/ layout: the importable package lives at src/${package_name}/. The
+# Soliplex backend puts src/ on PYTHONPATH (see docker-compose.yml); the
+# build + test config below points at the same layout for host-side use.
+[tool.hatch.build.targets.wheel]
+packages = ["src/${package_name}"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests/unit"]
+pythonpath = ["src"]
+""",
+    "src/__package__/tools.py.mako": '''\
+"""Custom agent tools for the ``${package_name}`` Soliplex install.
+
+A Soliplex "tool" is just a dotted name resolving to a plain callable (see a
+room's ``tools:`` list). Reference :func:`greeting` from a room config as
+``tool_name: "${package_name}.tools.greeting"``.
+"""
+
+
+def greeting(name: str) -> str:
+    """Return a friendly greeting for ``name``.
+
+    A minimal example tool: a plain, type-annotated function with a
+    docstring (the LLM uses the docstring as the tool's description).
+    """
+    return f"Hello, {name}! This greeting came from your own package's tool."
+''',
+    "src/__package__/views.py.mako": '''\
+"""A custom FastAPI router for the ``${package_name}`` Soliplex install.
+
+Soliplex registers extra routers by dotted name via the installation-level
+``app_router_operations`` (see ``backend/environment/installation.yaml``).
+This module exposes ``router``, referenced there as
+``${package_name}.views.router``.
+"""
+
+from fastapi import APIRouter
+
+router = APIRouter()
+
+
+@router.get("/custom/ping")
+def ping() -> dict[str, str]:
+    """A trivial endpoint contributed by this project's own package."""
+    return {"ping": "pong"}
+''',
+    "tests/unit/test_tools.py.mako": '''\
+"""Tests for :mod:`${package_name}.tools`."""
+
+from ${package_name} import tools
+
+
+def test_greeting_includes_name():
+    result = tools.greeting("Ada")
+
+    assert "Ada" in result
+''',
+    "tests/unit/test_views.py.mako": '''\
+"""Tests for :mod:`${package_name}.views`."""
+
+from ${package_name} import views
+
+
+def test_router_exposes_ping_route():
+    paths = {route.path for route in views.router.routes}
+
+    assert "/custom/ping" in paths
+
+
+def test_ping_returns_pong():
+    result = views.ping()
+
+    assert result == {"ping": "pong"}
+''',
+    "backend/environment/rooms/custom/room_config.yaml.mako": """\
+# A demonstration room that wires in a tool from this project's own
+# '${package_name}' package (defined in src/${package_name}/tools.py). The
+# dotted 'tool_name' below is importable because src/ is on the backend's
+# PYTHONPATH (see docker-compose.yml). Delete this room once you have your own.
+id: "custom"
+name: "Custom Tool Demo"
+description: "Demonstrates a tool provided by this project's own package."
+
+agent:
+  template_id: "default_chat"
+  system_prompt: |
+    You are a helpful assistant.
+
+    When the user asks to be greeted, call the 'greeting' tool provided by
+    this project's package.
+
+tools:
+  - tool_name: "${package_name}.tools.greeting"
+
+allow_mcp: false
 """,
 }
 
 # Probe parameters for the post-refresh render check (values are arbitrary).
 PROBE = dict(
     project_name="probe",
+    package_name="probe_pkg",
     setup_id="probe",
     nginx_http=1,
     nginx_https=2,
@@ -413,9 +605,11 @@ def _build_into(dest_root: pathlib.Path, files: list[str]) -> tuple[int, int]:
         copied.unlink()
         derived += 1
 
-    # authored templates
+    # authored templates (paths may nest, e.g. src/__package__/tools.py.mako)
     for name, content in AUTHORED.items():
-        (dest_root / name).write_text(content)
+        dest = dest_root / name
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(content)
 
     return derived, len(AUTHORED)
 

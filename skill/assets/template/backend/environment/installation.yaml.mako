@@ -32,10 +32,11 @@ meta:
   # Register tool configuration types so that they can be referenced by
   # their 'tool_name'
   #
-  # Example (using a hypothetical package):
+  # Example (assuming you have added a `config` module with a custom
+  # tool configuration):
   #
   # tool_configs:
-  # - "my_package.config.MyToolConfig"
+  # - "${package_name}.config.MyToolConfig"
   #------------------------------------------------------------------------
 
   #------------------------------------------------------------------------
@@ -68,11 +69,12 @@ meta:
   # Register MCP server tool wrapper types so that they can be used to
   # wrap tools from a given tool configuration class.
   #
-  # Example (using a hypothetical package):
+  # Example (assuming you have added a `config` module with a custom
+  # tool configuration and wrapper class):
   #
   # mcp_server_tool_wrappers:
-  # - config_klass: "my_package.config.MyToolConfig"
-  #   wrapper_klass: "my_package.config.MyMCPWrapper"
+  # - config_klass: "${package_name}.config.MyToolConfig"
+  #   wrapper_klass: "${package_name}.config.MyMCPWrapper"
   #------------------------------------------------------------------------
 
   #------------------------------------------------------------------------
@@ -243,6 +245,19 @@ environment:
 haiku_rag_config_file: "./haiku.rag.yaml"
 
 #==========================================================================
+# FastAPI routers (custom)
+#==========================================================================
+# Add this project's own router (defined in src/${package_name}/views.py)
+# by dotted name, without clearing the default Soliplex routers.
+#==========================================================================
+app_router_operations:
+  - kind: "add"
+    group_name: "${package_name}"
+    router_name: "${package_name}.views.router"
+    prefix: "/api"
+
+
+#==========================================================================
 # Agent configurations
 #==========================================================================
 # See: https://soliplex.github.io/soliplex/config/agents/
@@ -350,6 +365,7 @@ room_paths:
   - "./rooms/skillstest"
   - "./rooms/feedback"
   - "./rooms/bwrap_sandbox"
+  - "./rooms/custom"
 
 #==========================================================================
 # Completions configuration

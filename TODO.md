@@ -45,25 +45,6 @@
      templates under `skill/assets/template/`, parameterized like the rest) so
      each generated project ships its own right-sized documentation.
 
-- **Make the generated project an installable Python library.** The scaffolded
-  project should give its owner a place to write custom code for her Soliplex
-  installation, so the generator must synthesize:
-  - a `src/${project_name}/` package tree (e.g. `__init__.py`, a sample module)
-    — using the validated/normalized `project_name` as the import name
-    (lower-case, hyphens → underscores), and
-  - an associated `tests/` tree (e.g. a sample `test_*.py`).
-
-  These must be **synthesized by the generator**, not copied from this repo —
-  the main repo has no corresponding `src/`/`tests/` files, and shouldn't need
-  any. Likely approach: add `.mako` templates for the new files under
-  `skill/assets/template/` (e.g. `src/__package__/__init__.py.mako`) and have
-  `generate_soliplex_project.py` place them at the resolved package path, since
-  the directory name itself is parameter-driven. Also extend the generated
-  `pyproject.toml` to declare the package (build backend + `[tool.*]` packaging
-  config) so the project is `pip install -e .` / `uv sync`-able, and wire the
-  package onto the backend's `PYTHONPATH` (or install it) so the Soliplex
-  install can import it.
-
 - **Restore the Slack failure notification.** A `Notify Slack on failure` step
   (mirroring the `soliplex-docs` workflow) was omitted from all three workflows
   (`build-skill.yaml`, `python-lint.yaml`, `python-test.yaml`) because the
@@ -72,6 +53,26 @@
   `if: failure()`.
 
 ## Done
+
+- **Generated project is an installable Python library.** The generator
+  synthesizes a `src/<package_name>/` package and a `tests/` tree, and the
+  generated `pyproject.toml` declares a build backend so the project is
+  `uv sync` / `uv pip install -e .`-able. `package_name` is derived from
+  `project_name` (lower-cased, hyphens → underscores) and validated as a Python
+  identifier (`generate_soliplex_project.py`); `render_tree` maps the literal
+  `src/__package__/` template directory onto that name. The package ships a
+  sample tool (`tools.greeting`) and a FastAPI router (`views.router`), both
+  **authored** `.mako` templates under `skill/assets/template/` (the repo
+  itself stays config-only). The backend imports them over a read-only `./src`
+  bind mount on `PYTHONPATH` (no rebuild to edit). Because they are referenced
+  by **dotted name** from the Soliplex config, the referencing files are now
+  Mako templates: a new `rooms/custom/room_config.yaml` wires the tool into a
+  room; `installation.yaml` registers the router via `app_router_operations`
+  (`kind: "add"`, preserving the default routers) and its hypothetical
+  `meta:` `my_package.*` comments now point at `${package_name}.*`. Covered by
+  unit tests (100% branch) plus functional assertions and a hermetic
+  package-import check; `tests/test_tools.py` / `tests/test_views.py` ship in
+  the generated project for its owner to run.
 
 - **`soliplex-template` filesystem skill** (the core feature). A filesystem
   skill (agent-skills spec, <https://agentskills.io/home>) that prompts for

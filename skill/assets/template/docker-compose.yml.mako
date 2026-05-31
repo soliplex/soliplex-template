@@ -74,6 +74,10 @@ services:
 
     environment:
       OLLAMA_BASE_URL: <%text>${OLLAMA_BASE_URL}</%text>
+      # Put this project's own src/ package on the
+      # backend's import path so Soliplex can resolve
+      # dotted tool / router names (see './src' below).
+      PYTHONPATH: /app/src
 
     volumes:
       - type: bind
@@ -91,6 +95,11 @@ services:
       - type: bind
         source: "rag/db/"
         target: "/db"
+
+      - type: bind
+        source: "./src"
+        target: "/app/src"
+        read_only: true
 
     ports:
       - "8000:8000"

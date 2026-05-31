@@ -208,6 +208,16 @@ def test_coerce_keeps_supplied_values_and_auth_mode():
     assert result["backend_auth_flag"] == ""
 
 
+def test_coerce_derives_package_name_from_project_name():
+    params = dict(gen.DEFAULTS)
+    params["ollama_base_url"] = "http://x"
+    params["project_name"] = "My-Cool-App"
+
+    result = gen.coerce_and_derive(params)
+
+    assert result["package_name"] == "my_cool_app"
+
+
 # --------------------------------------------------------------------------
 # validate
 # --------------------------------------------------------------------------
@@ -244,6 +254,17 @@ def test_validate_bad_sql_identifier():
     params["agui_db"] = "1bad"
 
     with pytest.raises(gen.GenError, match="valid SQL identifier"):
+        gen.validate(params)
+
+
+# "1invalid" is not an identifier (leading digit); "class" is a keyword. The
+# two cases exercise both operands of the package-name guard.
+@pytest.mark.parametrize("package_name", ["1invalid", "class"])
+def test_validate_bad_package_name(package_name):
+    params = _valid_params()
+    params["package_name"] = package_name
+
+    with pytest.raises(gen.GenError, match="not a valid Python identifier"):
         gen.validate(params)
 
 
@@ -315,6 +336,22 @@ def test_render_tree_bad_template_raises(tmp_path):
 
     with pytest.raises(gen.GenError, match="failed to render"):
         gen.render_tree(template, out, {"project_name": "demo"})
+
+
+def test_render_tree_substitutes_package_dir(tmp_path):
+    template = tmp_path / "template"
+    (template / "src" / "__package__").mkdir(parents=True)
+    (template / "src" / "__package__" / "sample.py.mako").write_text(
+        "pkg = ${package_name}\n", encoding="utf-8"
+    )
+    out = tmp_path / "out"
+
+    gen.render_tree(template, out, {"package_name": "my_pkg"})
+
+    assert (out / "src" / "my_pkg" / "sample.py").read_text() == (
+        "pkg = my_pkg\n"
+    )
+    assert not (out / "src" / "__package__").exists()
 
 
 # --------------------------------------------------------------------------

@@ -135,6 +135,14 @@ def test_t_compose():
         '      - "5001:5001"\n'
         '      - "5432:5432"\n'
         "      - ./rag/docs:/docs\n"
+        # Backend-only anchors for the src/ bind mount + PYTHONPATH injection.
+        "    environment:\n"
+        "      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL}\n"
+        "\n"
+        "    volumes:\n"
+        "      - type: bind\n"
+        '        source: "rag/db/"\n'
+        '        target: "/db"\n'
     )
 
     out = rst.t_compose(text)
@@ -150,15 +158,21 @@ def test_t_compose():
     assert "- ./${docs_dir}:/docs" in out
     assert "<%text>${OLLAMA_BASE_URL}</%text>" in out
     assert "<%text>${INGESTER_TOKEN:-secret}</%text>" in out
+    # The backend gets this project's src/ on its import path.
+    assert "PYTHONPATH: /app/src" in out
+    assert 'source: "./src"' in out
 
 
 def test_t_installation():
     text = (
         'id: "soliplex-conf-minimal"\n'
+        '  # - "my_package.config.MyToolConfig"\n'
         '  - id: "default_chat"\n    model_name: "gpt-oss:latest"\n'
         '  - id: "title"\n    model_name: "gpt-oss:latest"\n'
         '    alt: "gpt-oss:20b"\n'
         "db: soliplex_agui authz: soliplex_authz\n"
+        'haiku_rag_config_file: "./haiku.rag.yaml"\n'
+        '  - "./rooms/bwrap_sandbox"\n'
     )
 
     out = rst.t_installation(text)
@@ -169,6 +183,12 @@ def test_t_installation():
     assert '"${chat_model_alt}"' in out
     assert "${agui_db}" in out
     assert "${authz_db}" in out
+    # The hypothetical 'my_package' meta example now points at this project.
+    assert '"${package_name}.config.MyToolConfig"' in out
+    assert "my_package" not in out
+    # The demo room is loaded and the package's router is registered.
+    assert '  - "./rooms/custom"' in out
+    assert 'router_name: "${package_name}.views.router"' in out
 
 
 def test_t_backend_haiku():

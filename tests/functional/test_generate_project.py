@@ -20,6 +20,7 @@ This tree is opt-in -- it is not in ``testpaths``. Run it with:
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import shutil
 import stat
@@ -252,6 +253,102 @@ def test_env_file_written(generated_project):
 
     assert f"OLLAMA_BASE_URL={params['ollama_base_url']}" in env
     assert "INGESTER_TOKEN=" in env
+
+
+# --------------------------------------------------------------------------
+# Installable package: src/<package_name>/ + tests/ + wiring
+#
+# project_name "soliplex-functest" normalises to the import name
+# "soliplex_functest".
+# --------------------------------------------------------------------------
+_PACKAGE = "soliplex_functest"
+
+
+def test_src_package_synthesized(generated_project):
+    out, _params = generated_project
+
+    pkg = out / "src" / _PACKAGE
+
+    missing = [
+        name for name in ("tools.py", "views.py") if not (pkg / name).is_file()
+    ]
+    assert missing == []
+
+
+def test_tests_tree_synthesized(generated_project):
+    out, _params = generated_project
+
+    tests = out / "tests" / "unit"
+
+    missing = [
+        name
+        for name in ("test_tools.py", "test_views.py")
+        if not (tests / name).is_file()
+    ]
+    assert missing == []
+
+
+def test_pyproject_declares_installable_package(generated_project):
+    out, _params = generated_project
+
+    pyproject = _read(out, "pyproject.toml")
+
+    assert "[build-system]" in pyproject
+    assert "hatchling" in pyproject
+    assert f'packages = ["src/{_PACKAGE}"]' in pyproject
+    assert "[tool.pytest.ini_options]" in pyproject
+
+
+def test_custom_room_references_package_tool(generated_project):
+    out, _params = generated_project
+
+    room = _read(out, "backend/environment/rooms/custom/room_config.yaml")
+
+    assert f'tool_name: "{_PACKAGE}.tools.greeting"' in room
+
+
+def test_installation_registers_package_router(generated_project):
+    out, _params = generated_project
+
+    installation = _read(out, "backend/environment/installation.yaml")
+
+    assert f'router_name: "{_PACKAGE}.views.router"' in installation
+    assert '- "./rooms/custom"' in installation
+
+
+def test_compose_puts_src_on_backend_pythonpath(generated_project):
+    out, _params = generated_project
+
+    compose = _read(out, "docker-compose.yml")
+
+    assert "PYTHONPATH: /app/src" in compose
+    assert 'source: "./src"' in compose
+
+
+def test_generated_package_is_importable(generated_project):
+    out, _params = generated_project
+    # Hermetic: the stdlib-only tool imports off PYTHONPATH with no install.
+    # (views.py needs fastapi, present only in the owner's soliplex env, so it
+    # is exercised by the generated tests/unit/test_views.py, not here.)
+    env = {
+        **os.environ,
+        "PYTHONPATH": str(out / "src"),
+        "PYTHONDONTWRITEBYTECODE": "1",
+    }
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            f"import {_PACKAGE}.tools as t; print(t.greeting('Ada'))",
+        ],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Ada" in result.stdout
 
 
 # --------------------------------------------------------------------------
