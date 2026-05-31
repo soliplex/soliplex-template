@@ -23,6 +23,8 @@ is to collect parameters from the user and invoke it.
    - `auth_mode` (`no-auth` or `auth`)
    - models (`chat_model`, `title_model`, `rag_embed_model`, …)
    - `frontend_version` (`latest`, or a `soliplex/frontend` release tag to pin)
+   - `soliplex_backend_constraint` (the backend `soliplex` version pin that
+     lands in `backend/constraints.txt`; offer real choices — see below)
 
    You can show the defaults with:
 
@@ -41,6 +43,20 @@ is to collect parameters from the user and invoke it.
 
    Fall back to `latest` (or free-text tag entry) if the API is unreachable or
    rate-limited; set `GITHUB_TOKEN`/`GH_TOKEN` to raise the rate limit.
+
+   For the backend `soliplex` version (`soliplex_backend_constraint`, which
+   lands in `backend/constraints.txt`), **offer the user real choices** instead
+   of asking them to hand-write a constraint: list the published `soliplex`
+   releases on PyPI (oldest first) and present the most recent:
+
+   ```bash
+   curl -s https://pypi.org/pypi/soliplex/json \
+     | jq -r '.releases | keys[]' | sort -V | tail
+   ```
+
+   From the user's pick, set `soliplex_backend_constraint` — e.g. `== 0.68.3`
+   to pin a single release, or a range such as `>= 0.68, < 0.69`. Fall back to
+   the default constraint if PyPI is unreachable.
 
 2. **Write the answers to a JSON file** (omit keys to accept defaults), e.g.
    `params.json`:
