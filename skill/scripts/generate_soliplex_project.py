@@ -7,11 +7,11 @@
 
 Run with uv (provisions Mako automatically):
 
-    uv run generate.py --out ../my-stack --params params.json
+    uv run generate_soliplex_project.py --out ../my-stack --params params.json
 
 or, without uv:
 
-    pip install mako && python3 generate.py --out ../my-stack --interactive
+    pip install mako && python3 generate_soliplex_project.py --out ../my-stack --interactive
 
 The embedded template lives at ``../assets/template`` relative to this script.
 Files ending in ``.mako`` are rendered through Mako with the resolved

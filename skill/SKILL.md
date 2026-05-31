@@ -6,7 +6,7 @@ description: Scaffold a new, runnable Soliplex Docker Compose project (nginx + S
 # Soliplex project generator
 
 Generate a fresh Soliplex Docker Compose stack from the embedded template under
-`assets/template/`. The heavy lifting is done by `scripts/generate.py`; your job
+`assets/template/`. The heavy lifting is done by `scripts/generate_soliplex_project.py`; your job
 is to collect parameters from the user and invoke it.
 
 ## Steps
@@ -25,7 +25,7 @@ is to collect parameters from the user and invoke it.
 
    You can show the defaults with:
    ```bash
-   uv run scripts/generate.py --print-defaults
+   uv run scripts/generate_soliplex_project.py --print-defaults
    ```
 
 2. **Write the answers to a JSON file** (omit keys to accept defaults), e.g.
@@ -37,9 +37,9 @@ is to collect parameters from the user and invoke it.
 
 3. **Run the generator:**
    ```bash
-   uv run scripts/generate.py --out <output_dir> --params params.json
+   uv run scripts/generate_soliplex_project.py --out <output_dir> --params params.json
    ```
-   - Without `uv`: `pip install mako && python3 scripts/generate.py --out <dir> --params params.json`
+   - Without `uv`: `pip install mako && python3 scripts/generate_soliplex_project.py --out <dir> --params params.json`
    - Add `--interactive` to be prompted on stdin instead of (or in addition to)
      a params file.
    - Add `--run-secrets` to also run `generate-secrets.sh` in the new project.

@@ -4,7 +4,7 @@ All parameters are supplied via a JSON file (`--params`) and/or `--interactive`.
 Anything omitted falls back to the default below. `ollama_base_url` is the only
 value with no usable default — it must be provided.
 
-Run `uv run scripts/generate.py --print-defaults` to dump the current defaults
+Run `uv run scripts/generate_soliplex_project.py --print-defaults` to dump the current defaults
 as JSON.
 
 ## CLI arguments (not template parameters)

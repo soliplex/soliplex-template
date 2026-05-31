@@ -1,4 +1,4 @@
-"""Unit tests for the bundled ``skill/scripts/generate.py`` scaffolder.
+"""Unit tests for the bundled ``skill/scripts/generate_soliplex_project.py``.
 
 The script ships inside the ``soliplex-template`` skill and is not part of an
 importable package, so it is loaded here by file path via ``importlib.util``.
@@ -27,9 +27,11 @@ _MODULE_PATH = (
     pathlib.Path(__file__).resolve().parents[3]
     / "skill"
     / "scripts"
-    / "generate.py"
+    / "generate_soliplex_project.py"
 )
-_spec = importlib.util.spec_from_file_location("generate", _MODULE_PATH)
+_spec = importlib.util.spec_from_file_location(
+    "generate_soliplex_project", _MODULE_PATH
+)
 gen = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(gen)
 
@@ -536,7 +538,9 @@ def test_main_requires_out():
 
 def test_main_missing_template(monkeypatch, tmp_path):
     monkeypatch.setattr(
-        gen, "__file__", str(tmp_path / "skill" / "scripts" / "generate.py")
+        gen,
+        "__file__",
+        str(tmp_path / "skill" / "scripts" / "generate_soliplex_project.py"),
     )
 
     with pytest.raises(gen.GenError, match="embedded template not found"):
@@ -545,7 +549,9 @@ def test_main_missing_template(monkeypatch, tmp_path):
 
 def test_main_out_not_empty(monkeypatch, tmp_path):
     monkeypatch.setattr(
-        gen, "__file__", str(tmp_path / "skill" / "scripts" / "generate.py")
+        gen,
+        "__file__",
+        str(tmp_path / "skill" / "scripts" / "generate_soliplex_project.py"),
     )
     (tmp_path / "skill" / "assets" / "template").mkdir(parents=True)
     out = tmp_path / "proj"
@@ -587,7 +593,7 @@ def skill_scripts_path(skill_path):
 
 @pytest.fixture
 def generate_script_path(monkeypatch, skill_scripts_path):
-    result = skill_scripts_path / "generate.py"
+    result = skill_scripts_path / "generate_soliplex_project.py"
     monkeypatch.setattr(gen, "__file__", str(result))
     return result
 

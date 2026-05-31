@@ -55,7 +55,8 @@ asset (mirroring the `soliplex-docs` skill workflow).
   file path via `importlib.util`, AAA layout (one act per test):
   - `scripts/build_skill.py` → `tests/unit/scripts/test_build_skill.py`
   - `scripts/refresh_skill_template.py` → `test_refresh_skill_template.py`
-  - `skill/scripts/generate.py` → `test_generate.py`
+  - `skill/scripts/generate_soliplex_project.py` →
+    `test_generate_soliplex_project.py`
   - `skill/scripts/skill_versions.py` → `test_skill_versions.py` (GitHub seams
     mocked; published versions served from local `file://` tarballs)
 
@@ -69,7 +70,7 @@ asset (mirroring the `soliplex-docs` skill workflow).
      `scripts/generate-secrets.sh`, set `OLLAMA_BASE_URL`, `docker compose up`;
      the architecture/services/ports/secrets already sketched in `CLAUDE.md`.
   2. **Using the `soliplex-template` skill** — install/point an agent at the
-     published skill, gather parameters, run `generate.py` to scaffold a new
+     published skill, gather parameters, run `generate_soliplex_project.py` to scaffold a new
      project; how to fetch/upgrade the skill via `scripts/skill_versions.py`.
   3. **Copying an appropriate subset of the repo-level docs into the generated
      project** — decide which docs belong in a scaffolded project (vs. this
@@ -88,7 +89,7 @@ asset (mirroring the `soliplex-docs` skill workflow).
   the main repo has no corresponding `src/`/`tests/` files, and shouldn't need
   any. Likely approach: add `.mako` templates for the new files under
   `skill/assets/template/` (e.g. `src/__package__/__init__.py.mako`) and have
-  `generate.py` place them at the resolved package path, since the directory
+  `generate_soliplex_project.py` place them at the resolved package path, since the directory
   name itself is parameter-driven. Also extend the generated `pyproject.toml`
   to declare the package (build backend + `[tool.*]` packaging config) so the
   project is `pip install -e .` / `uv sync`-able, and wire the package onto the
