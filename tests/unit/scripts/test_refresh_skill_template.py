@@ -255,12 +255,18 @@ def test_t_nginx_conf_wrong_count_raises():
 
 
 def test_t_nginx_dockerfile():
-    text = 'RUN openssl req -subj "/C=US/CN=localhost" -out cert\n'
+    text = (
+        "RUN curl https://api/repos/x/releases/latest -o x && \\\n"
+        '    openssl req -subj "/C=US/CN=localhost" -out cert\n'
+    )
 
     out = rst.t_nginx_dockerfile(text)
 
     assert out == (
-        '<%text>RUN openssl req -subj "</%text>'
+        "<%text>RUN curl https://api/repos/x/releases/</%text>"
+        "${frontend_release_path}"
+        "<%text> -o x && \\\n"
+        '    openssl req -subj "</%text>'
         "${tls_subject}"
         '<%text>" -out cert</%text>\n'
     )
@@ -269,6 +275,13 @@ def test_t_nginx_dockerfile():
 def test_t_nginx_dockerfile_no_subj_raises():
     with pytest.raises(rst.RefreshError, match="-subj"):
         rst.t_nginx_dockerfile("RUN echo hi\n")
+
+
+def test_t_nginx_dockerfile_no_release_url_raises():
+    text = 'RUN openssl req -subj "/CN=x" -out cert\n'
+
+    with pytest.raises(rst.RefreshError, match="releases/latest"):
+        rst.t_nginx_dockerfile(text)
 
 
 def test_t_nginx_dockerfile_non_unique_subject_raises():

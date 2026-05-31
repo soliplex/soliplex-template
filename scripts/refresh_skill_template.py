@@ -257,25 +257,30 @@ def t_nginx_conf(text: str) -> str:
 
 def t_nginx_dockerfile(text: str) -> str:
     # Wrap everything literal in <%text> (preserves backslash-newlines and the
-    # builder's shell ${...} expansions); break out only for the cert subject.
+    # builder's shell ${...} expansions); break out only for the two
+    # parameters: the GitHub releases API path (frontend version selection)
+    # and the self-signed cert subject.
     m = re.search(r'-subj "([^"]*)"', text)
     require(m is not None, 'expected a -subj "..." line in nginx/Dockerfile')
     subj = m.group(1)
     require(text.count(subj) == 1, f"cert subject {subj!r} is not unique")
-    before, after = text.split(subj, 1)
+    require(
+        text.count("releases/latest") == 1,
+        "expected one 'releases/latest' frontend API URL in nginx/Dockerfile",
+    )
     # Move any trailing newline outside the final <%text> block so the
     # generated .mako file ends with a newline (keeps end-of-file-fixer happy
-    # and refresh idempotent) while the rendered Dockerfile stays identical.
-    stripped = after.rstrip("\n")
-    trailing = after[len(stripped) :]
-    return (
-        "<%text>"
-        + before
-        + "</%text>${tls_subject}<%text>"
-        + stripped
-        + "</%text>"
-        + trailing
+    # and refresh idempotent) while the rendered Dockerfile stays identical
+    # for the default (frontend_release_path="latest").
+    stripped = text.rstrip("\n")
+    trailing = text[len(stripped) :]
+    body = "<%text>" + stripped + "</%text>"
+    body = body.replace(
+        "releases/latest",
+        "releases/</%text>${frontend_release_path}<%text>",
     )
+    body = body.replace(subj, "</%text>${tls_subject}<%text>")
+    return body + trailing
 
 
 def t_init_sh(text: str) -> str:
@@ -538,6 +543,7 @@ PROBE = dict(
     authz_db="db2",
     soliplex_backend_constraint="c",
     soliplex_tui_constraint="c",
+    frontend_release_path="latest",
     docs_dir="d",
 )
 

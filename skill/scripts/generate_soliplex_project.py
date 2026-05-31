@@ -73,6 +73,9 @@ DEFAULTS: dict[str, object] = {
     # Version pins
     "soliplex_backend_constraint": ">= 0.68, < 0.69",
     "soliplex_tui_constraint": ">= 0.60.6, < 0.61",
+    # Frontend: "latest" (newest soliplex/frontend release, the historical
+    # behavior) or a specific soliplex/frontend release tag to pin.
+    "frontend_version": "latest",
     # Auth: "no-auth" | "auth"
     "auth_mode": "no-auth",
     # Ingester
@@ -89,6 +92,8 @@ PORT_KEYS = (
 )
 INT_KEYS = PORT_KEYS + ("rag_embed_dim", "chunk_size")
 IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+# "latest" or a soliplex/frontend release tag (letters, digits, '.', '_', '-').
+FRONTEND_VERSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
 class GenError(Exception):
@@ -134,6 +139,13 @@ class GenError(Exception):
     @classmethod
     def bad_identifier(cls, key, value):
         return cls(f"{key}={value!r} must be a valid SQL identifier")
+
+    @classmethod
+    def bad_frontend_version(cls, value):
+        return cls(
+            f"frontend_version={value!r} must be 'latest' or a "
+            "soliplex/frontend release tag (letters, digits, '.', '_', '-')"
+        )
 
     @classmethod
     def bad_package_name(cls, project_name, package_name):
@@ -249,6 +261,15 @@ def coerce_and_derive(params: dict[str, object]) -> dict[str, object]:
             f"/C=US/ST=State/L=City/O=Soliplex/CN={params['server_name']}"
         )
 
+    # GitHub releases API path used by nginx/Dockerfile: "latest" stays on the
+    # /releases/latest endpoint; a pinned tag selects /releases/tags/<tag>.
+    frontend_version = str(params["frontend_version"])
+    params["frontend_release_path"] = (
+        "latest"
+        if frontend_version == "latest"
+        else f"tags/{frontend_version}"
+    )
+
     # Auth flag consumed by docker-compose.yml.mako (trailing space matters).
     auth_mode = str(params["auth_mode"])
     params["backend_auth_flag"] = (
@@ -288,6 +309,10 @@ def validate(params: dict[str, object]) -> None:
     for key in ("soliplex_backend_constraint", "soliplex_tui_constraint"):
         if not str(params[key]).strip():
             raise GenError.empty_constraint(key)
+
+    frontend_version = str(params["frontend_version"])
+    if not FRONTEND_VERSION_RE.match(frontend_version):
+        raise GenError.bad_frontend_version(frontend_version)
 
     docs = str(params["docs_dir"])
     if docs.startswith("/") or ".." in pathlib.Path(docs).parts:

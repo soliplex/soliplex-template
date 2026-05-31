@@ -1,7 +1,7 @@
 <%text>FROM ghcr.io/cirruslabs/flutter:3.38.4 AS builder
 
 RUN \
-  latest=$(curl -s -L https://api.github.com/repos/soliplex/frontend/releases/latest -H "Accept: application/json" | jq -r ".tarball_url") && \
+  latest=$(curl -s -L https://api.github.com/repos/soliplex/frontend/releases/</%text>${frontend_release_path}<%text> -H "Accept: application/json" | jq -r ".tarball_url") && \
   cd /tmp/ && \
   curl -L $latest -o soliplex-frontend-latest.tgz && \
   topdir=$(tar tf soliplex-frontend-latest.tgz | head -1) && \

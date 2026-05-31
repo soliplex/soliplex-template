@@ -46,6 +46,7 @@ as JSON.
 | `authz_db` | `soliplex_authz` | SQL identifier; ≠ `agui_db` | `installation.yaml` DB URIs, `postgres/config/init.sh` |
 | `soliplex_backend_constraint` | `>= 0.68, < 0.69` | non-empty | `backend/constraints.txt`, `pyproject.toml` |
 | `soliplex_tui_constraint` | `>= 0.60.6, < 0.61` | non-empty | `tui/constraints.txt` |
+| `frontend_version` | `latest` | `latest` or a release tag (letters, digits, `.`, `_`, `-`) | `nginx/Dockerfile` frontend release fetched at image build |
 | `auth_mode` | `no-auth` | `no-auth` or `auth` | backend `command` (`--no-auth-mode` present/absent) |
 | `docs_dir` | `rag/docs` | relative path inside the project | compose ingester bind mount; created at generation time |
 | `ingester_token` | `secret` | weak default — override for real deployments | `.env` `INGESTER_TOKEN` |
@@ -56,6 +57,10 @@ as JSON.
 - `tls_subject` ← `/C=US/ST=State/L=City/O=Soliplex/CN=<server_name>` when not supplied.
 - `backend_auth_flag` ← `--no-auth-mode` plus a trailing space when `auth_mode == "no-auth"`, else empty
   (consumed by `docker-compose.yml.mako`).
+- `frontend_release_path` ← `latest` when `frontend_version == "latest"`, else `tags/<frontend_version>`.
+  Selects the GitHub releases API endpoint in `nginx/Dockerfile`
+  (`/releases/latest` vs `/releases/tags/<tag>`). Default `latest` keeps the
+  historical "newest release" behavior; pin a tag for reproducible builds.
 - `package_name` ← `project_name` lower-cased with hyphens turned into underscores.
   This is the **import name** of the generated `src/<package_name>/` package, so it
   must be a valid Python identifier (and not a keyword); generation fails otherwise.
