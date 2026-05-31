@@ -3,7 +3,7 @@
 ## `soliplex-template` filesystem skill
 
 Write a **filesystem skill** (per the agent-skills spec,
-https://agentskills.io/home) that scaffolds a new Soliplex Docker
+<https://agentskills.io/home>) that scaffolds a new Soliplex Docker
 Compose project.
 
 The skill should:
@@ -123,14 +123,42 @@ asset (mirroring the `soliplex-docs` skill workflow).
   removed for now because the `SLACK_NOTIFY_URL` secret isn't available yet.
   Re-add it once the secret exists — it posts to `#soliplex` via
   `slackapi/slack-github-action@v2.1.0` on `if: failure()`.
-- **Add `.pre-commit-config.yaml`.** Set up pre-commit hooks for this repo,
-  including:
-  - `actionlint` — lint the GitHub Actions workflow(s) under
-    `.github/workflows/` (we could not run it during the workflow's authoring).
-  - other germane checks, e.g. `ruff` (lint/format the Python scripts under
-    `scripts/` and `skill/scripts/`), `check-yaml`/`check-json` and the usual
-    `pre-commit-hooks` hygiene hooks, `shellcheck` for the shell scripts
-    (`scripts/generate-secrets.sh`, `postgres/config/init.sh`), and a
-    hook that runs `scripts/build_skill.py` (skill validation via `skills-ref`).
-  - See the `.pre-commit-config.yaml` added in soliplex/soliplex#1028 for a
-    reference shape.
+  **Done — linting / pre-commit** (mirrors soliplex/soliplex `pyproject.toml` +
+  `.pre-commit-config.yaml`). `pyproject.toml` carries the `[tool.ruff*]`
+  (line-length 79, `F/E/B/U/I/PD/TRY/PT`, single-line isort) and
+  `[tool.pymarkdown]` config; `ruff` is in the `dev` group.
+  `.pre-commit-config.yaml` runs ruff-check + ruff-format, the `pre-commit-hooks`
+  hygiene set (incl. `no-commit-to-branch` main/master, trailing-whitespace,
+  end-of-file, check-toml, check-yaml, debug-statements), gitleaks, a local
+  `pip-audit`, pymarkdown, and actionlint. `uvx pre-commit run --all-files` is
+  green. Notes:
+  - check-yaml caught a **real bug** — a duplicate `processing:` key in
+    `backend/environment/haiku.rag.yaml` that silently dropped `chunk_size`;
+    merged into one block.
+  - `refresh_skill_template.py` now excludes `tests/` and
+    `.pre-commit-config.yaml` (they aren't project files), and
+    `t_nginx_dockerfile` emits a newline-terminated `.mako` (keeps end-of-file
+    and refresh from fighting) while the rendered Dockerfile stays
+    byte-identical.
+  - `ruff check` (lint) is **clean** repo-wide and gated by the `ruff-check`
+    pre-commit hook. (This goes one step beyond soliplex, whose pre-commit only
+    formats and enforces `ruff check` via CI; here it's enforced locally too.)
+    Clearing the findings: `TRY003` messages were moved into
+    `GenError`/`RefreshError` factory classmethods (no inline raise messages);
+    `B904` (`raise ... from exc`), `B028` (`warnings.warn(..., stacklevel=2)`),
+    `PT018` (split composite asserts), `TRY301` (extracted `refresh._assemble`),
+    and `E501` (wrapped) all fixed in code — no `# noqa`, no rule ignores.
+  - Imports are module-style repo-wide (`import pathlib` → `pathlib.Path`,
+    `from mako import template`, `from collections import abc`); the four
+    scripts were converted, the tests were already compliant.
+  - `shellcheck` and a `build_skill.py` hook (from the earlier sketch) are not
+    in soliplex's pre-commit, so left out to match. soliplex#1028 is historical
+    reference only.
+
+- **Add the `python-lint.yaml` CI workflow (deferred).** soliplex enforces
+  `ruff format --check` + `ruff check` on push/PR via
+  `.github/workflows/python-lint.yaml`. This repo's code already passes both;
+  add the mirroring workflow (paths: `scripts/**`, `skill/scripts/**`,
+  `tests/**`, `pyproject.toml`, `uv.lock`) when wiring up CI — fold in with the
+  unit/functional CI jobs. (Slack-on-failure omitted until `SLACK_NOTIFY_URL`
+  exists, same as `build-skill.yaml`.)

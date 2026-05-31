@@ -517,8 +517,12 @@ def test_parse_args_flags():
     )
 
     assert args.out == "x"
-    assert args.interactive and args.force and args.run_secrets
-    assert args.no_git and args.disable_gpg_sign and args.print_defaults
+    assert args.interactive
+    assert args.force
+    assert args.run_secrets
+    assert args.no_git
+    assert args.disable_gpg_sign
+    assert args.print_defaults
 
 
 # --------------------------------------------------------------------------

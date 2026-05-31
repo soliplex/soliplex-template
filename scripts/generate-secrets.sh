@@ -55,20 +55,20 @@ grep -E '^\s+file:\s+' "$COMPOSE_FILE" | \
 while IFS= read -r secret_file_path; do
     # Convert relative path to absolute
     secret_file_path="${secret_file_path#./}"
-    
+
     secret_file="${DOCKER_DIR}/${secret_file_path}"
     secret_name=$(basename "$secret_file")
-    
+
     # Generate password
     password=$(generate_password 32)
-    
+
     # Write to file without newline
     echo -n "$password" > "$secret_file"
     chmod 600 "$secret_file" 2>/dev/null || true
-    
+
     # Store for display later
     echo "${secret_name}|${password}" >> "$TEMP_PASSWORDS"
-    
+
     echo -e "${GREEN}✓ Generated: ${secret_name}${NC}"
     secret_count=$((secret_count + 1))
 done
@@ -119,4 +119,3 @@ echo ""
 echo "3. Verify secrets are working:"
 echo "   docker compose exec postgres env | grep PASSWORD_FILE"
 echo ""
-

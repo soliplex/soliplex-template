@@ -67,5 +67,4 @@ USER soliplex
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
     CMD curl -f http://localhost:9000/ || exit 1
 
-CMD ["nginx", "-g", "daemon off;"]
-</%text>
+CMD ["nginx", "-g", "daemon off;"]</%text>
