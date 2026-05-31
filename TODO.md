@@ -58,6 +58,20 @@ asset (mirroring the `soliplex-docs` skill workflow).
   `needs_docker` postgres bring-up) — would need a docker-enabled job; deferred
   alongside the full-stack bring-up item below.
 
+- **Expand supported Python to match soliplex/soliplex.** This repo currently
+  pins `requires-python = ">=3.13"` and the CI workflows run a single 3.13
+  (`python-version-file`). soliplex supports/tests a matrix (3.12, 3.13, 3.14,
+  coverage only on >= 3.13). To match:
+  - Lower `requires-python` toward `>=3.12` (reconcile with the scripts' PEP 723
+    `requires-python`: `build_skill.py`/`refresh_skill_template.py` already say
+    `>=3.11`, `generate_soliplex_project.py` says `>=3.13`; decide the real floor
+    and align all of them + `[tool.ruff] target-version`).
+  - Switch `python-lint.yaml` and `python-test.yaml` to a `strategy.matrix`
+    over the supported versions (mirroring soliplex), running coverage only on
+    `>= 3.13` (e.g. `--no-cov` on the lowest, as soliplex does for 3.12).
+  - Verify the suites + the generator actually pass on each version (3.12 may
+    need syntax/typing checks; `uv sync` against each interpreter).
+
 - **Extend the functional test toward a full-stack bring-up (deferred).** The
   current functional test brings up only `postgres` (deterministic, no network
   beyond a base image). A full `docker compose up -d --wait` of the whole stack
