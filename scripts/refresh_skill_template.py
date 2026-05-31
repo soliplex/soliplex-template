@@ -170,8 +170,12 @@ def t_init_sh(text: str) -> str:
 
 def t_gitignore(text: str) -> str:
     # The repo ignores its own skill build artifacts under /dist/; a generated
-    # project has no such artifact, so strip that block from its .gitignore.
-    new, n = re.subn(r"\n# Skill build artifacts[^\n]*\n/dist/\n\n?", "\n", text, count=1)
+    # project has no such artifact, so strip that block (a '# Skill build
+    # artifacts' comment, any further comment lines, and the /dist/ entry).
+    new, n = re.subn(
+        r"\n# Skill build artifacts[^\n]*\n(?:#[^\n]*\n)*/dist/\n\n?",
+        "\n", text, count=1,
+    )
     require(n == 1, "expected the '/dist/' skill build artifacts block in .gitignore")
     return new
 
@@ -271,48 +275,42 @@ def tracked_files() -> list[str]:
     return [p for p in out.split("\0") if p]
 
 
-def render_check() -> int:
+def render_check(root: Path) -> int:
     from mako.template import Template
     from mako import exceptions
     bad = 0
-    for mako in sorted(TEMPLATE.rglob("*.mako")):
+    for mako in sorted(root.rglob("*.mako")):
         try:
             Template(filename=str(mako), strict_undefined=True).render(**PROBE)
         except Exception:
             bad += 1
-            print(f"render FAILED: {mako.relative_to(REPO)}", file=sys.stderr)
+            print(f"render FAILED: {mako.name}", file=sys.stderr)
             print(exceptions.text_error_template().render(), file=sys.stderr)
     return bad
 
 
-def main() -> int:
-    require((REPO / ".git").exists(), "must run inside the repo")
-    files = tracked_files()
-    require(bool(files), "git ls-files returned nothing")
-
-    # 1. wipe + 2. copy verbatim
-    if TEMPLATE.exists():
-        shutil.rmtree(TEMPLATE)
-    TEMPLATE.mkdir(parents=True)
+def _build_into(dest_root: Path, files: list[str]) -> tuple[int, int]:
+    """Assemble the template under ``dest_root``. Returns (derived, authored)."""
+    # copy verbatim
     for rel in files:
         src = REPO / rel
-        dest = TEMPLATE / rel
+        dest = dest_root / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dest)  # preserves mode (executable scripts, etc.)
 
-    # 3a. in-place edits to files kept under their original name
+    # in-place edits to files kept under their original name
     for rel, fn in VERBATIM_EDITS.items():
-        copied = TEMPLATE / rel
+        copied = dest_root / rel
         require(copied.is_file(), f"verbatim-edit source {rel} not found (committed?)")
         try:
             copied.write_text(fn(copied.read_text()))
         except RefreshError as exc:
             raise RefreshError(f"{rel}: {exc}") from exc
 
-    # 3b. rewrite parameterized files as .mako
+    # rewrite parameterized files as .mako
     derived = 0
     for rel, fn in DERIVED.items():
-        copied = TEMPLATE / rel
+        copied = dest_root / rel
         require(copied.is_file(),
                 f"derived source {rel} not found among tracked files (committed?)")
         try:
@@ -323,19 +321,41 @@ def main() -> int:
         copied.unlink()
         derived += 1
 
-    # 4. authored templates
+    # authored templates
     for name, content in AUTHORED.items():
-        (TEMPLATE / name).write_text(content)
+        (dest_root / name).write_text(content)
 
-    # 5. render-check
-    bad = render_check()
-    if bad:
-        raise RefreshError(f"{bad} template(s) failed the render check")
+    return derived, len(AUTHORED)
+
+
+def main() -> int:
+    require((REPO / ".git").exists(), "must run inside the repo")
+    files = tracked_files()
+    require(bool(files), "git ls-files returned nothing")
+
+    # Build into a staging dir and swap into place only on success, so a
+    # mid-run failure leaves the existing template intact rather than corrupt.
+    staging = TEMPLATE.parent / f"{TEMPLATE.name}.new"
+    if staging.exists():
+        shutil.rmtree(staging)
+    staging.mkdir(parents=True)
+    try:
+        derived, authored = _build_into(staging, files)
+        bad = render_check(staging)
+        if bad:
+            raise RefreshError(f"{bad} template(s) failed the render check")
+    except BaseException:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+
+    if TEMPLATE.exists():
+        shutil.rmtree(TEMPLATE)
+    staging.rename(TEMPLATE)  # atomic on the same filesystem
 
     total_mako = sum(1 for _ in TEMPLATE.rglob("*.mako"))
     print(f"refreshed {TEMPLATE.relative_to(REPO)}: "
           f"{len(files)} files copied, {derived} derived + "
-          f"{len(AUTHORED)} authored = {total_mako} .mako templates, render-check OK")
+          f"{authored} authored = {total_mako} .mako templates, render-check OK")
     return 0
 
 

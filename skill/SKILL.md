@@ -50,6 +50,19 @@ is to collect parameters from the user and invoke it.
    steps. Relay those. If `--run-secrets` was not used, the user must run
    `./scripts/generate-secrets.sh` before `docker compose up`.
 
+## Managing this skill's version
+
+`scripts/skill_versions.py` (stdlib only) lists, diffs, and upgrades published
+builds of this skill against its GitHub releases:
+
+```bash
+python3 scripts/skill_versions.py list              # published versions, newest first
+python3 scripts/skill_versions.py diff [TAG]         # installed vs a published build (default: latest)
+python3 scripts/skill_versions.py upgrade [TAG]      # install a published build in place (default: latest)
+```
+
+Set `GITHUB_TOKEN`/`GH_TOKEN` to raise the GitHub API rate limit.
+
 ## Notes
 
 - `.mako` files in the template are rendered with the parameters; all other

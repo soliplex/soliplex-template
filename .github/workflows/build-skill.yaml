@@ -62,7 +62,7 @@ jobs:
         run: uv sync --frozen --group dev
 
       - name: Build & validate skill
-        run: uv run --group dev python scripts/build_skill.py
+        run: uv run --group dev python scripts/build_skill.py --commit "${{ github.sha }}"
 
       # All release assets are written under dist/ (gitignored) alongside the
       # assembled skill directory.
