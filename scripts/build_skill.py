@@ -3,11 +3,11 @@
 # requires-python = ">=3.11"
 # dependencies = ["skills-ref"]
 # ///
-"""Assemble and validate the soliplex-project-generator skill into dist/.
+"""Assemble and validate the soliplex-template skill into dist/.
 
 Copies the tracked source under ``skill/`` into the published skill directory:
 
-    dist/soliplex-project-generator/
+    dist/soliplex-template/
 
 and validates it with the agent-skills reference tool (``skills-ref`` package,
 ``agentskills`` CLI). Packaging into release assets (tarball/zip) is the CI
@@ -35,7 +35,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-SKILL_NAME = "soliplex-project-generator"
+SKILL_NAME = "soliplex-template"
 REPO_DIR = Path(__file__).resolve().parent.parent
 SRC = REPO_DIR / "skill"
 DIST = REPO_DIR / "dist"

@@ -5,7 +5,7 @@
 # ///
 """Regenerate skill/assets/template/ from the live repo exemplars.
 
-The embedded template shipped inside the soliplex-project-generator skill is a
+The embedded template shipped inside the soliplex-template skill is a
 parameterized copy of this repo's stack. When the repo's exemplar files change
 (docker-compose.yml, installation.yaml, nginx.conf, …), run this to re-derive
 the template so the generator can be exercised against current exemplars:

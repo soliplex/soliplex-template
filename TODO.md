@@ -1,6 +1,6 @@
 # TODO
 
-## Project-generator filesystem skill
+## `soliplex-template` filesystem skill
 
 Write a **filesystem skill** (per the agent-skills spec,
 https://agentskills.io/home) that scaffolds a new Soliplex Docker

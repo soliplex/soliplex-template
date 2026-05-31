@@ -256,7 +256,7 @@ def maybe_git_init(out: Path, do_git: bool, disable_gpg_sign: bool) -> bool:
     subprocess.run(["git", "add", "-A"], cwd=out, check=True, env=env)
     commit = [
         "git",
-        "-c", "user.name=soliplex-project-generator",
+        "-c", "user.name=soliplex-template",
         "-c", "user.email=noreply@soliplex.invalid",
     ]
     # By default we respect the host's commit-signing config; --disable-gpg-sign
@@ -265,7 +265,7 @@ def maybe_git_init(out: Path, do_git: bool, disable_gpg_sign: bool) -> bool:
         commit += ["-c", "commit.gpgsign=false"]
     commit += [
         "commit", "-q", "-m",
-        "Initial Soliplex project scaffolded by soliplex-project-generator",
+        "Initial Soliplex project scaffolded by soliplex-template",
     ]
     subprocess.run(commit, cwd=out, check=True, env=env)
     return True

@@ -1,5 +1,5 @@
 ---
-name: soliplex-project-generator
+name: soliplex-template
 description: Scaffold a new, runnable Soliplex Docker Compose project (nginx + Soliplex backend + Flutter frontend + haiku-ingester + Postgres, plus docling-serve and a TUI). Prompts for parameters (project name, host ports, OLLAMA_BASE_URL, models, Postgres DB names, version pins, auth mode, docs dir, ingester token) and generates the full stack from an embedded template. Use when a user wants to stand up, bootstrap, or create a new Soliplex deployment / compose stack.
 ---
 

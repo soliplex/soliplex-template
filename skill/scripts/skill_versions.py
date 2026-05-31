@@ -1,11 +1,11 @@
 #!/usr/bin/env python
-"""List, diff, and upgrade published versions of the project-generator skill.
+"""List, diff, and upgrade published versions of the soliplex-template skill.
 
 This script is bundled inside the skill (under ``scripts/``) so an agent --
 or a human -- can manage the installed copy without leaving the skill:
 
 * ``list``  -- which versions have been published? Both the rolling builds
-  (``generator-YYYY.MM.DD-<sha>``) and the snapshots attached to software
+  (``template-skill-YYYY.MM.DD-<sha>``) and the snapshots attached to software
   releases (``v...``) are shown, newest first, with the installed copy and
   the current ``latest`` pointer marked.
 * ``diff``  -- how does the installed skill differ from a published version
@@ -41,13 +41,13 @@ from pathlib import Path
 
 OWNER = "soliplex"
 REPO = "soliplex-template"
-ASSET_TARBALL = "soliplex-project-generator-skill.tar.gz"
-POINTER_TAG = "generator-latest"
+ASSET_TARBALL = "soliplex-template-skill.tar.gz"
+POINTER_TAG = "template-skill-latest"
 POINTER_MANIFEST = "latest.json"
 
 _API = f"https://api.github.com/repos/{OWNER}/{REPO}"
 _DL = f"https://github.com/{OWNER}/{REPO}/releases/download"
-_USER_AGENT = "soliplex-project-generator-skill"
+_USER_AGENT = "soliplex-template-skill"
 
 # Schemes ``_get`` is willing to open: https for GitHub, file:// for the
 # ``--asset-url`` override (advanced/testing). Anything else is refused
@@ -61,8 +61,8 @@ _SKILL_MD = _SKILL_ROOT / "SKILL.md"
 # Files compared by ``diff`` / not worth showing as drift.
 _IGNORE_PARTS = frozenset({"__pycache__"})
 
-# Rolling build tags look like ``generator-2026.05.29-abc1234``.
-_ROLLING_RE = re.compile(r"^generator-\d{4}\.\d{2}\.\d{2}-[0-9a-f]+$")
+# Rolling build tags look like ``template-skill-2026.05.29-abc1234``.
+_ROLLING_RE = re.compile(r"^template-skill-\d{4}\.\d{2}\.\d{2}-[0-9a-f]+$")
 _COMMIT_RE = re.compile(r'^\s*source_commit:\s*"?([0-9a-fA-F]+)"?\s*$')
 
 
@@ -106,7 +106,7 @@ class NoSuchSkill(SystemExit):
 
 
 class PointerUnavailable(SystemExit):
-    """The ``generator-latest`` pointer manifest could not be read."""
+    """The ``template-skill-latest`` pointer manifest could not be read."""
 
     def __init__(self, tag: str):
         self.tag = tag
@@ -380,7 +380,7 @@ def _resolve_target(
     """Resolve ``target``, expanding ``latest`` via the pointer manifest.
 
     Returns ``(tag, asset_url, sha256)``. When ``target`` is ``latest`` and
-    no explicit ``asset_url`` was supplied, the ``generator-latest`` pointer
+    no explicit ``asset_url`` was supplied, the ``template-skill-latest`` pointer
     is consulted; :class:`PointerUnavailable` is raised if it cannot be read.
     """
     if target == "latest" and asset_url is None:
@@ -489,7 +489,7 @@ def cmd_upgrade(args: argparse.Namespace) -> int:
 
         _install_over(new_skill, _SKILL_ROOT)
 
-    print(f"Upgraded soliplex-project-generator to {summary}.")
+    print(f"Upgraded soliplex-template to {summary}.")
     return 0
 
 
