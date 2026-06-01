@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # /// script
-# requires-python = ">=3.13"
+# requires-python = ">=3.12"
 # dependencies = ["mako"]
 # ///
 """Scaffold a new Soliplex Docker Compose project from the embedded template.

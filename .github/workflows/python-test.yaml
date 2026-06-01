@@ -1,13 +1,17 @@
 name: Python tests/coverage
 
-# Parallel to soliplex/soliplex's python-test.yaml. The unit step runs the
-# tests/unit suite under the pyproject addopts, which include
+# Parallel to soliplex/soliplex's python-test.yaml, including its Python version
+# matrix (3.12 / 3.13 / 3.14 -- the versions soliplex itself supports). The unit
+# step runs the tests/unit suite under the pyproject addopts, which include
 # `--cov-fail-under=100` -- so this job is the CI enforcement of the 100% unit
-# coverage gate. The functional step runs the hermetic part of tests/functional
-# and skips the docker-gated cases (`-m "not needs_docker"`, the analogue of
-# soliplex's `not needs_llm`); they bring up a real stack and are meant to be
-# run locally / on demand. (Slack-on-failure from the soliplex version is
-# omitted until SLACK_NOTIFY_URL exists -- see TODO.md, same as build-skill.yaml.)
+# coverage gate. Coverage is only enforced on Python >= 3.13 (3.12 runs the same
+# suite with `--no-cov`, matching soliplex); 3.12 is a "the tooling still imports
+# and runs" smoke check, not a second coverage gate. The functional step runs the
+# hermetic part of tests/functional and skips the docker-gated cases
+# (`-m "not needs_docker"`, the analogue of soliplex's `not needs_llm`); they
+# bring up a real stack and are meant to be run locally / on demand.
+# (Slack-on-failure from the soliplex version is omitted until SLACK_NOTIFY_URL
+# exists -- see TODO.md, same as build-skill.yaml.)
 
 on:
   push:
@@ -36,6 +40,14 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13", "3.14"]
+        # Only enforce the coverage gate on >= 3.13; 3.12 runs with --no-cov.
+        include:
+          - python-version: "3.12"
+            cov-args: "--no-cov"
     steps:
       - uses: actions/checkout@v4
 
@@ -45,7 +57,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version-file: "pyproject.toml"
+          python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
         run: uv sync --frozen --group dev
@@ -53,8 +65,10 @@ jobs:
       # tests/unit only (per testpaths); the pyproject addopts add
       # --cov=scripts --cov=skill/scripts --cov=tests/unit --cov-branch
       # --cov-fail-under=100, so this fails the build below 100% coverage.
+      # matrix.cov-args is "--no-cov" on 3.12 and empty (coverage enforced)
+      # on 3.13 / 3.14.
       - name: Run unit tests with coverage
-        run: uv run pytest
+        run: uv run pytest ${{ matrix.cov-args }}
 
       # Hermetic functional cases only; the docker-gated ones (needs_docker)
       # bring up a real stack and are excluded from CI.
