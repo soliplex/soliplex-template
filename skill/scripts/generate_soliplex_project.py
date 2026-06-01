@@ -525,12 +525,19 @@ def main(argv: list[str]) -> int:
     print(f"  auth:     {params['auth_mode']}")
     git_status = "initial commit created" if did_git else "not initialized"
     print(f"  git:      {git_status}")
+    # Build images explicitly before starting: the nginx image runs a full
+    # Flutter web build and can take several minutes, so it's clearer to do
+    # it as its own step than to let `up` build implicitly while you wait.
     print("\nNext steps:")
-    n = 1
+    steps = []
     if not ran_secrets:
-        print(f"  {n}. cd {out} && ./scripts/generate-secrets.sh")
-        n += 1
-    print(f"  {n}. cd {out} && docker compose up")
+        steps.append("./scripts/generate-secrets.sh")
+    steps.append("docker compose build   # build images (first build is slow)")
+    steps.append("docker compose up -d   # start the stack in the background")
+    steps.append("docker compose ps      # wait until services are healthy")
+    print(f"  1. cd {out}")
+    for i, step in enumerate(steps, start=2):
+        print(f"  {i}. {step}")
     return 0
 
 
