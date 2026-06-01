@@ -261,6 +261,56 @@ def test_runtime_dirs_have_gitkeep(generated_project):
     assert missing == []
 
 
+def test_runtime_bind_mount_dirs_are_git_tracked(generated_project):
+    # #50/#51: every host bind-mount source dir must be committed so it
+    # survives a fresh clone. A missing source is recreated root-owned by the
+    # Docker daemon, after which the uid-1000 ingester/backend can't write it
+    # (the ingester dies opening /data/ingester.db). Tracked placeholders keep
+    # the directories present.
+    out, params = generated_project
+    expected = {
+        "rag/db/README.md",
+        "backend/uploads/rooms/.gitkeep",
+        "backend/uploads/threads/.gitkeep",
+        "backend/sandbox/workdirs/README.md",
+        f"{params['docs_dir']}/.gitkeep",
+    }
+
+    tracked = set(
+        subprocess.run(
+            ["git", "ls-files"],
+            cwd=out,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.split()
+    )
+
+    assert expected <= tracked
+
+
+def test_runtime_data_stays_gitignored(generated_project):
+    # The bind-mount dirs are tracked, but the data written into them at
+    # runtime (ingester SQLite queue, LanceDB, uploads, sandbox scratch) must
+    # remain ignored so it never lands in the project's git history.
+    out, _params = generated_project
+    data_paths = [
+        "rag/db/ingester.db",
+        "rag/db/haiku.rag.lancedb/chunks.lance",
+        "backend/uploads/rooms/secret.pdf",
+        "backend/sandbox/workdirs/run1/scratch.py",
+    ]
+
+    ignored = subprocess.run(
+        ["git", "check-ignore", *data_paths],
+        cwd=out,
+        capture_output=True,
+        text=True,
+    ).stdout.split()
+
+    assert set(ignored) == set(data_paths)
+
+
 def test_env_file_written(generated_project):
     out, params = generated_project
 
