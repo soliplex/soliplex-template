@@ -229,6 +229,16 @@ def test_coerce_derives_frontend_release_path_for_pinned_version():
     assert result["frontend_release_path"] == "tags/v0.60.0"
 
 
+def test_coerce_derives_frontend_release_path_with_build_metadata():
+    params = dict(gen.DEFAULTS)
+    params["ollama_base_url"] = "http://x"
+    params["frontend_version"] = "v0.87.1+56"
+
+    result = gen.coerce_and_derive(params)
+
+    assert result["frontend_release_path"] == "tags/v0.87.1+56"
+
+
 # --------------------------------------------------------------------------
 # validate
 # --------------------------------------------------------------------------
@@ -286,6 +296,18 @@ def test_validate_bad_frontend_version(frontend_version):
 
     with pytest.raises(gen.GenError, match="must be 'latest' or"):
         gen.validate(params)
+
+
+# Recent soliplex/frontend release tags carry semver build metadata, e.g.
+# "v0.87.1+56"; the '+' must pass validation (see issue #47).
+@pytest.mark.parametrize(
+    "frontend_version", ["latest", "v0.87.1+56", "v0.60.0"]
+)
+def test_validate_accepts_frontend_version(frontend_version):
+    params = _valid_params()
+    params["frontend_version"] = frontend_version
+
+    assert gen.validate(params) is None
 
 
 def test_validate_dbs_must_differ():

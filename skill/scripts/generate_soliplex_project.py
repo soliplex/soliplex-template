@@ -92,8 +92,12 @@ PORT_KEYS = (
 )
 INT_KEYS = PORT_KEYS + ("rag_embed_dim", "chunk_size")
 IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-# "latest" or a soliplex/frontend release tag (letters, digits, '.', '_', '-').
-FRONTEND_VERSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+# "latest" or a soliplex/frontend release tag. Recent tags carry semver
+# build metadata (e.g. "v0.87.1+56"), so '+' is allowed alongside the usual
+# letters, digits, '.', '_', '-'. The tag is only ever used in the GitHub
+# API path (/releases/tags/<tag>) in nginx/Dockerfile, which accepts a raw
+# '+'; nginx is built (not pulled by tag), so the value is never a Docker tag.
+FRONTEND_VERSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
 
 
 class GenError(Exception):
@@ -144,7 +148,8 @@ class GenError(Exception):
     def bad_frontend_version(cls, value):
         return cls(
             f"frontend_version={value!r} must be 'latest' or a "
-            "soliplex/frontend release tag (letters, digits, '.', '_', '-')"
+            "soliplex/frontend release tag (letters, digits, '.', '_', "
+            "'-', '+')"
         )
 
     @classmethod
