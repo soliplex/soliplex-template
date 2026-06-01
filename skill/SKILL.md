@@ -32,6 +32,14 @@ is to collect parameters from the user and invoke it.
    uv run scripts/generate_soliplex_project.py --print-defaults
    ```
 
+   The frontend version (`frontend_version`) and the backend `soliplex`
+   version (`soliplex_backend_constraint`) are **independent choices**: the
+   `soliplex/frontend` repo and the `soliplex` PyPI package release on their
+   own schedules, so any frontend version can pair with any backend version.
+   **Ask for them as two separate selections**, each with its own list of real
+   versions (below). Never present paired/coupled front-end+back-end
+   combinations; the user picks one value on each axis.
+
    For `frontend_version`, **offer the user real choices** instead of asking
    them to recall a tag: list recent `soliplex/frontend` releases (newest
    first) and present them alongside `latest` (the default):
