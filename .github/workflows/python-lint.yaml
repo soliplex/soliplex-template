@@ -3,9 +3,6 @@ name: Python linting
 # Mirrors soliplex/soliplex's python-lint.yaml: enforce `ruff format --check`
 # and `ruff check` (same rule config, see pyproject.toml) on the repo's Python.
 # The pre-commit `ruff-check`/`ruff-format` hooks gate this locally; this job is
-# the CI backstop on push/PR. (The Slack-on-failure step from the soliplex
-# version is omitted until SLACK_NOTIFY_URL exists -- see TODO.md, same as
-# build-skill.yaml.)
 
 on:
   push:
@@ -53,3 +50,17 @@ jobs:
 
       - name: Run ruff linter
         run: uv run ruff check
+
+      - name: Notify Slack on failure
+        if: failure()
+        uses: slackapi/slack-github-action@v2.1.0
+        with:
+          webhook: ${{ secrets.SLACK_NOTIFY_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "channel": "#soliplex",
+              "username": "soliplex-template",
+              "text": ":x: ${{ github.workflow }} failed on ${{ github.head_ref }}:\n${{ github.event.head_commit.message }}\nhttps://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+              "icon_emoji": ":ghost:"
+            }
