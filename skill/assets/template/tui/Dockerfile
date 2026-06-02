@@ -27,7 +27,11 @@ RUN \
       typer && \
     uv sync
 
-RUN groupadd -g 1000 soliplex && useradd -m -u 1000 -g 1000 soliplex
+# UID/GID the service runs as (build.args from docker-compose.yml, sourced from
+# PUID/PGID in .env; defaults to the historical 1000:1000).
+ARG PUID=1000
+ARG PGID=1000
+RUN groupadd -g ${PGID} soliplex && useradd -m -u ${PUID} -g ${PGID} soliplex
 
 USER soliplex
 

@@ -127,6 +127,9 @@ def test_t_compose():
         'ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"\n'
         'VOYAGE_API_KEY: "${VOYAGE_API_KEY}"\n'
         'CO_API_KEY: "${CO_API_KEY}"\n'
+        "        PUID: ${PUID:-1000}\n"
+        "        PGID: ${PGID:-1000}\n"
+        '    user: "${PUID:-1000}:${PGID:-1000}"\n'
         '      - "9000:9000"\n'
         '      - "9443:9443"\n'
         "      command: --public-url https://soliplex.localhost:9443/tui\n"
@@ -158,6 +161,9 @@ def test_t_compose():
     assert "- ./${docs_dir}:/docs" in out
     assert "<%text>${OLLAMA_BASE_URL}</%text>" in out
     assert "<%text>${INGESTER_TOKEN:-secret}</%text>" in out
+    # UID/GID alignment interpolations reach the rendered compose verbatim.
+    assert "<%text>${PUID:-1000}</%text>" in out
+    assert "<%text>${PGID:-1000}</%text>" in out
     # The backend gets this project's src/ on its import path.
     assert "PYTHONPATH: /app/src" in out
     assert 'source: "./src"' in out

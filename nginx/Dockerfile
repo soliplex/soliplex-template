@@ -28,6 +28,12 @@ RUN \
 
 FROM debian:trixie
 
+# UID/GID the service runs as (build.args from docker-compose.yml, sourced from
+# PUID/PGID in .env; defaults to the historical 1000:1000). Used below to own
+# the build-time self-signed TLS material and create the runtime user.
+ARG PUID=1000
+ARG PGID=1000
+
 # Install:
 # - iputils-ping for network debugging
 # - openssl for certificate generation,
@@ -48,7 +54,7 @@ RUN mkdir -p /etc/nginx/ssl && \
     -keyout /etc/nginx/ssl/server.key \
     -out /etc/nginx/ssl/server.crt \
     -subj "/C=US/ST=State/L=City/O=Organization/CN=localhost" && \
-    chown -R 1000:1000 /etc/nginx/ssl
+    chown -R ${PUID}:${PGID} /etc/nginx/ssl
 
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 ENV SSL_CERT_DIR=/etc/ssl/certs
@@ -62,7 +68,7 @@ COPY --from=builder /app/build/web /app/build/web
 # an image rebuild.
 
 EXPOSE 9000 9443
-RUN groupadd -g 1000 soliplex && useradd -m  -u 1000 -g 1000 soliplex
+RUN groupadd -g ${PGID} soliplex && useradd -m -u ${PUID} -g ${PGID} soliplex
 USER soliplex
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
     CMD curl -f http://localhost:9000/ || exit 1

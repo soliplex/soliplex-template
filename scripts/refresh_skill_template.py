@@ -104,6 +104,12 @@ def t_compose(text: str) -> str:
         "${ANTHROPIC_API_KEY}",
         "${VOYAGE_API_KEY}",
         "${CO_API_KEY}",
+        # Container UID/GID alignment: Compose-level interpolations (read from
+        # .env) for build.args, the service `user:` overrides, and the postgres
+        # tmpfs ownership. They are docker syntax, not generator parameters, so
+        # they must reach the rendered compose file verbatim.
+        "${PUID:-1000}",
+        "${PGID:-1000}",
     )
     return repl(
         text,

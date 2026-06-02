@@ -9,6 +9,9 @@ services:
     build:
       context: nginx
       dockerfile: Dockerfile
+      args:
+        PUID: <%text>${PUID:-1000}</%text>
+        PGID: <%text>${PGID:-1000}</%text>
 
     depends_on:
       - backend
@@ -37,11 +40,14 @@ services:
     build:
       context: tui
       dockerfile: Dockerfile
+      args:
+        PUID: <%text>${PUID:-1000}</%text>
+        PGID: <%text>${PGID:-1000}</%text>
 
     depends_on:
       - backend
 
-    user: "1000:1000"
+    user: "<%text>${PUID:-1000}</%text>:<%text>${PGID:-1000}</%text>"
 
     # No host port mapping: the TUI is reached only through nginx so that the
     # '--public-url' baked into the served HTML (used for static assets and
@@ -53,9 +59,12 @@ services:
     build:
       context: backend
       dockerfile: Dockerfile
+      args:
+        PUID: <%text>${PUID:-1000}</%text>
+        PGID: <%text>${PGID:-1000}</%text>
 
     env_file: ".env"
-    user: "1000:1000"
+    user: "<%text>${PUID:-1000}</%text>:<%text>${PGID:-1000}</%text>"
 
     depends_on:
       - postgres
@@ -146,7 +155,7 @@ services:
       #- VOYAGE_API_KEY=<%text>${VOYAGE_API_KEY}</%text>
       #- CO_API_KEY=<%text>${CO_API_KEY}</%text>
 
-    user: "1000:1000"
+    user: "<%text>${PUID:-1000}</%text>:<%text>${PGID:-1000}</%text>"
 
     depends_on:
       docling-serve:
@@ -201,6 +210,9 @@ services:
     build:
       context: postgres
       dockerfile: Dockerfile
+      args:
+        PUID: <%text>${PUID:-1000}</%text>
+        PGID: <%text>${PGID:-1000}</%text>
 
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
@@ -228,7 +240,7 @@ services:
         target: "/var/lib/postgresql"
 
     tmpfs:
-      - /var/run/postgresql:uid=999,gid=999
+      - /var/run/postgresql:uid=<%text>${PUID:-1000}</%text>,gid=<%text>${PGID:-1000}</%text>
       - /tmp
     secrets:
       - source: agui_db_password
