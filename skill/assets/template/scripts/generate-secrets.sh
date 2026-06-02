@@ -64,7 +64,14 @@ while IFS= read -r secret_file_path; do
 
     # Write to file without newline
     echo -n "$password" > "$secret_file"
-    chmod 600 "$secret_file" 2>/dev/null || true
+    # 0644, not 0600: Compose bind-mounts these as file-based secrets,
+    # preserving the host owner/mode. The service users that read them
+    # (e.g. postgres, remapped to uid 1000 in postgres/Dockerfile) run under
+    # uids that need not match the host user who ran this script, so an
+    # owner-only mode makes the secret unreadable to the container. These are
+    # local-dev secrets in a gitignored .secrets/ dir, so world-readable is
+    # acceptable here.
+    chmod 644 "$secret_file" 2>/dev/null || true
 
     # Store for display later
     echo "${secret_name}|${password}" >> "$TEMP_PASSWORDS"

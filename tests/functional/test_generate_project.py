@@ -520,7 +520,10 @@ def test_secrets_generated_by_default(generated_project):
     ]
     for name in gen_files:
         mode = stat.S_IMODE((out / ".secrets" / name).stat().st_mode)
-        assert mode == 0o600, f"{name} has mode {oct(mode)}"
+        # 0644, not 0600: Compose bind-mounts these as file secrets preserving
+        # host owner/mode, and the container service uids (e.g. postgres) need
+        # not match the host user, so they must be world-readable to be usable.
+        assert mode == 0o644, f"{name} has mode {oct(mode)}"
 
 
 def test_git_initialised_with_single_clean_commit(generated_project):
