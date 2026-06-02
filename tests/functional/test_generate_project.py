@@ -318,6 +318,10 @@ def test_env_file_written(generated_project):
 
     assert f"OLLAMA_BASE_URL={params['ollama_base_url']}" in env
     assert "INGESTER_TOKEN=" in env
+    # UID/GID default to the host operator running the generator (this test
+    # process); compose reads them and the generated secrets are owned by them.
+    assert f"PUID={os.getuid()}" in env
+    assert f"PGID={os.getgid()}" in env
 
 
 # --------------------------------------------------------------------------
@@ -520,10 +524,11 @@ def test_secrets_generated_by_default(generated_project):
     ]
     for name in gen_files:
         mode = stat.S_IMODE((out / ".secrets" / name).stat().st_mode)
-        # 0644, not 0600: Compose bind-mounts these as file secrets preserving
-        # host owner/mode, and the container service uids (e.g. postgres) need
-        # not match the host user, so they must be world-readable to be usable.
-        assert mode == 0o644, f"{name} has mode {oct(mode)}"
+        # 0600: owner-only. The files are owned by PUID/PGID (here the host
+        # operator running the generator), and the containers run as that same
+        # uid/gid, so an owner-only mode is both sufficient and the right
+        # secret hygiene -- no world-readable bits needed.
+        assert mode == 0o600, f"{name} has mode {oct(mode)}"
 
 
 def test_git_initialised_with_single_clean_commit(generated_project):

@@ -239,6 +239,57 @@ def test_coerce_derives_frontend_release_path_with_build_metadata():
     assert result["frontend_release_path"] == "tags/v0.87.1+56"
 
 
+def test_coerce_derives_uid_gid_from_host(monkeypatch):
+    monkeypatch.setattr(gen.os, "getuid", lambda: 1234)
+    monkeypatch.setattr(gen.os, "getgid", lambda: 5678)
+    params = dict(gen.DEFAULTS)
+    params["ollama_base_url"] = "http://x"
+
+    result = gen.coerce_and_derive(params)
+
+    assert result["puid"] == 1234
+    assert result["pgid"] == 5678
+
+
+def test_coerce_uid_gid_root_falls_back_to_1000(monkeypatch, capsys):
+    monkeypatch.setattr(gen.os, "getuid", lambda: 0)
+    monkeypatch.setattr(gen.os, "getgid", lambda: 0)
+    params = dict(gen.DEFAULTS)
+    params["ollama_base_url"] = "http://x"
+
+    result = gen.coerce_and_derive(params)
+
+    assert result["puid"] == 1000
+    assert result["pgid"] == 1000
+    assert "root" in capsys.readouterr().err
+
+
+def test_coerce_keeps_explicit_uid_gid(monkeypatch):
+    # Explicit values must win; os.getuid/getgid must not even be consulted.
+    _no_call = mock.Mock(side_effect=AssertionError)
+    monkeypatch.setattr(gen.os, "getuid", _no_call)
+    monkeypatch.setattr(gen.os, "getgid", _no_call)
+    params = dict(gen.DEFAULTS)
+    params["ollama_base_url"] = "http://x"
+    params["puid"] = "1500"
+    params["pgid"] = "1600"
+
+    result = gen.coerce_and_derive(params)
+
+    assert result["puid"] == 1500
+    assert result["pgid"] == 1600
+
+
+def test_coerce_uid_not_int(monkeypatch):
+    monkeypatch.setattr(gen.os, "getgid", lambda: 1000)
+    params = dict(gen.DEFAULTS)
+    params["ollama_base_url"] = "http://x"
+    params["puid"] = "not-an-int"
+
+    with pytest.raises(gen.GenError, match="puid must be an integer"):
+        gen.coerce_and_derive(params)
+
+
 # --------------------------------------------------------------------------
 # validate
 # --------------------------------------------------------------------------
@@ -315,6 +366,24 @@ def test_validate_dbs_must_differ():
     params["authz_db"] = params["agui_db"]
 
     with pytest.raises(gen.GenError, match="must differ"):
+        gen.validate(params)
+
+
+# 0 rejects root; a negative and an out-of-range value exercise both bounds of
+# the guard, and 'puid'/'pgid' cover both keys.
+@pytest.mark.parametrize(
+    "key, value",
+    [
+        ("puid", 0),
+        ("puid", -1),
+        ("pgid", 2**31),
+    ],
+)
+def test_validate_bad_uid(key, value):
+    params = _valid_params()
+    params[key] = value
+
+    with pytest.raises(gen.GenError, match="must be a positive integer"):
         gen.validate(params)
 
 
@@ -418,13 +487,20 @@ def test_ensure_runtime_dirs(tmp_path):
 # write_env
 # --------------------------------------------------------------------------
 def test_write_env(tmp_path):
-    params = {"ollama_base_url": "http://o:11434", "ingester_token": "tok"}
+    params = {
+        "ollama_base_url": "http://o:11434",
+        "ingester_token": "tok",
+        "puid": 1234,
+        "pgid": 5678,
+    }
 
     gen.write_env(tmp_path, params)
 
     text = (tmp_path / ".env").read_text()
     assert "OLLAMA_BASE_URL=http://o:11434" in text
     assert "INGESTER_TOKEN=tok" in text
+    assert "PUID=1234" in text
+    assert "PGID=5678" in text
 
 
 # --------------------------------------------------------------------------

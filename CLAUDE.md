@@ -48,6 +48,8 @@ Two modes, documented at the bottom of `docker-compose.yml`:
 
 Don't hand-edit `.secrets/*.gen` — re-run the script. Destroying those files after the Postgres volume exists will break backend auth to the DB; you must also `down -v` and re-init.
 
+The `.secrets/*.gen` files are mode `0600`. They're readable in-container because every built image runs as `PUID:PGID` (compose `build.args`, sourced from `.env`; default `1000:1000`) and `generate-secrets.sh` makes the files owned by `PUID:PGID` (re-owning via a throwaway container when the operator's uid differs). This repo has no committed `.env`, so its own stack defaults to `1000:1000`; the generator (`skill/scripts/generate_soliplex_project.py`) seeds `PUID`/`PGID` from the host operator and writes them into the generated project's `.env`. Changing the uid means a `docker compose build` (it's baked in at build time).
+
 ### Soliplex configuration layout (`backend/environment/`, bind-mounted to `/environment`)
 
 - `installation.yaml` — the top-level Soliplex install config (agents, secrets, environment vars, room list, skills, DB URIs, upload/sandbox paths). Start here when reasoning about backend behavior. The file is heavily commented with pointers to <https://soliplex.github.io/soliplex/config/> — those comments describe defaults, so a section being empty/absent is not the same as being unconfigured.

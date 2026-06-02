@@ -42,7 +42,13 @@ RUN --mount=type=cache,target=/root/.cache/uv \
       fi; \
     done
 
-RUN groupadd -g 1000 soliplex && useradd -m  -u 1000 -g 1000 soliplex
+# UID/GID the service runs as. Passed from docker-compose.yml (build.args),
+# which sources PUID/PGID from .env; defaults match the historical 1000:1000.
+# Aligning the image user with the host operator lets host-owned bind mounts
+# and 0600 Docker secrets be read/written without a uid mismatch.
+ARG PUID=1000
+ARG PGID=1000
+RUN groupadd -g ${PGID} soliplex && useradd -m -u ${PUID} -g ${PGID} soliplex
 
 USER soliplex
 

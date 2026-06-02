@@ -28,6 +28,11 @@ Generate them before the first `up`:
     already exists breaks the backend's auth to the database. See
     [Secrets](../operations/secrets.md).
 
+The generated `.env` records `PUID` / `PGID` — the uid/gid the containers run
+as and that owns these secret files (defaulted to the operator who scaffolded
+the project). If you run services as a different account, set them explicitly
+and rebuild; see [Secrets](../operations/secrets.md).
+
 <%text>## 2. Confirm `OLLAMA_BASE_URL`</%text>
 
 The generator wrote `.env` with the `OLLAMA_BASE_URL` you supplied. Confirm it

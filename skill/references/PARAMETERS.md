@@ -50,6 +50,8 @@ as JSON.
 | `auth_mode` | `no-auth` | `no-auth` or `auth` | backend `command` (`--no-auth-mode` present/absent) |
 | `docs_dir` | `rag/docs` | relative path inside the project | compose ingester bind mount; created at generation time |
 | `ingester_token` | `secret` | weak default — override for real deployments | `.env` `INGESTER_TOKEN` |
+| `puid` | *(host `os.getuid()`)* | derived if unset; positive int < 2³¹ (an explicit `0`/root is rejected) | `.env` `PUID`; compose `build.args`, service `user:`, postgres tmpfs |
+| `pgid` | *(host `os.getgid()`)* | derived if unset; positive int < 2³¹ | `.env` `PGID`; same places as `puid` |
 
 ## Derived values
 
@@ -61,6 +63,15 @@ as JSON.
   Selects the GitHub releases API endpoint in `nginx/Dockerfile`
   (`/releases/latest` vs `/releases/tags/<tag>`). Default `latest` keeps the
   historical "newest release" behavior; pin a tag for reproducible builds.
+- `puid` / `pgid` ← the host operator's `os.getuid()` / `os.getgid()` when not
+  supplied (an auto-detected `0`/root falls back to `1000`). These land in `.env`
+  as `PUID` / `PGID`; Compose reads them for every built image's `build.args`, the
+  `user:` overrides, and the postgres tmpfs ownership, so the containers run as —
+  and the generated `.secrets/*.gen` files (mode `0600`) are owned by — that
+  uid/gid. Set them explicitly to run on a deploy host whose login uid differs
+  from the runtime service account. **Changing them later requires rebuilding the
+  built images** (`docker compose build`), since the uid is baked in at build
+  time. See `operations/secrets.md` in the generated project's docs.
 - `package_name` ← `project_name` lower-cased with hyphens turned into underscores.
   This is the **import name** of the generated `src/<package_name>/` package, so it
   must be a valid Python identifier (and not a keyword); generation fails otherwise.
