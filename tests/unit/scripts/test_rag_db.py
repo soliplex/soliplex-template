@@ -16,6 +16,8 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import pathlib
+import sys
+import types
 from unittest import mock
 
 import pytest
@@ -99,6 +101,47 @@ def _ns(**overrides) -> argparse.Namespace:
     base = dict(rechunk=False, embed_only=False, title_only=False)
     base.update(overrides)
     return argparse.Namespace(**base)
+
+
+def _make_room(project: pathlib.Path, dirname: str, text: str) -> pathlib.Path:
+    """Write backend/environment/rooms/<dirname>/room_config.yaml."""
+    room = project / "backend" / "environment" / "rooms" / dirname
+    room.mkdir(parents=True, exist_ok=True)
+    cfg = room / "room_config.yaml"
+    cfg.write_text(text)
+    return cfg
+
+
+def _fake_soliplex_config(monkeypatch, rooms, unmapped=()):
+    """Install a fake ``soliplex_config`` module for rag_db's lazy import.
+
+    ``do_add_to_room`` resolves room id -> path through
+    ``soliplex_config._resolve_room_configs``, which yields ``(meta, path)``
+    entries; the real one shells out to ``soliplex-cli`` in a container, so
+    tests substitute the entries here, synthesizing each ``meta`` from the
+    ``rooms`` id -> path map (only ``room_id`` is consumed downstream).
+    """
+    fake = types.ModuleType("soliplex_config")
+    fake._resolve_room_configs = mock.Mock(
+        return_value=(
+            [({"room_id": rid}, path) for rid, path in rooms.items()],
+            list(unmapped),
+        )
+    )
+    monkeypatch.setitem(sys.modules, "soliplex_config", fake)
+    return fake
+
+
+# A room whose rag skill config already carries a (different) stem.
+_ROOM_WITH_STEM = (
+    'id: "chat"\n'
+    "skills:\n"
+    "  skill_configs:\n"
+    '    - kind: "haiku.rag.skills.rag"\n'
+    '      rag_lancedb_stem: "haiku.rag"\n'
+)
+# A room with no skills block at all (only the tools form of RAG, or none).
+_ROOM_NO_SKILLS = 'id: "faux"\ntools:\n  - tool_name: foo\n'
 
 
 # --------------------------------------------------------------------------
@@ -616,3 +659,265 @@ def test_mutually_exclusive_modifiers():
         rag_db.parse_args(
             ["update", "--db-name", "x", "--rechunk", "--embed-only"]
         )
+
+
+def test_add_room_requires_room():
+    with pytest.raises(SystemExit):
+        rag_db.parse_args(["add-rag-to-room", "--db-name", "handbook"])
+
+
+# --------------------------------------------------------------------------
+# wire_room_stem
+# --------------------------------------------------------------------------
+def test_wire_room_stem_unchanged():
+    new_text, action = rag_db.wire_room_stem(
+        _ROOM_WITH_STEM, "haiku.rag", "chat"
+    )
+
+    assert (new_text, action) == (_ROOM_WITH_STEM, "unchanged")
+
+
+def test_wire_room_stem_updated():
+    new_text, action = rag_db.wire_room_stem(
+        _ROOM_WITH_STEM, "handbook", "chat"
+    )
+
+    assert action == "updated"
+    assert '      rag_lancedb_stem: "handbook"' in new_text
+    assert '"haiku.rag"' not in new_text
+
+
+def test_wire_room_stem_inserted_at_eof():
+    text = (
+        'id: "z"\n'
+        "skills:\n"
+        "  skill_configs:\n"
+        '    - kind: "haiku.rag.skills.rag"\n'
+    )
+
+    new_text, action = rag_db.wire_room_stem(text, "handbook", "z")
+
+    assert action == "inserted"
+    assert new_text == text + '      rag_lancedb_stem: "handbook"\n'
+
+
+def test_wire_room_stem_inserted_scans_block_then_dedent():
+    # A blank line and a deeper key inside the entry, then a dedented
+    # top-level key: the scan walks the block, finds no stem, and inserts
+    # directly after the kind line.
+    text = (
+        'id: "y"\n'
+        "skills:\n"
+        "  skill_configs:\n"
+        '    - kind: "haiku.rag.skills.rag"\n'
+        "\n"
+        "      enabled: true\n"
+        "allow_mcp: false\n"
+    )
+
+    new_text, action = rag_db.wire_room_stem(text, "handbook", "y")
+
+    assert action == "inserted"
+    lines = new_text.splitlines()
+    kind_i = lines.index('    - kind: "haiku.rag.skills.rag"')
+    assert lines[kind_i + 1] == '      rag_lancedb_stem: "handbook"'
+
+
+def test_wire_room_stem_appended_trailing_newline():
+    new_text, action = rag_db.wire_room_stem(
+        _ROOM_NO_SKILLS, "handbook", "faux"
+    )
+
+    assert action == "appended"
+    assert new_text == _ROOM_NO_SKILLS + (
+        "\n"
+        "skills:\n"
+        "  skill_configs:\n"
+        '    - kind: "haiku.rag.skills.rag"\n'
+        '      rag_lancedb_stem: "handbook"\n'
+    )
+
+
+def test_wire_room_stem_appended_no_trailing_newline():
+    new_text, action = rag_db.wire_room_stem('id: "r"', "handbook", "r")
+
+    assert action == "appended"
+    assert new_text == (
+        'id: "r"\n'
+        "\n"
+        "skills:\n"
+        "  skill_configs:\n"
+        '    - kind: "haiku.rag.skills.rag"\n'
+        '      rag_lancedb_stem: "handbook"'
+    )
+
+
+def test_wire_room_stem_appended_blank_last_line_no_separator():
+    new_text, action = rag_db.wire_room_stem('id: "r"\n\n', "handbook", "r")
+
+    assert action == "appended"
+    # The file already ends in a blank line, so no extra separator is added.
+    assert new_text == (
+        'id: "r"\n'
+        "\n"
+        "skills:\n"
+        "  skill_configs:\n"
+        '    - kind: "haiku.rag.skills.rag"\n'
+        '      rag_lancedb_stem: "handbook"\n'
+    )
+
+
+def test_wire_room_stem_skills_without_rag_refused():
+    text = (
+        'id: "q"\n'
+        "skills:\n"
+        "  skill_configs:\n"
+        '    - kind: "soliplex.skills.other"\n'
+    )
+
+    with pytest.raises(rag_db.RagDbError, match="add that skill config"):
+        rag_db.wire_room_stem(text, "handbook", "q")
+
+
+# --------------------------------------------------------------------------
+# add-rag-to-room
+# --------------------------------------------------------------------------
+def test_add_room_docker_missing(tmp_path, which, run, monkeypatch):
+    which.return_value = None
+    project = _make_project(tmp_path)
+    _fake_soliplex_config(monkeypatch, {})
+
+    with pytest.raises(rag_db.RagDbError, match="docker not found"):
+        rag_db.main(
+            [
+                "add-rag-to-room",
+                "--db-name",
+                "handbook",
+                "--project-dir",
+                str(project),
+                "--room",
+                "chat",
+            ]
+        )
+
+
+def test_add_room_happy_multiple(tmp_path, which, monkeypatch, capsys):
+    project = _make_project(tmp_path)
+    _make_db(project)
+    chat = _make_room(project, "chat", _ROOM_WITH_STEM)
+    faux = _make_room(project, "faux", _ROOM_NO_SKILLS)
+    _fake_soliplex_config(monkeypatch, {"chat": chat, "faux": faux})
+
+    rc = rag_db.main(
+        [
+            "add-rag-to-room",
+            "--db-name",
+            "handbook",
+            "--project-dir",
+            str(project),
+            "--room",
+            "chat",
+            "--room",
+            "faux",
+        ]
+    )
+
+    assert rc == 0
+    assert '"handbook"' in chat.read_text()
+    assert 'kind: "haiku.rag.skills.rag"' in faux.read_text()
+    out = capsys.readouterr().out
+    assert "chat: updated" in out
+    assert "faux: appended" in out
+    assert "Wired 2 room(s)" in out
+
+
+def test_add_room_unknown_room_errors(tmp_path, which, monkeypatch):
+    project = _make_project(tmp_path)
+    _make_db(project)
+    chat = _make_room(project, "chat", _ROOM_WITH_STEM)
+    _fake_soliplex_config(monkeypatch, {"chat": chat})
+    before = chat.read_text()
+
+    with pytest.raises(rag_db.RagDbError, match="not found; available: chat"):
+        rag_db.main(
+            [
+                "add-rag-to-room",
+                "--db-name",
+                "handbook",
+                "--project-dir",
+                str(project),
+                "--room",
+                "nope",
+            ]
+        )
+
+    assert chat.read_text() == before
+
+
+def test_add_room_unchanged_not_rewritten(
+    tmp_path, which, monkeypatch, capsys
+):
+    project = _make_project(tmp_path)
+    _make_db(project, "haiku.rag")
+    chat = _make_room(project, "chat", _ROOM_WITH_STEM)
+    _fake_soliplex_config(monkeypatch, {"chat": chat})
+
+    rc = rag_db.main(
+        [
+            "add-rag-to-room",
+            "--db-name",
+            "haiku.rag",
+            "--project-dir",
+            str(project),
+            "--room",
+            "chat",
+        ]
+    )
+
+    assert rc == 0
+    assert chat.read_text() == _ROOM_WITH_STEM
+    assert "chat: unchanged" in capsys.readouterr().out
+
+
+def test_add_room_warns_when_db_absent(tmp_path, which, monkeypatch, capsys):
+    project = _make_project(tmp_path)
+    faux = _make_room(project, "faux", _ROOM_NO_SKILLS)
+    _fake_soliplex_config(monkeypatch, {"faux": faux})
+
+    rc = rag_db.main(
+        [
+            "add-rag-to-room",
+            "--db-name",
+            "handbook",
+            "--project-dir",
+            str(project),
+            "--room",
+            "faux",
+        ]
+    )
+
+    assert rc == 0
+    assert "does not exist yet" in capsys.readouterr().out
+
+
+def test_add_room_ingester_stem_no_db_warning(
+    tmp_path, which, monkeypatch, capsys
+):
+    project = _make_project(tmp_path)
+    chat = _make_room(project, "chat", _ROOM_WITH_STEM)
+    _fake_soliplex_config(monkeypatch, {"chat": chat})
+
+    rc = rag_db.main(
+        [
+            "add-rag-to-room",
+            "--db-name",
+            "haiku.rag",
+            "--project-dir",
+            str(project),
+            "--room",
+            "chat",
+        ]
+    )
+
+    assert rc == 0
+    assert "does not exist yet" not in capsys.readouterr().out
