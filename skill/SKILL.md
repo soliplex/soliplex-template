@@ -136,9 +136,46 @@ python3 scripts/rag_db.py update --db-name handbook --delete <document_id>
 ```
 
 `--source` accepts a path under `rag/docs/`, a remote URL/S3 URI, or any other
-local path (auto-bind-mounted read-only). The script only builds/updates the
-database; to make a room use it, add `rag_lancedb_stem: "<name>"` to that room's
-`room_config.yaml` (see `docs/operations/rag.md`).
+local path (auto-bind-mounted read-only).
+
+### Wiring the database into rooms
+
+Building the database does not make any room use it. **After `create`, offer to
+wire the new database into one or more rooms.** If the user agrees:
+
+1. **List the candidate room IDs** with the `soliplex-config` helper. It runs
+   `soliplex-cli config` inside the backend container and reads the ids of the
+   rooms the installation actually loads (driven by the resolved `room_paths`,
+   so it honors installations that limit their rooms or point at shared
+   directories — a `rooms/*` glob would get that wrong):
+
+   ```bash
+   python3 scripts/soliplex_config.py room_ids
+   ```
+
+   (Requires the stack's images to be built; pass `--project-dir` if you are
+   not in the stack directory.)
+
+2. **Let the user pick one or more** of those room IDs (multiple selection).
+
+3. **Wire each chosen room** with the `add-rag-to-room` subcommand, passing
+   `--room` once per selected ID:
+
+   ```bash
+   python3 scripts/rag_db.py add-rag-to-room --db-name handbook \
+       --room chat --room search
+   ```
+
+   It resolves those ids to their `room_config.yaml` the same way (via the
+   installation's `room_paths`), then sets `rag_lancedb_stem: "<name>"` on each
+   room's `haiku.rag.skills.rag` skill config, editing the file in place
+   (comments preserved). A room with no `skills:` block gets one appended; a
+   room that already wires a *different* rag skill config (not via
+   `haiku.rag.skills.rag`) is reported so you can wire it by hand. See
+   `docs/operations/rag.md`.
+
+You can run `add-rag-to-room` independently at any time (e.g. to point an
+existing room at a database created earlier).
 
 ## Notes
 
