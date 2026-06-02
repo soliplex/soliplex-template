@@ -20,6 +20,7 @@ on:
       - 'uv.lock'
       - 'scripts/**'
       - 'skill/scripts/**'
+      - 'skill/assets/template/**'
       - 'tests/**'
       - '.github/workflows/python-test.yaml'
   pull_request:
@@ -30,6 +31,7 @@ on:
       - 'uv.lock'
       - 'scripts/**'
       - 'skill/scripts/**'
+      - 'skill/assets/template/**'
       - 'tests/**'
       - '.github/workflows/python-test.yaml'
   workflow_dispatch:
@@ -84,5 +86,50 @@ jobs:
               "channel": "#soliplex",
               "username": "soliplex-template",
               "text": ":x: ${{ github.workflow }} failed on ${{ github.head_ref }}:\n${{ github.event.head_commit.message }}\nhttps://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+              "icon_emoji": ":ghost:"
+            }
+
+  # The docker-gated functional tier (needs_docker): generate a project from the
+  # embedded template, then `docker compose up -d postgres` and assert the service
+  # comes up healthy and init.sh created the application databases + roles. Runs
+  # only after the unit/hermetic `test` job passes. ubuntu-latest ships Docker
+  # Engine + the Compose v2 plugin preinstalled, so no docker-setup action is
+  # needed. A single Python version is enough -- the image build is the slow part,
+  # not the interpreter -- and it runs once rather than per matrix leg.
+  functest-docker:
+    runs-on: ubuntu-latest
+    needs: test
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: uv sync --frozen --group dev
+
+      - name: Check docker is available
+        run: docker compose version
+
+      - name: Run docker functional tests
+        run: uv run pytest --no-cov -m needs_docker tests/functional/
+
+      - name: Notify Slack on failure
+        if: failure()
+        uses: slackapi/slack-github-action@v2.1.0
+        with:
+          webhook: ${{ secrets.SLACK_NOTIFY_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "channel": "#soliplex",
+              "username": "soliplex-template",
+              "text": ":x: ${{ github.workflow }} (docker functest) failed on ${{ github.head_ref }}:\n${{ github.event.head_commit.message }}\nhttps://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}",
               "icon_emoji": ":ghost:"
             }

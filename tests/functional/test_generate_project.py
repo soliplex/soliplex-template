@@ -520,7 +520,10 @@ def test_secrets_generated_by_default(generated_project):
     ]
     for name in gen_files:
         mode = stat.S_IMODE((out / ".secrets" / name).stat().st_mode)
-        assert mode == 0o600, f"{name} has mode {oct(mode)}"
+        # 0644, not 0600: Compose bind-mounts these as file secrets preserving
+        # host owner/mode, and the container service uids (e.g. postgres) need
+        # not match the host user, so they must be world-readable to be usable.
+        assert mode == 0o644, f"{name} has mode {oct(mode)}"
 
 
 def test_git_initialised_with_single_clean_commit(generated_project):
@@ -587,3 +590,47 @@ def test_postgres_service_comes_up_healthy(postgres_up):
     assert postgres.get("State") == "running"
     if postgres.get("Health"):  # healthcheck is defined, so this is present
         assert postgres["Health"] == "healthy"
+
+
+@pytest.mark.needs_docker
+def test_postgres_init_creates_databases_and_roles(postgres_up):
+    # The generated postgres/config/init.sh (AUTO_CREATE_DATABASE defaults on)
+    # runs on the fresh volume and creates a database + like-named role per
+    # configured DB name. One round trip lists both catalogs. The stack uses
+    # scram-sha-256 for every connection (including the socket), so feed psql
+    # the generated superuser password via PGPASSWORD.
+    out, params, _up = postgres_up
+    password = _read(out, ".secrets", "postgres_password.gen")
+    probe = (
+        "SELECT 'db:' || datname FROM pg_database "
+        "UNION ALL "
+        "SELECT 'role:' || rolname FROM pg_roles"
+    )
+
+    result = _compose(
+        out,
+        "exec",
+        "-T",
+        "-e",
+        f"PGPASSWORD={password}",
+        "postgres",
+        "psql",
+        "-U",
+        "postgres",
+        "-d",
+        "postgres",
+        "-tAc",
+        probe,
+    )
+
+    assert result.returncode == 0, result.stderr
+    catalog = {
+        line.strip() for line in result.stdout.splitlines() if line.strip()
+    }
+    expected = {
+        f"db:{params['agui_db']}",
+        f"db:{params['authz_db']}",
+        f"role:{params['agui_db']}",
+        f"role:{params['authz_db']}",
+    }
+    assert expected <= catalog, sorted(expected - catalog)
