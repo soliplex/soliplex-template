@@ -10,8 +10,6 @@ name: Python tests/coverage
 # hermetic part of tests/functional and skips the docker-gated cases
 # (`-m "not needs_docker"`, the analogue of soliplex's `not needs_llm`); they
 # bring up a real stack and are meant to be run locally / on demand.
-# (Slack-on-failure from the soliplex version is omitted until SLACK_NOTIFY_URL
-# exists -- see TODO.md, same as build-skill.yaml.)
 
 on:
   push:
@@ -74,3 +72,17 @@ jobs:
       # bring up a real stack and are excluded from CI.
       - name: Run functional tests (no docker)
         run: uv run pytest --no-cov -m "not needs_docker" tests/functional/
+
+      - name: Notify Slack on failure
+        if: failure()
+        uses: slackapi/slack-github-action@v2.1.0
+        with:
+          webhook: ${{ secrets.SLACK_NOTIFY_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "channel": "#soliplex",
+              "username": "soliplex-template",
+              "text": ":x: ${{ github.workflow }} failed on ${{ github.head_ref }}:\n${{ github.event.head_commit.message }}\nhttps://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+              "icon_emoji": ":ghost:"
+            }

@@ -1,0 +1,22 @@
+name: Notify Slack on New PR
+
+on:
+  pull_request:
+    types: [opened]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Slack notification when new PR is opened
+        uses: slackapi/slack-github-action@v2.1.0
+        with:
+          webhook: ${{ secrets.SLACK_NOTIFY_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "channel": "#soliplex",
+              "username": "soliplex-template",
+              "text": ":bell: New Pull Request by *${{ github.event.pull_request.user.login }}*:\n*${{ github.event.pull_request.title }}*\n${{ github.event.pull_request.html_url }}",
+              "icon_emoji": ":ghost:"
+            }
