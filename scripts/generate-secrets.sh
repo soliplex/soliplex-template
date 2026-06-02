@@ -64,14 +64,12 @@ while IFS= read -r secret_file_path; do
 
     # Write to file without newline
     echo -n "$password" > "$secret_file"
-    # 0644, not 0600: Compose bind-mounts these as file-based secrets,
-    # preserving the host owner/mode. The service users that read them
-    # (e.g. postgres, remapped to uid 1000 in postgres/Dockerfile) run under
-    # uids that need not match the host user who ran this script, so an
-    # owner-only mode makes the secret unreadable to the container. These are
-    # local-dev secrets in a gitignored .secrets/ dir, so world-readable is
-    # acceptable here.
-    chmod 644 "$secret_file" 2>/dev/null || true
+    # 0600: owner-only. Compose bind-mounts these as file-based secrets,
+    # preserving the host owner/mode, and the in-container service users read
+    # them at this mode -- which works because the images run as PUID:PGID
+    # (see docker-compose.yml build.args / .env), and the block below ensures
+    # the files are owned by PUID:PGID.
+    chmod 600 "$secret_file" 2>/dev/null || true
 
     # Store for display later
     echo "${secret_name}|${password}" >> "$TEMP_PASSWORDS"
@@ -90,6 +88,39 @@ if [ "$secret_count" -eq 0 ]; then
     echo -e "${YELLOW}    my_secret:${NC}"
     echo -e "${YELLOW}      file: ./.secrets/my_secret.gen${NC}"
     exit 0
+fi
+
+# Align secret ownership with the UID/GID the containers run as.
+#
+# Compose bind-mounts these files preserving the host owner/mode, and the
+# in-container service users read them at mode 0600 -- so the files must be
+# owned by PUID:PGID (the build/runtime uid:gid, read from .env; default 1000).
+# When the operator running this script already has that uid/gid -- the common
+# single-developer case -- nothing more is needed. Otherwise (e.g. a deploy
+# host whose login uid differs from the service account) re-own via a
+# throwaway root container, since chowning to an arbitrary uid needs privilege
+# the operator may lack. If docker is unavailable, warn and leave it to the
+# operator.
+ENV_FILE="${DOCKER_DIR}/.env"
+PUID=1000
+PGID=1000
+if [ -f "$ENV_FILE" ]; then
+    puid_val=$(grep -E '^PUID=' "$ENV_FILE" | tail -n1 | cut -d= -f2)
+    pgid_val=$(grep -E '^PGID=' "$ENV_FILE" | tail -n1 | cut -d= -f2)
+    [ -n "$puid_val" ] && PUID="$puid_val"
+    [ -n "$pgid_val" ] && PGID="$pgid_val"
+fi
+cur_uid=$(id -u)
+cur_gid=$(id -g)
+if [ "${PUID}:${PGID}" != "${cur_uid}:${cur_gid}" ]; then
+    if command -v docker >/dev/null 2>&1; then
+        echo -e "${CYAN}Re-owning secrets to ${PUID}:${PGID} (container uid/gid)...${NC}"
+        docker run --rm -u 0:0 -v "${SECRETS_DIR}:/secrets" busybox \
+            chown -R "${PUID}:${PGID}" /secrets
+    else
+        echo -e "${YELLOW}WARNING: secrets are owned by ${cur_uid}:${cur_gid}, but services run as ${PUID}:${PGID}.${NC}"
+        echo -e "${YELLOW}Install docker, or chown ${SECRETS_DIR}/*.gen to ${PUID}:${PGID} manually, before 'up'.${NC}"
+    fi
 fi
 
 echo ""
