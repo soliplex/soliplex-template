@@ -1,15 +1,23 @@
 ---
 name: soliplex-template
-description: Scaffold a new, runnable Soliplex Docker Compose project (nginx + Soliplex backend + Flutter frontend + haiku-ingester + Postgres, plus docling-serve and a TUI). Prompts for parameters (project name, host ports, OLLAMA_BASE_URL, models, Postgres DB names, version pins, frontend version, auth mode, docs dir, ingester token) and generates the full stack from an embedded template. Use when a user wants to stand up, bootstrap, or create a new Soliplex deployment / compose stack.
+description: "Generate a new, runnable Soliplex Docker Compose stack from an embedded template, or inspect and change the configuration of an existing one — query its resolved installation config, and create or update extra RAG databases (with guidance for wiring them into rooms). Use when a user wants to stand up, bootstrap, or create a new Soliplex deployment / compose stack, or to inspect, configure, or add a RAG database to an existing one."
 ---
 
-# Soliplex project generator
+# Soliplex project generation and configuration
 
-Generate a fresh Soliplex Docker Compose stack from the embedded template under
-`assets/template/`. The heavy lifting is done by `scripts/generate_soliplex_project.py`; your job
-is to collect parameters from the user and invoke it.
+This skill both **generates** a new Soliplex Docker Compose project from an
+embedded template and helps you **inspect or change the configuration** of an
+existing one — its resolved installation config and its RAG databases.
 
-## Steps
+## Soliplex project generator
+
+Generate a fresh Soliplex Docker Compose stack — nginx, the Soliplex backend,
+the Flutter web frontend, haiku-ingester, Postgres, docling-serve, and a TUI —
+from the embedded template under `assets/template/`. The heavy lifting is done
+by `scripts/generate_soliplex_project.py`; your job is to collect parameters
+from the user and invoke it.
+
+### Steps
 
 1. **Gather parameters.** Ask the user for the values they care about. Sensible
    defaults exist for everything except `ollama_base_url` (always required). The
@@ -102,18 +110,18 @@ is to collect parameters from the user and invoke it.
    can take several minutes — a separate `build` step makes that wait legible
    instead of hiding it inside `up`.
 
-## Managing this skill's version
+### Notes
 
-`scripts/skill_versions.py` (stdlib only) lists, diffs, and upgrades published
-builds of this skill against its GitHub releases:
-
-```bash
-python3 scripts/skill_versions.py list              # published versions, newest first
-python3 scripts/skill_versions.py diff [TAG]         # installed vs a published build (default: latest)
-python3 scripts/skill_versions.py upgrade [TAG]      # install a published build in place (default: latest)
-```
-
-Set `GITHUB_TOKEN`/`GH_TOKEN` to raise the GitHub API rate limit.
+- `.mako` files in the template are rendered with the parameters; all other
+  files are copied verbatim. Literal `${...}` (docker-compose / shell
+  interpolation) is preserved.
+- The generator validates ports (range + uniqueness), requires
+  `ollama_base_url`, and checks DB identifiers before writing anything.
+- `.env` and `.secrets/` in the generated project are gitignored, so the initial
+  commit never captures secrets.
+- The generated project includes its own Zensical documentation site under
+  `docs/` (parameterized for that project) plus `zensical` in its `dev`
+  dependency group; the owner can preview it with `uv run zensical serve`.
 
 ## Inspecting a running stack's config
 
@@ -136,30 +144,63 @@ python3 scripts/soliplex_config.py room chat             # full room_config.yaml
 `get` prints scalars bare and lists of scalars one per line (shell-friendly);
 add `--format yaml` to dump any value — including nested structures — as YAML.
 `rooms` emits a YAML list with one `{room_id, name, description}` mapping per
-loaded room (`name`/`description` are `null` when a room omits them) — handy for
-offering the user a labelled room picker. `room <room_id>` prints that one
-room's full `room_config.yaml` verbatim (comments and all), resolved the same
-way, and errors if no loaded room has that id. Both `rooms` and `room` are
-driven by the resolved
-`room_paths`, so unlike a `rooms/*` glob it honors installations that limit
-their room set or point at shared directories; each container path is mapped
-back to its host `room_config.yaml` through the backend's bind mount, and any
-path outside the installation mount is reported on stderr and skipped. Pass
+loaded room (`name`/`description` are `null` when a room omits them); use it
+when you need a room's id or human-readable name. `room <room_id>` prints that
+one room's full `room_config.yaml` verbatim (comments and all), and errors if
+no loaded room has that id. Both read the rooms the running stack actually
+loads (so the set matches what the backend sees); a room on a shared mount
+outside the installation is skipped with a warning on stderr. Pass
 `--project-dir` if you are not already in the stack directory;
 `--service`/`--cli`/`--installation` override the backend defaults.
 
 The script needs PyYAML; `uv run scripts/soliplex_config.py …` supplies it from
 the script's inline metadata, or `pip install pyyaml` first.
 
-## Notes
+## Creating and updating extra RAG databases
 
-- `.mako` files in the template are rendered with the parameters; all other
-  files are copied verbatim. Literal `${...}` (docker-compose / shell
-  interpolation) is preserved.
-- The generator validates ports (range + uniqueness), requires
-  `ollama_base_url`, and checks DB identifiers before writing anything.
-- `.env` and `.secrets/` in the generated project are gitignored, so the initial
-  commit never captures secrets.
-- The generated project includes its own Zensical documentation site under
-  `docs/` (parameterized for that project) plus `zensical` in its `dev`
-  dependency group; the owner can preview it with `uv run zensical serve`.
+The stack's `haiku-ingester` *continuously* maintains a single LanceDB. When a
+user wants a *separate*, mostly-static RAG database — e.g. one room per corpus —
+run `scripts/rag_db.py` from inside the generated stack directory. It reuses the
+`haiku-ingester` service (its image, the `rag/db`/`rag/docs` mounts, the
+`OLLAMA_BASE_URL` env, and the same `haiku.rag.yaml`) via `docker compose run`,
+writing to a *different* `rag/db/<name>.lancedb`, so it never collides with the
+running ingester's single-writer database.
+
+```bash
+# create a new database and populate it (db must not exist yet)
+python3 scripts/rag_db.py create --db-name handbook --source rag/docs/handbook/
+
+# add more documents / re-index / remove a document (db must already exist)
+python3 scripts/rag_db.py update --db-name handbook --source https://example.com/a.html
+python3 scripts/rag_db.py update --db-name handbook --rebuild --rechunk
+python3 scripts/rag_db.py update --db-name handbook --delete <document_id>
+```
+
+`--source` accepts a path under `rag/docs/`, a remote URL/S3 URI, or any other
+local path (auto-bind-mounted read-only). The script only builds/updates the
+database; to make a room use it, add `rag_lancedb_stem: "<name>"` to that room's
+`room_config.yaml` (see `docs/operations/rag.md`).
+
+## Managing this skill's version
+
+`scripts/skill_versions.py` (stdlib only) lists, diffs, and upgrades published
+builds of this skill against its GitHub releases:
+
+```bash
+python3 scripts/skill_versions.py list              # published versions, newest first
+python3 scripts/skill_versions.py diff [TAG]         # installed vs a published build (default: latest)
+python3 scripts/skill_versions.py upgrade [TAG]      # install a published build in place (default: latest)
+```
+
+Two kinds of versions are published. **Release** builds are snapshots attached
+to tagged software releases (`v…`) — stable milestones that only change when a
+release is cut. **Rolling** builds (`template-skill-YYYY.MM.DD-<sha>`) are
+continuous per-build snapshots, tagged with the build date and short commit
+hash; the `template-skill-latest` pointer always tracks the newest one, so the
+default `latest` target for `diff`/`upgrade` means "the current tip of the
+rolling line." `list` shows both newest first (marking the installed copy and
+the `latest` pointer); narrow it with `list --kind release` or
+`list --kind rolling`. To stay on stable milestones rather than the rolling
+tip, pass an explicit `v…` `TAG` to `diff`/`upgrade`.
+
+Set `GITHUB_TOKEN`/`GH_TOKEN` to raise the GitHub API rate limit.
