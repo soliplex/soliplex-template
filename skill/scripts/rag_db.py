@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.12"
-# dependencies = []
+# dependencies = ["pyyaml"]
 # ///
 """Create or update a one-off (static) Soliplex RAG database.
 
@@ -30,8 +30,15 @@ Run it from the stack directory (or pass ``--project-dir``)::
     python3 rag_db.py update --db-name handbook --rebuild --rechunk
     python3 rag_db.py update --db-name handbook --delete <document_id>
 
-Creating/updating the database is all this does; to make a room use it, add
-``rag_lancedb_stem: "<name>"`` to that room's ``room_config.yaml``.
+    # wire the database into one or more rooms (by room id)
+    python3 rag_db.py add-rag-to-room --db-name handbook --room chat
+
+``add-rag-to-room`` sets ``rag_lancedb_stem: "<name>"`` on the
+``haiku.rag.skills.rag`` skill config of each named room's
+``room_config.yaml``, editing the file in place while preserving its comments
+and layout. Rooms are resolved by id through the installation's loaded
+``room_paths`` (via ``soliplex_config``), so it honors limited/shared room
+sets rather than globbing the rooms tree.
 
 Writing the ingester's *own* database (``--db-name haiku.rag``) is refused
 while the ``haiku-ingester`` service is running, since two writers corrupt
@@ -48,6 +55,12 @@ import subprocess
 import sys
 import urllib.parse
 
+# Room wiring resolves room ids via the sibling ``soliplex_config`` helper
+# (same skill/scripts/ directory). Put that directory on the path so the lazy
+# ``import soliplex_config`` in ``do_add_to_room`` resolves whether this script
+# is run directly or loaded by path.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+
 # The continuous ingester writes this LanceDB stem; a one-off database must use
 # a different stem, or the two writers collide (single-writer constraint).
 INGESTER_STEM = "haiku.rag"
@@ -56,6 +69,16 @@ DB_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 DEFAULT_SERVICE = "haiku-ingester"
 # The service's existing read-only config mount inside the container.
 DEFAULT_CONFIG = "/app/haiku.rag.yaml"
+
+# Room wiring: the rag skill we attach the LanceDB stem to, and the key.
+RAG_SKILL_KIND = "haiku.rag.skills.rag"
+_STEM_KEY = "rag_lancedb_stem"
+_KIND_RE = re.compile(
+    r"""^(?P<indent>\s*)-\s+kind:\s*["']?"""
+    + re.escape(RAG_SKILL_KIND)
+    + r"""["']?\s*$"""
+)
+_TOP_SKILLS_RE = re.compile(r"^skills:\s*$")
 
 
 class RagDbError(Exception):
@@ -117,6 +140,19 @@ class RagDbError(Exception):
     def modifier_without_rebuild(cls):
         return cls(
             "--rechunk/--embed-only/--title-only are only valid with --rebuild"
+        )
+
+    @classmethod
+    def room_not_found(cls, room_id, available):
+        avail = ", ".join(sorted(available)) or "(none found)"
+        return cls(f"room id {room_id!r} not found; available: {avail}")
+
+    @classmethod
+    def room_skills_present_no_rag(cls, room_id):
+        return cls(
+            f"room {room_id!r} has a 'skills:' block but no "
+            f"{RAG_SKILL_KIND!r} skill config; add that skill config and its "
+            f"{_STEM_KEY} by hand"
         )
 
 
@@ -250,11 +286,72 @@ def rebuild_modifier(args: argparse.Namespace) -> str | None:
 
 
 def print_wiring_hint(db_name: str) -> None:
-    print("To use it from a room, add to rooms/<room>/room_config.yaml:")
-    print("  skills:")
-    print("    skill_configs:")
-    print('      - kind: "haiku.rag.skills.rag"')
-    print(f'        rag_lancedb_stem: "{db_name}"')
+    print("To wire it into one or more rooms, run:")
+    print(
+        f"  rag_db.py add-rag-to-room --db-name {db_name} "
+        "--room <room_id> [--room <room_id> ...]"
+    )
+    print("(or set rag_lancedb_stem in a room's room_config.yaml by hand).")
+
+
+def _leading_spaces(line: str) -> int:
+    return len(line) - len(line.lstrip(" "))
+
+
+def _join(lines: list[str], original: str) -> str:
+    """Re-join lines, preserving the original file's trailing newline."""
+    text = "\n".join(lines)
+    if original.endswith("\n"):
+        text += "\n"
+    return text
+
+
+def wire_room_stem(text: str, db_name: str, room_id: str) -> tuple[str, str]:
+    """Set ``rag_lancedb_stem: "<db_name>"`` on the room's rag skill config.
+
+    Returns ``(new_text, action)`` where action is ``"unchanged"``,
+    ``"updated"``, ``"inserted"``, or ``"appended"``. The edit is line-based
+    (not a YAML round-trip), so comments and unrelated layout are preserved.
+
+    Raises ``RagDbError`` when the file already has a top-level ``skills:``
+    block but no ``haiku.rag.skills.rag`` entry: that shape is ambiguous to
+    splice safely, so the caller is told to wire it by hand.
+    """
+    lines = text.splitlines()
+    stem = f'{_STEM_KEY}: "{db_name}"'
+
+    kind_idx = next(
+        (i for i, ln in enumerate(lines) if _KIND_RE.match(ln)), None
+    )
+    if kind_idx is not None:
+        # Sibling keys of the matched list item align two columns past its '-'.
+        key_indent = _leading_spaces(lines[kind_idx]) + 2
+        j = kind_idx + 1
+        while j < len(lines):
+            stripped = lines[j].strip()
+            indent = _leading_spaces(lines[j])
+            if stripped and indent < key_indent:
+                break  # left the mapping that owns this kind: line
+            if indent == key_indent and stripped.startswith(f"{_STEM_KEY}:"):
+                if stripped == stem:
+                    return text, "unchanged"
+                lines[j] = " " * key_indent + stem
+                return _join(lines, text), "updated"
+            j += 1
+        lines.insert(kind_idx + 1, " " * key_indent + stem)
+        return _join(lines, text), "inserted"
+
+    if any(_TOP_SKILLS_RE.match(ln) for ln in lines):
+        raise RagDbError.room_skills_present_no_rag(room_id)
+
+    block = [
+        "skills:",
+        "  skill_configs:",
+        f'    - kind: "{RAG_SKILL_KIND}"',
+        f"      {stem}",
+    ]
+    sep = [] if (not lines or not lines[-1].strip()) else [""]
+    return _join(lines + sep + block, text), "appended"
 
 
 # --------------------------------------------------------------------------
@@ -358,6 +455,58 @@ def do_update(args: argparse.Namespace) -> int:
     return 0
 
 
+def do_add_to_room(args: argparse.Namespace) -> int:
+    if shutil.which("docker") is None:
+        raise RagDbError.docker_missing()
+    project = resolve_project(args.project_dir)
+    validate_db_name(args.db_name)
+
+    # Resolve room id -> host room_config.yaml via the installation's loaded
+    # room_paths (soliplex-cli config), not a rooms/* glob -- honors limited /
+    # shared room sets. Imported lazily so create/update stay yaml-free.
+    import soliplex_config
+
+    # ``_resolve_room_configs`` yields ``(meta, host_path)`` per loaded room;
+    # the public ``resolve_rooms`` drops the path, which we need to edit the
+    # file. ``meta`` is ``{room_id, name, description}`` -- we key on room_id.
+    entries, _unmapped = soliplex_config._resolve_room_configs(
+        project,
+        args.service,
+        args.cli,
+        args.installation,
+        args.host_environment,
+    )
+    rooms = {meta["room_id"]: cfg for meta, cfg in entries}
+
+    # Validate every requested room up front, before touching any file.
+    missing = [room_id for room_id in args.room if room_id not in rooms]
+    if missing:
+        raise RagDbError.room_not_found(missing[0], rooms.keys())
+
+    # A typo'd or not-yet-built database is wireable, but worth flagging.
+    db_path = db_lancedb_path(project, args.db_name)
+    if args.db_name != INGESTER_STEM and not db_path.exists():
+        print(
+            f"warning: {db_path} does not exist yet; wiring rooms to it "
+            "anyway (create it with 'rag_db.py create')."
+        )
+
+    for room_id in args.room:
+        cfg = rooms[room_id]
+        new_text, action = wire_room_stem(
+            cfg.read_text(), args.db_name, room_id
+        )
+        if action != "unchanged":
+            cfg.write_text(new_text)
+        print(f"  {room_id}: {action} ({_STEM_KEY}: {args.db_name!r})")
+
+    print(
+        f"\n✓ Wired {len(args.room)} room(s) to RAG database "
+        f"{args.db_name!r}.\n"
+    )
+    return 0
+
+
 # --------------------------------------------------------------------------
 # CLI
 # --------------------------------------------------------------------------
@@ -434,6 +583,52 @@ def build_parser() -> argparse.ArgumentParser:
         help="document id to delete (repeatable)",
     )
     update.set_defaults(func=do_update)
+
+    addroom = sub.add_parser(
+        "add-rag-to-room",
+        help="wire an existing RAG database into one or more rooms",
+    )
+    addroom.add_argument(
+        "--db-name",
+        required=True,
+        help="LanceDB stem to wire as the room's rag_lancedb_stem",
+    )
+    addroom.add_argument(
+        "--project-dir",
+        default=".",
+        help="stack directory (default: current directory)",
+    )
+    addroom.add_argument(
+        "--room",
+        action="append",
+        required=True,
+        metavar="ID",
+        help="room id to wire (repeatable)",
+    )
+    # soliplex_config passthrough for room id -> path resolution. Defaults
+    # mirror soliplex_config's (kept inline so parsing create/update needs no
+    # yaml import).
+    addroom.add_argument(
+        "--service",
+        default="backend",
+        help="compose service running soliplex-cli (default: backend)",
+    )
+    addroom.add_argument(
+        "--cli",
+        default="/app/.venv/bin/soliplex-cli",
+        help="in-container soliplex-cli path",
+    )
+    addroom.add_argument(
+        "--installation",
+        default="/environment",
+        help="in-container installation path (default: /environment)",
+    )
+    addroom.add_argument(
+        "--host-environment",
+        default="backend/environment",
+        help="host dir bind-mounted onto --installation",
+    )
+    addroom.set_defaults(func=do_add_to_room)
 
     return parser
 

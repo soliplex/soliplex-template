@@ -177,9 +177,48 @@ python3 scripts/rag_db.py update --db-name handbook --delete <document_id>
 ```
 
 `--source` accepts a path under `rag/docs/`, a remote URL/S3 URI, or any other
-local path (auto-bind-mounted read-only). The script only builds/updates the
-database; to make a room use it, add `rag_lancedb_stem: "<name>"` to that room's
-`room_config.yaml` (see `docs/operations/rag.md`).
+local path (auto-bind-mounted read-only).
+
+Building the database does not make any room use it. **After `create`, offer to
+wire the new database into one or more rooms.** If the user agrees, follow the
+steps in *Wiring the database into rooms* below.
+
+## Wiring the database into rooms
+
+Wire a database into rooms when the user asks directly (including pointing a
+room at a database created earlier), or when they accept the offer you made
+after `create`. Either way:
+
+1. **List the candidate rooms** with the `soliplex_config` helper:
+
+   ```bash
+   python3 scripts/soliplex_config.py rooms
+   ```
+
+   It emits a YAML list with one `{room_id, name, description}` mapping per
+   room the installation actually loads (driven by the resolved `room_paths`,
+   so it honors installations that limit their rooms or point at shared
+   directories — a `rooms/*` glob would get that wrong). Present the `name`
+   and `description` alongside each `room_id` so the user picks meaningfully,
+   not from bare ids. (Requires the stack's images to be built; pass
+   `--project-dir` if you are not in the stack directory.)
+
+2. **Let the user pick one or more** of those rooms.
+
+3. **Wire each chosen room** with the `add-rag-to-room` subcommand, passing
+   `--room` once per selected `room_id`:
+
+   ```bash
+   python3 scripts/rag_db.py add-rag-to-room --db-name handbook \
+       --room chat --room search
+   ```
+
+   It resolves those ids to their `room_config.yaml` the same way (via the
+   installation's `room_paths`), then sets `rag_lancedb_stem: "<name>"` on each
+   room's `haiku.rag.skills.rag` skill config, editing the file in place
+   (comments preserved). A room with no `skills:` block gets one appended; a
+   room that already has a `skills:` block but no `haiku.rag.skills.rag` entry
+   is reported so you can wire it by hand. See `docs/operations/rag.md`.
 
 ## Managing this skill's version
 
