@@ -115,6 +115,42 @@ python3 scripts/skill_versions.py upgrade [TAG]      # install a published build
 
 Set `GITHUB_TOKEN`/`GH_TOKEN` to raise the GitHub API rate limit.
 
+## Inspecting a running stack's config
+
+When you need to reason about what a *running* stack is actually configured to
+do — rather than re-reading the `backend/environment/` source — query its
+**resolved** installation config with `scripts/soliplex_config.py`, run from the
+stack directory. It runs `soliplex-cli config` inside a one-off `backend`
+container (`docker compose run --rm`) and parses the YAML it emits, so it
+reflects defaults, secret/env substitution, and `room_paths` resolution exactly
+as the backend sees them.
+
+```bash
+python3 scripts/soliplex_config.py show                 # whole resolved config
+python3 scripts/soliplex_config.py get room_paths        # one value (dotted path)
+python3 scripts/soliplex_config.py get room_paths.0      # list index
+python3 scripts/soliplex_config.py rooms                 # {room_id, name, description} per loaded room
+python3 scripts/soliplex_config.py room chat             # full room_config.yaml of one room by id
+```
+
+`get` prints scalars bare and lists of scalars one per line (shell-friendly);
+add `--format yaml` to dump any value — including nested structures — as YAML.
+`rooms` emits a YAML list with one `{room_id, name, description}` mapping per
+loaded room (`name`/`description` are `null` when a room omits them) — handy for
+offering the user a labelled room picker. `room <room_id>` prints that one
+room's full `room_config.yaml` verbatim (comments and all), resolved the same
+way, and errors if no loaded room has that id. Both `rooms` and `room` are
+driven by the resolved
+`room_paths`, so unlike a `rooms/*` glob it honors installations that limit
+their room set or point at shared directories; each container path is mapped
+back to its host `room_config.yaml` through the backend's bind mount, and any
+path outside the installation mount is reported on stderr and skipped. Pass
+`--project-dir` if you are not already in the stack directory;
+`--service`/`--cli`/`--installation` override the backend defaults.
+
+The script needs PyYAML; `uv run scripts/soliplex_config.py …` supplies it from
+the script's inline metadata, or `pip install pyyaml` first.
+
 ## Notes
 
 - `.mako` files in the template are rendered with the parameters; all other
