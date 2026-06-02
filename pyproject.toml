@@ -13,6 +13,8 @@ dependencies = []
 #                 render the .mako template tree
 #   - skills-ref: scripts/build_skill.py validates the assembled skill against
 #                 the Agent Skills spec (provides the `agentskills` CLI)
+#   - pyyaml:     skill/scripts/soliplex_config.py parses `soliplex-cli config`
+#                 output (resolved installation YAML)
 #   - pytest / pytest-cov / coverage: run the tests/unit/scripts/ suite
 #                 (`uv run --group dev pytest`)
 #   - zensical:   builds the documentation site under docs/ into site/
@@ -21,6 +23,7 @@ dependencies = []
 dev = [
     "coverage",
     "mako",
+    "pyyaml",
     "skills-ref",
     "pytest",
     "pytest-cov",
