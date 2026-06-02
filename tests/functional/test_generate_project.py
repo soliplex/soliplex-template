@@ -318,6 +318,10 @@ def test_env_file_written(generated_project):
 
     assert f"OLLAMA_BASE_URL={params['ollama_base_url']}" in env
     assert "INGESTER_TOKEN=" in env
+    # UID/GID default to the host operator running the generator (this test
+    # process); compose reads them and the generated secrets are owned by them.
+    assert f"PUID={os.getuid()}" in env
+    assert f"PGID={os.getgid()}" in env
 
 
 # --------------------------------------------------------------------------
