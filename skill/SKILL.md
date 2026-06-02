@@ -115,6 +115,68 @@ python3 scripts/skill_versions.py upgrade [TAG]      # install a published build
 
 Set `GITHUB_TOKEN`/`GH_TOKEN` to raise the GitHub API rate limit.
 
+## Creating and updating extra RAG databases
+
+The stack's `haiku-ingester` *continuously* maintains a single LanceDB. When a
+user wants a *separate*, mostly-static RAG database — e.g. one room per corpus —
+run `scripts/rag_db.py` from inside the generated stack directory. It reuses the
+`haiku-ingester` service (its image, the `rag/db`/`rag/docs` mounts, the
+`OLLAMA_BASE_URL` env, and the same `haiku.rag.yaml`) via `docker compose run`,
+writing to a *different* `rag/db/<name>.lancedb`, so it never collides with the
+running ingester's single-writer database.
+
+```bash
+# create a new database and populate it (db must not exist yet)
+python3 scripts/rag_db.py create --db-name handbook --source rag/docs/handbook/
+
+# add more documents / re-index / remove a document (db must already exist)
+python3 scripts/rag_db.py update --db-name handbook --source https://example.com/a.html
+python3 scripts/rag_db.py update --db-name handbook --rebuild --rechunk
+python3 scripts/rag_db.py update --db-name handbook --delete <document_id>
+```
+
+`--source` accepts a path under `rag/docs/`, a remote URL/S3 URI, or any other
+local path (auto-bind-mounted read-only).
+
+### Wiring the database into rooms
+
+Building the database does not make any room use it. **After `create`, offer to
+wire the new database into one or more rooms.** If the user agrees:
+
+1. **List the candidate room IDs** with the `soliplex-config` helper. It runs
+   `soliplex-cli config` inside the backend container and reads the ids of the
+   rooms the installation actually loads (driven by the resolved `room_paths`,
+   so it honors installations that limit their rooms or point at shared
+   directories — a `rooms/*` glob would get that wrong):
+
+   ```bash
+   python3 scripts/soliplex_config.py room_ids
+   ```
+
+   (Requires the stack's images to be built; pass `--project-dir` if you are
+   not in the stack directory.)
+
+2. **Let the user pick one or more** of those room IDs (multiple selection).
+
+3. **Wire each chosen room** with the `add-rag-to-room` subcommand, passing
+   `--room` once per selected ID:
+
+   ```bash
+   python3 scripts/rag_db.py add-rag-to-room --db-name handbook \
+       --room chat --room search
+   ```
+
+   It resolves those ids to their `room_config.yaml` the same way (via the
+   installation's `room_paths`), then sets `rag_lancedb_stem: "<name>"` on each
+   room's `haiku.rag.skills.rag` skill config, editing the file in place
+   (comments preserved). A room with no `skills:` block gets one appended; a
+   room that already wires a *different* rag skill config (not via
+   `haiku.rag.skills.rag`) is reported so you can wire it by hand. See
+   `docs/operations/rag.md`.
+
+You can run `add-rag-to-room` independently at any time (e.g. to point an
+existing room at a database created earlier).
+
 ## Notes
 
 - `.mako` files in the template are rendered with the parameters; all other

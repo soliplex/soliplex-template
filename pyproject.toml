@@ -11,6 +11,8 @@ dependencies = []
 #   - mako:       scripts/refresh_skill_template.py and
 #                 skill/scripts/generate_soliplex_project.py
 #                 render the .mako template tree
+#   - pyyaml:     skill/scripts/soliplex_config.py parses `soliplex-cli config`
+#                 output, and skill/scripts/rag_db.py imports it for room wiring
 #   - skills-ref: scripts/build_skill.py validates the assembled skill against
 #                 the Agent Skills spec (provides the `agentskills` CLI)
 #   - pytest / pytest-cov / coverage: run the tests/unit/scripts/ suite
@@ -21,6 +23,7 @@ dependencies = []
 dev = [
     "coverage",
     "mako",
+    "pyyaml",
     "skills-ref",
     "pytest",
     "pytest-cov",
