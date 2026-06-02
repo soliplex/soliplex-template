@@ -115,6 +115,31 @@ python3 scripts/skill_versions.py upgrade [TAG]      # install a published build
 
 Set `GITHUB_TOKEN`/`GH_TOKEN` to raise the GitHub API rate limit.
 
+## Creating and updating extra RAG databases
+
+The stack's `haiku-ingester` *continuously* maintains a single LanceDB. When a
+user wants a *separate*, mostly-static RAG database — e.g. one room per corpus —
+run `scripts/rag_db.py` from inside the generated stack directory. It reuses the
+`haiku-ingester` service (its image, the `rag/db`/`rag/docs` mounts, the
+`OLLAMA_BASE_URL` env, and the same `haiku.rag.yaml`) via `docker compose run`,
+writing to a *different* `rag/db/<name>.lancedb`, so it never collides with the
+running ingester's single-writer database.
+
+```bash
+# create a new database and populate it (db must not exist yet)
+python3 scripts/rag_db.py create --db-name handbook --source rag/docs/handbook/
+
+# add more documents / re-index / remove a document (db must already exist)
+python3 scripts/rag_db.py update --db-name handbook --source https://example.com/a.html
+python3 scripts/rag_db.py update --db-name handbook --rebuild --rechunk
+python3 scripts/rag_db.py update --db-name handbook --delete <document_id>
+```
+
+`--source` accepts a path under `rag/docs/`, a remote URL/S3 URI, or any other
+local path (auto-bind-mounted read-only). The script only builds/updates the
+database; to make a room use it, add `rag_lancedb_stem: "<name>"` to that room's
+`room_config.yaml` (see `docs/operations/rag.md`).
+
 ## Notes
 
 - `.mako` files in the template are rendered with the parameters; all other
