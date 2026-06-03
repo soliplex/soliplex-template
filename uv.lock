@@ -398,7 +398,7 @@ wheels = [
 
 [[package]]
 name = "soliplex-template"
-version = "0.7.dev0"
+version = "0.7"
 source = { virtual = "." }
 
 [package.dev-dependencies]
