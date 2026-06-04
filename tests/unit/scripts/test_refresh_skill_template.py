@@ -304,6 +304,37 @@ def test_t_init_sh():
     assert "${authz_db}" in out
 
 
+# The always-on exemplars carry the gitea service / db / proxy; each transform
+# must wrap its gitea fragment(s) in an include_gitea Mako conditional so
+# generated projects can opt out. Driven by the real exemplars -- the same
+# inputs refresh feeds the transforms.
+def test_t_compose_wraps_gitea_on_real_exemplar():
+    exemplar = (rst.REPO / "docker-compose.yml").read_text()
+
+    mako = rst.t_compose(exemplar)
+
+    assert "% if include_gitea:\n  gitea:\n" in mako
+    assert "    restart: unless-stopped\n\n% endif\nvolumes:\n" in mako
+    assert "<%text>${GITEA_ROOT_URL" in mako
+
+
+def test_t_init_sh_wraps_gitea_on_real_exemplar():
+    exemplar = (rst.REPO / "postgres" / "config" / "init.sh").read_text()
+
+    mako = rst.t_init_sh(exemplar)
+
+    assert "% if include_gitea:\n" in mako
+    assert "CREATE DATABASE soliplex_gitea;" in mako
+
+
+def test_t_nginx_conf_wraps_gitea_on_real_exemplar():
+    exemplar = (rst.REPO / "nginx" / "nginx.conf").read_text()
+
+    mako = rst.t_nginx_conf(exemplar)
+
+    assert "% if include_gitea:\n        # Gitea under /gitea/" in mako
+
+
 def test_t_gitignore():
     text = "/.env\n# Skill build artifacts:\n# more notes\n/dist/\n\n/tmp/\n"
 

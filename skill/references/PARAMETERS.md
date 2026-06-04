@@ -48,6 +48,7 @@ as JSON.
 | `soliplex_tui_constraint` | `>= 0.60.6, < 0.61` | non-empty | `tui/constraints.txt` |
 | `frontend_version` | `latest` | `latest` or a release tag (letters, digits, `.`, `_`, `-`) | `nginx/Dockerfile` frontend release fetched at image build |
 | `auth_mode` | `no-auth` | `no-auth` or `auth` | backend `command` (`--no-auth-mode` present/absent) |
+| `include_gitea` | `false` | bool (`true`/`false`, or `yes`/`no`/`1`/`0`) | adds the opt-in gitea service (postgres-backed, nginx `/gitea/` on 9443, `gitea_db_password` secret) plus `scripts/init-gitea.sh`; omitted entirely when false |
 | `docs_dir` | `rag/docs` | relative path inside the project | compose ingester bind mount; created at generation time |
 | `ingester_token` | `secret` | weak default — override for real deployments | `.env` `INGESTER_TOKEN` |
 | `puid` | *(host `os.getuid()`)* | derived if unset; positive int < 2³¹ (an explicit `0`/root is rejected) | `.env` `PUID`; compose `build.args`, service `user:`, postgres tmpfs |

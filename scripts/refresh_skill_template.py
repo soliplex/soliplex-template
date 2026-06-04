@@ -90,6 +90,32 @@ def repl(text: str, pairs: list[tuple[str, str]]) -> str:
     return text
 
 
+def opt_replace(text: str, old: str, new: str) -> str:
+    """Replace ``old`` with ``new`` only when present (no-op otherwise).
+
+    Used for the opt-in gitea fragments: the always-on exemplar carries them,
+    but the transforms stay tolerant of minimal inputs that don't."""
+    return text.replace(old, new) if old in text else text
+
+
+def wrap_gitea(text: str, fragment: str) -> str:
+    """Wrap an opt-in gitea ``fragment`` in a Mako ``include_gitea``
+    conditional when present. The ``% if`` / ``% endif`` control lines are
+    consumed by Mako, so the rendered output is byte-identical to the
+    exemplar when include_gitea is true."""
+    return opt_replace(
+        text, fragment, f"% if include_gitea:\n{fragment}% endif\n"
+    )
+
+
+def repl_opt(text: str, pairs: list[tuple[str, str]]) -> str:
+    """Like ``repl()`` but silently skip pairs whose ``old`` is absent
+    (for the opt-in gitea fragments)."""
+    for old, new in pairs:
+        text = opt_replace(text, old, new)
+    return text
+
+
 # --------------------------------------------------------------------------
 # Per-file transforms: repo-relative path -> fn(text) -> mako text
 # Output path is the key + ".mako".
@@ -111,7 +137,7 @@ def t_compose(text: str) -> str:
         "${PUID:-1000}",
         "${PGID:-1000}",
     )
-    return repl(
+    text = repl(
         text,
         [
             ("name: soliplex-template", "name: ${project_name}"),
@@ -161,6 +187,43 @@ def t_compose(text: str) -> str:
             ),
         ],
     )
+    # Wrap the opt-in gitea fragments in Mako conditionals so generated
+    # projects include them only when include_gitea is true. Tolerant of
+    # absence (gitea is optional); the always-on exemplar carries them all.
+    # Escape the gitea ROOT_URL default-expansion (docker syntax, not a
+    # generator parameter) when present:
+    text = opt_replace(
+        text,
+        "${GITEA_ROOT_URL:-https://localhost:9443/gitea/}",
+        "<%text>${GITEA_ROOT_URL:-https://localhost:9443/gitea/}</%text>",
+    )
+    # nginx depends_on the gitea service:
+    text = opt_replace(
+        text,
+        "      - gitea\n",
+        "% if include_gitea:\n      - gitea\n% endif\n",
+    )
+    # postgres: gitea DB password file + secret source:
+    text = wrap_gitea(
+        text, "      GITEA_DB_PASS_FILE: /run/secrets/gitea_db_password\n"
+    )
+    text = wrap_gitea(text, "      - source: gitea_db_password\n")
+    # the gitea service block (open + close anchors):
+    text = opt_replace(text, "  gitea:\n", "% if include_gitea:\n  gitea:\n")
+    text = opt_replace(
+        text,
+        "    restart: unless-stopped\n\nvolumes:\n",
+        "    restart: unless-stopped\n\n% endif\nvolumes:\n",
+    )
+    # the gitea named volumes:
+    text = wrap_gitea(text, "  gitea_data:\n  gitea_config:\n")
+    # the gitea db_password secret-file entry:
+    text = wrap_gitea(
+        text,
+        "    gitea_db_password:\n"
+        "      file: ./.secrets/gitea_db_password.gen\n",
+    )
+    return text
 
 
 _ROUTER_BLOCK = (
@@ -261,9 +324,51 @@ def t_nginx_conf(text: str) -> str:
         text.count("server_name localhost;") == 2,
         "expected two 'server_name localhost;' in nginx.conf",
     )
-    return text.replace(
+    text = text.replace(
         "server_name localhost;", "server_name ${server_name};"
     )
+    # Wrap the opt-in /gitea reverse-proxy location (HTTPS server) in a Mako
+    # conditional so it is emitted only when include_gitea is true.
+    gitea_loc = (
+        "        # Gitea under /gitea/.  Only mounted on the HTTPS server"
+        " -- Gitea's\n"
+        "        # ROOT_URL points at https://.../gitea/, so browsers"
+        " hitting\n"
+        "        # http://.../gitea would get mixed absolute links.\n"
+        "        # '^~' makes this prefix trump the regex locations above."
+        "  Gitea\n"
+        "        # itself does not know the sub-path; we strip /gitea before"
+        " proxying\n"
+        "        # and let ROOT_URL prepend it on Gitea's generated links."
+        "  See:\n"
+        "        # https://docs.gitea.com/administration/reverse-proxies\n"
+        "        location ^~ /gitea {\n"
+        "            client_max_body_size 512M;\n"
+        "\n"
+        "            # Preserve encoded chars (e.g. %2F in branch names)"
+        " through the\n"
+        "            # rewrite; two-step trick from the Gitea docs.\n"
+        "            rewrite ^ $request_uri;\n"
+        "            rewrite ^/gitea/?(.*) /$1 break;\n"
+        "\n"
+        '            set $backend_gitea "gitea";\n'
+        "            proxy_pass http://$backend_gitea:3000$uri;\n"
+        "            proxy_http_version 1.1;\n"
+        "            proxy_set_header Connection $http_connection;\n"
+        "            proxy_set_header Upgrade $http_upgrade;\n"
+        "            proxy_set_header Host $host$host_port;\n"
+        "            proxy_set_header X-Real-IP $remote_addr;\n"
+        "            proxy_set_header X-Forwarded-For"
+        " $proxy_add_x_forwarded_for;\n"
+        "            proxy_set_header X-Forwarded-Port $backend_port;\n"
+        "            proxy_set_header X-Forwarded-Proto https;\n"
+        "            proxy_connect_timeout 10;\n"
+        "            proxy_send_timeout 60;\n"
+        "            proxy_read_timeout 600;\n"
+        "            proxy_buffering off;\n"
+        "        }\n"
+    )
+    return wrap_gitea(text, gitea_loc)
 
 
 def t_nginx_dockerfile(text: str) -> str:
@@ -295,11 +400,109 @@ def t_nginx_dockerfile(text: str) -> str:
 
 
 def t_init_sh(text: str) -> str:
-    return repl(
+    text = repl(
         text,
         [
             ("soliplex_agui", "${agui_db}"),
             ("soliplex_authz", "${authz_db}"),
+        ],
+    )
+    # Wrap the opt-in gitea fragments in Mako conditionals (see t_compose).
+    # The gitea DB name is fixed (not parameterized), so these anchors are
+    # untouched by the agui/authz substitutions above. Tolerant of absence.
+    return repl_opt(
+        text,
+        [
+            (
+                "# Read password from secret file if available, otherwise"
+                " fallback to environment variable\n"
+                'if [ -f "$GITEA_DB_PASS_FILE" ]; then\n'
+                '    GITEA_DB_PASS=$(cat "$GITEA_DB_PASS_FILE")\n'
+                'elif [ -z "$GITEA_DB_PASS" ]; then\n'
+                '    echo "ERROR: Neither GITEA_DB_PASS_FILE nor'
+                ' GITEA_DB_PASS is set"\n'
+                "    exit 1\n"
+                "fi\n",
+                "% if include_gitea:\n"
+                "# Read password from secret file if available, otherwise"
+                " fallback to environment variable\n"
+                'if [ -f "$GITEA_DB_PASS_FILE" ]; then\n'
+                '    GITEA_DB_PASS=$(cat "$GITEA_DB_PASS_FILE")\n'
+                'elif [ -z "$GITEA_DB_PASS" ]; then\n'
+                '    echo "ERROR: Neither GITEA_DB_PASS_FILE nor'
+                ' GITEA_DB_PASS is set"\n'
+                "    exit 1\n"
+                "fi\n"
+                "% endif\n",
+            ),
+            (
+                "    -- Create Gitea application user with password\n"
+                "    CREATE USER soliplex_gitea WITH PASSWORD"
+                " '$GITEA_DB_PASS';\n",
+                "% if include_gitea:\n"
+                "    -- Create Gitea application user with password\n"
+                "    CREATE USER soliplex_gitea WITH PASSWORD"
+                " '$GITEA_DB_PASS';\n"
+                "% endif\n",
+            ),
+            (
+                "    -- Create database owned by postgres"
+                " (not application user)\n"
+                "    CREATE DATABASE soliplex_gitea;\n"
+                "    ALTER DATABASE soliplex_gitea OWNER TO postgres;\n",
+                "% if include_gitea:\n"
+                "    -- Create database owned by postgres"
+                " (not application user)\n"
+                "    CREATE DATABASE soliplex_gitea;\n"
+                "    ALTER DATABASE soliplex_gitea OWNER TO postgres;\n"
+                "% endif\n",
+            ),
+            (
+                "    -- Connect to the soliplex_gitea database to set up"
+                " schema permissions\n"
+                "    \\c soliplex_gitea\n"
+                "\n"
+                "    -- Grant minimal required PRIVILEGES"
+                " (EVAL.md #14 recommendation)\n"
+                "    -- Only CONNECT, not superuser or database ownership\n"
+                "    GRANT CONNECT ON DATABASE soliplex_gitea TO"
+                " soliplex_gitea;\n"
+                "\n"
+                "    -- Schema-level permissions\n"
+                "    GRANT USAGE ON SCHEMA public TO soliplex_gitea;\n"
+                "\n"
+                "    GRANT ALL PRIVILEGES ON DATABASE soliplex_gitea to"
+                " soliplex_gitea;\n"
+                "    GRANT ALL PRIVILEGES ON SCHEMA public TO"
+                " soliplex_gitea;\n",
+                "% if include_gitea:\n"
+                "    -- Connect to the soliplex_gitea database to set up"
+                " schema permissions\n"
+                "    \\c soliplex_gitea\n"
+                "\n"
+                "    -- Grant minimal required PRIVILEGES"
+                " (EVAL.md #14 recommendation)\n"
+                "    -- Only CONNECT, not superuser or database ownership\n"
+                "    GRANT CONNECT ON DATABASE soliplex_gitea TO"
+                " soliplex_gitea;\n"
+                "\n"
+                "    -- Schema-level permissions\n"
+                "    GRANT USAGE ON SCHEMA public TO soliplex_gitea;\n"
+                "\n"
+                "    GRANT ALL PRIVILEGES ON DATABASE soliplex_gitea to"
+                " soliplex_gitea;\n"
+                "    GRANT ALL PRIVILEGES ON SCHEMA public TO"
+                " soliplex_gitea;\n"
+                "% endif\n",
+            ),
+            (
+                "echo \"Database 'soliplex_gitea' initialized with minimal"
+                " privileges for user 'soliplex_gitea'\"\n",
+                "% if include_gitea:\n"
+                "echo \"Database 'soliplex_gitea' initialized with minimal"
+                " privileges for user 'soliplex_gitea'\"\n"
+                "% endif\n",
+            ),
         ],
     )
 
@@ -1182,6 +1385,7 @@ PROBE = dict(
     soliplex_tui_constraint="c",
     frontend_release_path="latest",
     docs_dir="d",
+    include_gitea=True,
 )
 
 
