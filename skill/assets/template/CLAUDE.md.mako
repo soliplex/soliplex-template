@@ -25,7 +25,7 @@ docker compose down              # stop (keeps postgres_data volume)
 docker compose down -v           # stop AND wipe postgres volume (nukes created users/DBs)
 ```
 
-Ports exposed to the host: `9000` (nginx HTTP), `9443` (nginx HTTPS, self-signed), `8000` (backend direct), `8765` (haiku-ingester control plane: `/health`, `/jobs`, `/sources`, `/dlq`, `/stats`, dashboard at `/`), `5001` (docling-serve), `5432` (postgres).
+Ports exposed to the host: `9000` (nginx HTTP), `9443` (nginx HTTPS, self-signed), `8000` (backend direct), `8765` (haiku-ingester control plane: `/health`, `/jobs`, `/sources`, `/dlq`, `/stats`, dashboard at `/`), `5001` (docling-serve), `5432` (postgres)${", `3000` (gitea HTTP), `2222` (gitea SSH)" if include_gitea else ""}.
 
 `.env` must define `OLLAMA_BASE_URL` (points at the Ollama server that serves `gpt-oss:*` models referenced in `installation.yaml`). Optionally set `INGESTER_TOKEN` to override the default placeholder token (`secret`) — see "Ingester control plane auth" below.
 
@@ -37,7 +37,10 @@ Ports exposed to the host: `9000` (nginx HTTP), `9443` (nginx HTTPS, self-signed
 - **backend** — runs `soliplex-cli serve /environment`. **Currently launched with `--no-auth-mode`** (see `docker-compose.yml`; marked temporary). The `--reload=config` flag means edits under `backend/environment/` take effect without rebuild.
 - **haiku-ingester** — writer process for the LanceDB at `rag/db/`. Runs `haiku-ingester serve` with a persistent SQLite job queue at `/data/ingester.db`, async worker pool, retries + DLQ, and an HTTP control plane on `8765`. The FS source under `ingester.sources` in `haiku.rag.yaml` polls `rag/docs/` and emits upsert/delete jobs that docling-serve converts and chunks. Single-writer constraint: only one ingester per LanceDB. The backend reads the same LanceDB through a bind mount, so no separate MCP server is needed.
 - **docling-serve** — stateless document converter. CPU image by default; comment swap in `docker-compose.yml` for GPU.
-- **postgres** — two databases created on first boot by `postgres/config/init.sh`: `soliplex_agui` (thread persistence) and `soliplex_authz` (authorization policy). Each gets a dedicated low-privilege role whose password is read from `/run/secrets/<name>_db_password`. Init runs only on an empty data volume; to re-run, `docker compose down -v`.
+- **postgres** — application databases created on first boot by `postgres/config/init.sh`: `soliplex_agui` (thread persistence), `soliplex_authz` (authorization policy)${", `soliplex_gitea` (Gitea backing store)" if include_gitea else ""}. Each gets a dedicated low-privilege role whose password is read from `/run/secrets/<name>_db_password`. Init runs only on an empty data volume; to re-run, `docker compose down -v`.
+% if include_gitea:
+- **gitea** — rootless Gitea (`docker.gitea.com/gitea:*-rootless`) backed by the `soliplex_gitea` database, reverse-proxied by nginx at `https://localhost:9443/gitea/` (HTTPS only; override via `GITEA_ROOT_URL`). State lives in the `gitea_data` / `gitea_config` named volumes; built-in SSH on host `:2222`. Provision an admin user, access token, and tracking repo with `scripts/init-gitea.sh`.
+% endif
 
 ### Secrets
 
@@ -85,7 +88,7 @@ How the token gets in:
 
 - `haiku.rag/haiku.rag.yaml` has `ingester.api.auth_token: __INGESTER_TOKEN__` as a placeholder.
 - The `haiku-ingester` service runs a small `sh -c "sed ... && exec haiku-ingester ..."` wrapper that replaces the placeholder with the value of `$INGESTER_TOKEN` before haiku-ingester reads the config. haiku.rag's YAML loader has no native env-var interpolation, hence the wrapper.
-- `INGESTER_TOKEN` defaults to `secret` (compose sets `${INGESTER_TOKEN:-secret}`). Override it in `.env` for any deployment that isn't a single-developer laptop.
+- `INGESTER_TOKEN` defaults to `secret` (compose sets `<%text>${INGESTER_TOKEN:-secret}</%text>`). Override it in `.env` for any deployment that isn't a single-developer laptop.
 
 Clients call the control plane with `Authorization: Bearer $INGESTER_TOKEN`. The browser dashboard at `/` is unauthenticated HTML; its in-page JS attaches the bearer to JSON fetches itself (paste the token into the dashboard's prompt). The startup log warns if `auth_token` is `None` — if you ever see that warning, the substitution didn't fire and the API is open.
 

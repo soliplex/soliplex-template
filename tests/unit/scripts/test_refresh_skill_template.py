@@ -335,6 +335,19 @@ def test_t_nginx_conf_wraps_gitea_on_real_exemplar():
     assert "% if include_gitea:\n        # Gitea under /gitea/" in mako
 
 
+def test_t_claude_wraps_gitea_on_real_exemplar():
+    exemplar = (rst.REPO / "CLAUDE.md").read_text()
+
+    mako = rst.t_claude(exemplar)
+
+    assert (
+        '${", `3000` (gitea HTTP), `2222` (gitea SSH)"'
+        ' if include_gitea else ""}' in mako
+    )
+    assert "% if include_gitea:\n- **gitea**" in mako
+    assert "<%text>${INGESTER_TOKEN:-secret}</%text>" in mako
+
+
 def test_t_gitignore():
     text = "/.env\n# Skill build artifacts:\n# more notes\n/dist/\n\n/tmp/\n"
 

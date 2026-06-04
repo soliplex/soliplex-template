@@ -524,6 +524,41 @@ def t_gitignore(text: str) -> str:
     return new
 
 
+def t_claude(text: str) -> str:
+    # CLAUDE.md is rendered into generated projects; gitea is opt-in, so its
+    # mentions become Mako conditionals. The woven port / database references
+    # use inline '${... if include_gitea else ""}' so the surrounding prose
+    # stays intact when gitea is off; the standalone service bullet is wrapped
+    # with '% if'. The literal compose ${...} expansion in the secrets notes
+    # must be escaped so Mako passes it through.
+    text = esc(text, "${INGESTER_TOKEN:-secret}")
+    text = repl(
+        text,
+        [
+            (
+                ", `3000` (gitea HTTP), `2222` (gitea SSH)",
+                '${", `3000` (gitea HTTP), `2222` (gitea SSH)"'
+                ' if include_gitea else ""}',
+            ),
+            (
+                ", `soliplex_gitea` (Gitea backing store)",
+                '${", `soliplex_gitea` (Gitea backing store)"'
+                ' if include_gitea else ""}',
+            ),
+        ],
+    )
+    return wrap_gitea(
+        text,
+        "- **gitea** — rootless Gitea (`docker.gitea.com/gitea:*-rootless`)"
+        " backed by the `soliplex_gitea` database, reverse-proxied by nginx"
+        " at `https://localhost:9443/gitea/` (HTTPS only; override via"
+        " `GITEA_ROOT_URL`). State lives in the `gitea_data` /"
+        " `gitea_config` named volumes; built-in SSH on host `:2222`."
+        " Provision an admin user, access token, and tracking repo with"
+        " `scripts/init-gitea.sh`.\n",
+    )
+
+
 # Files transformed but kept under their original name (NOT Mako templates).
 VERBATIM_EDITS = {
     ".gitignore": t_gitignore,
@@ -539,6 +574,7 @@ DERIVED = {
     "nginx/nginx.conf": t_nginx_conf,
     "nginx/Dockerfile": t_nginx_dockerfile,
     "postgres/config/init.sh": t_init_sh,
+    "CLAUDE.md": t_claude,
 }
 
 # --------------------------------------------------------------------------
