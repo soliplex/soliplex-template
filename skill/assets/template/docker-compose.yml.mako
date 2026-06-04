@@ -160,6 +160,14 @@ services:
 
     user: "<%text>${PUID:-1000}</%text>:<%text>${PGID:-1000}</%text>"
 
+    # LanceDB's full-text-search (content_fts) index merge opens many
+    # files at once; the default soft limit of 1024 trips EMFILE
+    # ("Too many open files") and the merge is skipped. Raise it.
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+
     depends_on:
       docling-serve:
         condition: service_healthy
