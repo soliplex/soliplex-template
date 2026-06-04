@@ -85,6 +85,9 @@ DEFAULTS: dict[str, object] = {
     "frontend_version": "latest",
     # Auth: "no-auth" | "auth"
     "auth_mode": "no-auth",
+    # Gitea service (opt-in): include a local Gitea (postgres-backed,
+    # nginx-proxied at /gitea/) plus scripts/init-gitea.sh.
+    "include_gitea": False,
     # Ingester
     "docs_dir": "rag/docs",
     "ingester_token": "secret",
@@ -184,6 +187,10 @@ class GenError(Exception):
         return cls(f"auth_mode must be 'no-auth' or 'auth', got {value!r}")
 
     @classmethod
+    def bad_bool(cls, key, value):
+        return cls(f"{key} must be a boolean, got {value!r}")
+
+    @classmethod
     def empty_constraint(cls, key):
         return cls(f"{key} must not be empty")
 
@@ -257,6 +264,21 @@ def prompt_interactive(params: dict[str, object]) -> dict[str, object]:
     return params
 
 
+_TRUE_STRINGS = {"1", "true", "yes", "y", "on"}
+_FALSE_STRINGS = {"0", "false", "no", "n", "off", ""}
+
+
+def _as_bool(value: object, key: str) -> bool:
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in _TRUE_STRINGS:
+        return True
+    if text in _FALSE_STRINGS:
+        return False
+    raise GenError.bad_bool(key, value)
+
+
 def coerce_and_derive(params: dict[str, object]) -> dict[str, object]:
     # Integers
     for key in INT_KEYS:
@@ -293,6 +315,12 @@ def coerce_and_derive(params: dict[str, object]) -> dict[str, object]:
     auth_mode = str(params["auth_mode"])
     params["backend_auth_flag"] = (
         "--no-auth-mode " if auth_mode == "no-auth" else ""
+    )
+
+    # Opt-in Gitea service (consumed by the conditional blocks in the
+    # compose / nginx / init.sh templates).
+    params["include_gitea"] = _as_bool(
+        params.get("include_gitea"), "include_gitea"
     )
 
     # Container UID/GID. Unset (None) -> the host operator's uid/gid so the
@@ -388,6 +416,12 @@ def render_tree(
                     for part in rel.parts
                 ]
             )
+        # The Gitea provisioning script only makes sense alongside the gitea
+        # service; skip it when gitea was not requested.
+        if not ctx.get("include_gitea") and rel == pathlib.Path(
+            "scripts/init-gitea.sh"
+        ):
+            continue
         if src.is_dir():
             (out / rel).mkdir(parents=True, exist_ok=True)
             continue
@@ -573,6 +607,7 @@ def main(argv: list[str]) -> int:
     )
     print(f"  ollama:   {params['ollama_base_url']}")
     print(f"  auth:     {params['auth_mode']}")
+    print(f"  gitea:    {'yes' if params['include_gitea'] else 'no'}")
     git_status = "initial commit created" if did_git else "not initialized"
     print(f"  git:      {git_status}")
     # Build images explicitly before starting: the nginx image runs a full

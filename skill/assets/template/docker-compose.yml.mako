@@ -16,6 +16,9 @@ services:
     depends_on:
       - backend
       - tui
+% if include_gitea:
+      - gitea
+% endif
 
     ports:
       - "${nginx_http}:9000"
@@ -224,6 +227,9 @@ services:
       AUTO_CREATE_DATABASE: <%text>${AUTO_CREATE_DATABASE:-1}</%text>
       AGUI_DB_PASS_FILE: /run/secrets/agui_db_password
       AUTHZ_DB_PASS_FILE: /run/secrets/authz_db_password
+% if include_gitea:
+      GITEA_DB_PASS_FILE: /run/secrets/gitea_db_password
+% endif
       POSTGRES_INITDB_ARGS: "-A scram-sha-256"
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
       POSTGRES_USER: postgres
@@ -245,13 +251,74 @@ services:
     secrets:
       - source: agui_db_password
       - source: authz_db_password
+% if include_gitea:
+      - source: gitea_db_password
+% endif
       - source: postgres_password
     ports:
       - "${postgres_port}:5432"
 
+% if include_gitea:
+  gitea:
+
+    # See: https://docs.gitea.com/installation/install-with-docker-rootless
+    image: docker.gitea.com/gitea:1.26.0-rootless
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    environment:
+      GITEA__database__DB_TYPE: postgres
+      GITEA__database__HOST: "postgres:5432"
+      GITEA__database__NAME: soliplex_gitea
+      GITEA__database__USER: soliplex_gitea
+      GITEA__database__PASSWD__FILE: /run/secrets/gitea_db_password
+      GITEA__database__SSL_MODE: disable
+      GITEA__server__HTTP_PORT: "3000"
+      GITEA__server__SSH_DOMAIN: "soliplex.localhost"
+      GITEA__server__SSH_PORT: "2222"
+      GITEA__server__SSH_LISTEN_PORT: "2222"
+      # Reverse-proxied under /gitea/ by nginx on the HTTPS port (9443);
+      # trailing slash is REQUIRED.  Override in .env if you front the
+      # stack with another proxy or use a different hostname.
+      GITEA__server__ROOT_URL: "<%text>${GITEA_ROOT_URL:-https://localhost:9443/gitea/}</%text>"
+      # Boot ready (skip the web installer); the DB is configured above.
+      GITEA__security__INSTALL_LOCK: "true"
+
+    secrets:
+      - gitea_db_password
+
+    volumes:
+      - type: volume
+        source: gitea_data
+        target: /var/lib/gitea
+      - type: volume
+        source: gitea_config
+        target: /etc/gitea
+      - type: bind
+        source: /etc/timezone
+        target: /etc/timezone
+        read_only: true
+      - type: bind
+        source: /etc/localtime
+        target: /etc/localtime
+        read_only: true
+
+    ports:
+      - "3000:3000"
+      - "2222:2222"
+
+    restart: unless-stopped
+
+% endif
 volumes:
   postgres_data:
   lancedb_data:
+% if include_gitea:
+  gitea_data:
+  gitea_config:
+% endif
 
 secrets:
 
@@ -265,6 +332,10 @@ secrets:
       file: ./.secrets/agui_db_password.gen
     authz_db_password:
       file: ./.secrets/authz_db_password.gen
+% if include_gitea:
+    gitea_db_password:
+      file: ./.secrets/gitea_db_password.gen
+% endif
     postgres_password:
       file: ./.secrets/postgres_password.gen
     url_safe_token_secret:

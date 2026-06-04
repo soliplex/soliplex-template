@@ -466,6 +466,74 @@ def test_render_tree_substitutes_package_dir(tmp_path):
 
 
 # --------------------------------------------------------------------------
+# include_gitea (opt-in gitea service)
+# --------------------------------------------------------------------------
+@pytest.mark.parametrize(
+    "ig_kw, expected",
+    [
+        ({}, False),
+        ({"include_gitea": False}, False),
+        ({"include_gitea": "0"}, False),
+        ({"include_gitea": "false"}, False),
+        ({"include_gitea": "no"}, False),
+        ({"include_gitea": "n"}, False),
+        ({"include_gitea": "off"}, False),
+        ({"include_gitea": True}, True),
+        ({"include_gitea": "1"}, True),
+        ({"include_gitea": "true"}, True),
+        ({"include_gitea": "yes"}, True),
+        ({"include_gitea": "y"}, True),
+        ({"include_gitea": "on"}, True),
+    ],
+)
+def test_coerce_and_derive_w_valid_include_gitea_converts(ig_kw, expected):
+    params = dict(gen.DEFAULTS) | ig_kw
+
+    result = gen.coerce_and_derive(params)
+
+    assert result["include_gitea"] is expected
+
+
+def test_coerce_and_derive_w_invalid_include_gitea_raises():
+    params = dict(gen.DEFAULTS)
+    params["include_gitea"] = "maybe"
+
+    with pytest.raises(gen.GenError, match="include_gitea must be a boolean"):
+        gen.coerce_and_derive(params)
+
+
+def test_render_tree_omits_init_gitea_when_disabled(tmp_path):
+    template = tmp_path / "template"
+    (template / "scripts").mkdir(parents=True)
+    (template / "scripts" / "init-gitea.sh").write_text(
+        "#!/bin/sh\n", encoding="utf-8"
+    )
+    out = tmp_path / "out"
+
+    gen.render_tree(
+        template, out, {"project_name": "demo", "include_gitea": False}
+    )
+
+    assert not (out / "scripts" / "init-gitea.sh").exists()
+
+
+def test_render_tree_keeps_init_gitea_when_enabled(tmp_path):
+    shebang = "#!/bin/sh\n"
+    template = tmp_path / "template"
+    (template / "scripts").mkdir(parents=True)
+    (template / "scripts" / "init-gitea.sh").write_text(
+        shebang, encoding="utf-8"
+    )
+    out = tmp_path / "out"
+
+    gen.render_tree(
+        template, out, {"project_name": "demo", "include_gitea": True}
+    )
+
+    assert (out / "scripts" / "init-gitea.sh").read_text() == shebang
+
+
+# --------------------------------------------------------------------------
 # ensure_runtime_dirs
 # --------------------------------------------------------------------------
 def test_ensure_runtime_dirs(tmp_path):
@@ -742,6 +810,7 @@ PARAMS = {
     "rag_qa_model": "m",
     "ollama_base_url": "http://o",
     "auth_mode": "no-auth",
+    "include_gitea": False,
     "docs_dir": "rag/docs",
 }
 

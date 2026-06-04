@@ -26,6 +26,16 @@ elif [ -z "$AUTHZ_DB_PASS" ]; then
     exit 1
 fi
 
+% if include_gitea:
+# Read password from secret file if available, otherwise fallback to environment variable
+if [ -f "$GITEA_DB_PASS_FILE" ]; then
+    GITEA_DB_PASS=$(cat "$GITEA_DB_PASS_FILE")
+elif [ -z "$GITEA_DB_PASS" ]; then
+    echo "ERROR: Neither GITEA_DB_PASS_FILE nor GITEA_DB_PASS is set"
+    exit 1
+fi
+% endif
+
 
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
     -- Create ragserver AGUI application user with password
@@ -34,6 +44,11 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
     -- Create ragserver authz application user with password
     CREATE USER ${authz_db} WITH PASSWORD '$AUTHZ_DB_PASS';
 
+% if include_gitea:
+    -- Create Gitea application user with password
+    CREATE USER soliplex_gitea WITH PASSWORD '$GITEA_DB_PASS';
+% endif
+
     -- Create database owned by postgres (not application user)
     CREATE DATABASE ${agui_db};
     ALTER DATABASE ${agui_db} OWNER TO postgres;
@@ -41,6 +56,12 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
     -- Create database owned by postgres (not application user)
     CREATE DATABASE ${authz_db};
     ALTER DATABASE ${authz_db} OWNER TO postgres;
+
+% if include_gitea:
+    -- Create database owned by postgres (not application user)
+    CREATE DATABASE soliplex_gitea;
+    ALTER DATABASE soliplex_gitea OWNER TO postgres;
+% endif
 
     -- Connect to the ${agui_db} database to set up schema permissions
     \c ${agui_db}
@@ -67,7 +88,25 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
 
     GRANT ALL PRIVILEGES ON DATABASE ${authz_db} to ${authz_db};
     GRANT ALL PRIVILEGES ON SCHEMA public TO ${authz_db};
+
+% if include_gitea:
+    -- Connect to the soliplex_gitea database to set up schema permissions
+    \c soliplex_gitea
+
+    -- Grant minimal required PRIVILEGES (EVAL.md #14 recommendation)
+    -- Only CONNECT, not superuser or database ownership
+    GRANT CONNECT ON DATABASE soliplex_gitea TO soliplex_gitea;
+
+    -- Schema-level permissions
+    GRANT USAGE ON SCHEMA public TO soliplex_gitea;
+
+    GRANT ALL PRIVILEGES ON DATABASE soliplex_gitea to soliplex_gitea;
+    GRANT ALL PRIVILEGES ON SCHEMA public TO soliplex_gitea;
+% endif
 EOSQL
 
 echo "Database '${agui_db}' initialized with minimal privileges for user '${agui_db}'"
 echo "Database '${authz_db}' initialized with minimal privileges for user '${authz_db}'"
+% if include_gitea:
+echo "Database 'soliplex_gitea' initialized with minimal privileges for user 'soliplex_gitea'"
+% endif
