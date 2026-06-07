@@ -28,6 +28,7 @@ dev = [
     "pytest",
     "pytest-cov",
     "ruff",
+    "soliplex-skills >= 0.2.1",
     "zensical",
 ]
 
