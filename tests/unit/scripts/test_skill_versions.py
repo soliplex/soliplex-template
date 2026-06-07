@@ -24,7 +24,8 @@ from soliplex_skills import versions
 
 _MODULE_PATH = (
     pathlib.Path(__file__).resolve().parents[3]
-    / "skill"
+    / "skills"
+    / "soliplex-template"
     / "scripts"
     / "skill_versions.py"
 )

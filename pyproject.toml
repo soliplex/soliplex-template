@@ -24,11 +24,10 @@ dev = [
     "coverage",
     "mako",
     "pyyaml",
-    "skills-ref",
     "pytest",
     "pytest-cov",
     "ruff",
-    "soliplex-skills >= 0.2.1",
+    "soliplex-skills >= 0.2.2",
     "zensical",
 ]
 
@@ -49,7 +48,7 @@ python_files = "test_*.py"
 # (--no-cov because the generator runs in a child process, so it isn't measured
 # and would otherwise trip --cov-fail-under). They are not collected by default.
 testpaths = ["tests/unit"]
-addopts = "--cov=scripts --cov=skill/scripts --cov=tests/unit --cov-branch --cov-fail-under=100"
+addopts = "--cov=scripts --cov=skills/soliplex-template/scripts --cov=tests/unit --cov-branch --cov-fail-under=100"
 markers = [
     "needs_docker: functional test requiring the docker CLI + daemon",
 ]
