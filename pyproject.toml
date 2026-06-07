@@ -24,10 +24,10 @@ dev = [
     "coverage",
     "mako",
     "pyyaml",
-    "skills-ref",
     "pytest",
     "pytest-cov",
     "ruff",
+    "soliplex-skills >= 0.2.2",
     "zensical",
 ]
 
@@ -48,7 +48,7 @@ python_files = "test_*.py"
 # (--no-cov because the generator runs in a child process, so it isn't measured
 # and would otherwise trip --cov-fail-under). They are not collected by default.
 testpaths = ["tests/unit"]
-addopts = "--cov=scripts --cov=skill/scripts --cov=tests/unit --cov-branch --cov-fail-under=100"
+addopts = "--cov=scripts --cov=skills/soliplex-template/scripts --cov=tests/unit --cov-branch --cov-fail-under=100"
 markers = [
     "needs_docker: functional test requiring the docker CLI + daemon",
 ]
@@ -104,3 +104,17 @@ plugins.no-inline-html.enabled = false          # md033
 plugins.no-emphasis-as-heading.enabled = false  # md036
 plugins.first-line-heading.enabled = false      # md041
 plugins.code-block-style.enabled = false        # md046
+
+
+# Lets the `soliplex-skills` console script (and CI) manage the published
+# `soliplex-template` skill without repeating these constants on the command
+# line. The bundled scripts/skill_versions.py hardcodes the same values, since
+# it cannot read this file once the skill is installed elsewhere.
+[[tool.soliplex-skills.skill]]
+name = "soliplex-template"
+owner = "soliplex"
+repo = "soliplex-template"
+asset_tarball = "soliplex-template-skill.tar.gz"
+pointer_tag = "template-skill-latest"
+rolling_prefix = "template-skill"
+compare_scope = "tree"

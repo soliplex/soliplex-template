@@ -397,6 +397,18 @@ wheels = [
 ]
 
 [[package]]
+name = "soliplex-skills"
+version = "0.2.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "skills-ref" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/08/6e/2e8c5036399ccfde53910e9805e70a4627116fcd2326728cb9d19cff3ec8/soliplex_skills-0.2.2.tar.gz", hash = "sha256:2f73957fa33ddae7186f71736e61f0722ecbe7f70a9f5c8220cf7be4967e3b13", size = 81013, upload-time = "2026-06-07T03:23:46.443Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9b/e9/c14457d4352784d42fad713b04c8d1a9c7ae43083de7d21e4e504fec3208/soliplex_skills-0.2.2-py3-none-any.whl", hash = "sha256:79287b2c34ad31b14185155ebf814e7b0b3bd631f31a9f574734b75471244084", size = 22470, upload-time = "2026-06-07T03:23:45.249Z" },
+]
+
+[[package]]
 name = "soliplex-template"
 version = "0.9.dev0"
 source = { virtual = "." }
@@ -409,7 +421,7 @@ dev = [
     { name = "pytest-cov" },
     { name = "pyyaml" },
     { name = "ruff" },
-    { name = "skills-ref" },
+    { name = "soliplex-skills" },
     { name = "zensical" },
 ]
 
@@ -423,7 +435,7 @@ dev = [
     { name = "pytest-cov" },
     { name = "pyyaml" },
     { name = "ruff" },
-    { name = "skills-ref" },
+    { name = "soliplex-skills", specifier = ">=0.2.2" },
     { name = "zensical" },
 ]
 
