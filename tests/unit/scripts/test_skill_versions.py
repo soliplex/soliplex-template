@@ -78,7 +78,6 @@ def test_spec_identifies_the_template_skill():
     assert spec.repo == "soliplex-template"
     assert spec.asset_tarball == "soliplex-template-skill.tar.gz"
     assert spec.pointer_tag == "template-skill-latest"
-    assert spec.compare_scope == "tree"
     assert spec.rolling_re.match("template-skill-2026.05.29-abc1234")
 
 

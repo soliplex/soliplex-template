@@ -27,7 +27,7 @@ dev = [
     "pytest",
     "pytest-cov",
     "ruff",
-    "soliplex-skills >= 0.2.2",
+    "soliplex-skills >= 0.4",
     "zensical",
 ]
 
@@ -117,4 +117,3 @@ repo = "soliplex-template"
 asset_tarball = "soliplex-template-skill.tar.gz"
 pointer_tag = "template-skill-latest"
 rolling_prefix = "template-skill"
-compare_scope = "tree"
