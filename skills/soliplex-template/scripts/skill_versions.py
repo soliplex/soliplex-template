@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["soliplex-skills>=0.2.1"]
+# dependencies = ["soliplex-skills>=0.4"]
 # ///
 """List, diff, and upgrade published ``soliplex-template`` skill versions.
 
@@ -46,8 +46,7 @@ from soliplex_skills import versions
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 
 # The only values that distinguish this skill from any other; everything else
-# is handled by the library. ``compare_scope="tree"`` because the template
-# skill's payload is its whole tree (SKILL.md, scripts/, assets/, references/).
+# is handled by the library.
 SPEC = versions.SkillSpec(
     owner="soliplex",
     repo="soliplex-template",
@@ -55,7 +54,6 @@ SPEC = versions.SkillSpec(
     asset_tarball="soliplex-template-skill.tar.gz",
     pointer_tag="template-skill-latest",
     rolling_re=re.compile(r"^template-skill-\d{4}\.\d{2}\.\d{2}-[0-9a-f]+$"),
-    compare_scope="tree",
 )
 
 
