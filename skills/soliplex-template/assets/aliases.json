@@ -1,0 +1,30 @@
+{
+  "_comment": "Shortcut spellings for `/soliplex-template` generation (issue #92). Single source of truth for the alias/group vocabulary; read by the skill when resolving inline `key=value` tokens, NOT consumed by generate_soliplex_project.py. `aliases` map a friendly token to a generator parameter (`where`/`output_dir` is special: it routes to the `--out` argument, not params.json). `groups` name a set of parameters that a `<group>=default` token skips at their defaults. Secrets (e.g. ingester_token) deliberately have no alias and must never be accepted inline -- prompt for them. Guarded against drift from the generator's DEFAULTS by tests/unit/scripts/test_aliases_manifest.py.",
+  "aliases": {
+    "where": "output_dir",
+    "project": "project_name",
+    "ollama": "ollama_base_url",
+    "auth": "auth_mode",
+    "gitea": "include_gitea",
+    "frontend": "frontend_version"
+  },
+  "groups": {
+    "ports": [
+      "nginx_http",
+      "nginx_https",
+      "ingester_port",
+      "docling_port",
+      "postgres_port"
+    ],
+    "models": [
+      "chat_model",
+      "chat_model_alt",
+      "title_model",
+      "rag_embed_model",
+      "rag_embed_dim",
+      "rag_qa_model",
+      "rag_research_model",
+      "chunk_size"
+    ]
+  }
+}

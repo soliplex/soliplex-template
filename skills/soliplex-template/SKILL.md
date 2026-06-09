@@ -1,6 +1,7 @@
 ---
 name: soliplex-template
 description: "Generate a new, runnable Soliplex Docker Compose stack from an embedded template, or inspect and change the configuration of an existing one — query its resolved installation config, and create or update extra RAG databases (with guidance for wiring them into rooms). Use when a user wants to stand up, bootstrap, or create a new Soliplex deployment / compose stack, or to inspect, configure, or add a RAG database to an existing one."
+argument-hint: "[where=DIR] [project=NAME] [ollama=URL] [ports=default] [key=value …]"
 ---
 
 # Soliplex project generation and configuration
@@ -19,22 +20,55 @@ from the user and invoke it.
 
 ### Steps
 
-1. **Gather parameters.** Ask the user for the values they care about. Sensible
-   defaults exist for everything except `ollama_base_url` (always required). The
-   full list, defaults, and validation rules are in
-   [references/PARAMETERS.md](references/PARAMETERS.md). The most commonly set:
-   - `output_dir` (where to create the project — this is the `--out` argument)
-   - `project_name`
-   - `ollama_base_url` (**required**, e.g. `http://host:11434`)
-   - host ports: `nginx_http`, `nginx_https`, `ingester_port`, `docling_port`,
-     `postgres_port`
-   - `auth_mode` (`no-auth` or `auth`)
-   - models (`chat_model`, `title_model`, `rag_embed_model`, …)
-   - `frontend_version` (`latest`, or a `soliplex/frontend` release tag to pin)
-   - `soliplex_backend_constraint` (the backend `soliplex` version pin that
-     lands in `backend/constraints.txt`; offer real choices — see below)
+1. **Gather parameters.** Defaults exist for everything except
+   `ollama_base_url` (always required); the full list, defaults, and validation
+   rules are in [references/PARAMETERS.md](references/PARAMETERS.md). Collect
+   the values in two passes — resolve anything the user supplied inline first,
+   then prompt only for what's left.
 
-   You can show the defaults with:
+   **(a) Resolve inline shortcuts.** If the skill was invoked with arguments
+   (e.g. `/soliplex-template where=./test project=acme
+   ollama=http://host:11434 ports=default`), parse them *before* prompting.
+   Read [assets/aliases.json](assets/aliases.json) — the single source of truth
+   for the shortcut vocabulary — and apply:
+   - `key=value` where `key` is a raw parameter name **or** an entry in
+     `aliases` → set that parameter. The one special case is `where` /
+     `output_dir`, which is **not** a parameter: it becomes the `--out`
+     argument (the target directory).
+   - `<group>=default` for a key in `groups` (e.g. `ports=default`,
+     `models=default`) → accept the defaults for every member of that group and
+     **skip its prompt**.
+   - Flags: `force` (→ `--force`), `git=no` (→ `--no-git`), `secrets=no`
+     (→ `--no-generate-secrets`).
+   - A token whose key matches none of the above → don't guess; show it back to
+     the user and ask what they meant.
+   - **Never accept a secret inline.** `ingester_token` has no alias and must
+     not be read from the command line (it would land in shell history); always
+     prompt for it (or accept its warned default) in the secrets step below.
+
+   **(b) Prompt for whatever is still unanswered** — and *only* that, so a
+   fully-specified command runs with no questions while a bare
+   `/soliplex-template` walks every group. Use `AskUserQuestion`, grouping
+   related options into one question each:
+   - **location** — `output_dir` (where to create the project; free text,
+     required to actually write) and whether to `--force` into a non-empty dir.
+   - **identity** — `project_name` (drives `server_name`, `setup_id`, and the
+     derived `package_name`).
+   - **ollama** — `ollama_base_url` (**required**, e.g. `http://host:11434`;
+     free text — always obtain it, inline or by asking).
+   - **ports** — offer "use defaults" vs "customize"; `ports=default`
+     pre-answers this. Customizing collects `nginx_http`, `nginx_https`,
+     `ingester_port`, `docling_port`, `postgres_port`.
+   - **auth** — `auth_mode`: `no-auth` (default) or `auth`.
+   - **models** — offer "use defaults" vs "customize"; `models=default`
+     pre-answers this.
+   - **versions** — `frontend_version` and `soliplex_backend_constraint` (use
+     the version-listing guidance below; they are independent choices).
+   - **gitea** — `include_gitea`: include the opt-in local Gitea service or not.
+   - **secrets handling** — prompt for `ingester_token` (or accept the warned
+     default) and confirm the secrets/git flags.
+
+   You can show all defaults with:
 
    ```bash
    uv run scripts/generate_soliplex_project.py --print-defaults
