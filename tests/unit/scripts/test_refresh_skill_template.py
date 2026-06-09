@@ -4,8 +4,9 @@ The script is repo build tooling, not part of an importable package, so it is
 loaded here by file path via ``importlib.util``. Tests are hermetic: the pure
 text transforms are driven with minimal inline exemplar snippets, and the git /
 filesystem seams are mocked or routed through ``tmp_path`` -- no real git, no
-Docker, no network, and the live ``skill/assets/template`` tree is never
-touched. The ``.mako`` render check runs against real Mako (the ``dev`` group
+Docker, no network, and the live
+``skills/soliplex-template/assets/template`` tree is never touched. The
+``.mako`` render check runs against real Mako (the ``dev`` group
 dependency).
 
 Each test is laid out in three blank-line-separated phases -- setup, then the
@@ -71,7 +72,7 @@ def render_check(monkeypatch):
 def repo(tmp_path, monkeypatch):
     """Pin REPO/TEMPLATE into ``tmp_path``; ``.git`` is left to the test."""
     repo = tmp_path / "repo"
-    template = repo / "skill" / "assets" / "template"
+    template = repo / "skills" / "soliplex-template" / "assets" / "template"
     template.parent.mkdir(parents=True)
     monkeypatch.setattr(rst, "REPO", repo)
     monkeypatch.setattr(rst, "TEMPLATE", template)

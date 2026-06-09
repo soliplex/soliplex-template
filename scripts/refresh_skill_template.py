@@ -3,7 +3,8 @@
 # requires-python = ">=3.11"
 # dependencies = ["mako"]
 # ///
-"""Regenerate skill/assets/template/ from the live repo exemplars.
+"""Regenerate skills/soliplex-template/assets/template/ from the live repo
+exemplars.
 
 The embedded template shipped inside the soliplex-template skill is a
 parameterized copy of this repo's stack. When the repo's exemplar files change
@@ -13,7 +14,7 @@ the template so the generator can be exercised against current exemplars:
     uv run scripts/refresh_skill_template.py
 
 What it does:
-  1. wipes skill/assets/template/
+  1. wipes skills/soliplex-template/assets/template/
   2. copies every tracked repo file (minus the excludes below) in verbatim
   3. rewrites the parameterized files as <name>.mako (Mako ${param} + <%text>
      escaping for literal ${...})
@@ -35,7 +36,7 @@ import subprocess
 import sys
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
-TEMPLATE = REPO / "skill" / "assets" / "template"
+TEMPLATE = REPO / "skills" / "soliplex-template" / "assets" / "template"
 
 # Tracked paths NOT copied into the template (git pathspecs, repo-relative).
 EXCLUDE_PATHSPECS = [
@@ -43,7 +44,7 @@ EXCLUDE_PATHSPECS = [
     ":!.claude",
     ":!.github",  # this repo's CI, not a project file
     ":!.pre-commit-config.yaml",  # repo pre-commit config, not a project file
-    ":!skill",  # the skill source itself (no recursion)
+    ":!skills/soliplex-template",  # the skill source itself (no recursion)
     ":!dist",  # build artifact
     ":!tests",  # this repo's test suite, not project files
     ":!scripts/build_skill.py",  # skill-build tooling, not project files
@@ -345,13 +346,21 @@ def t_nginx_conf(text: str) -> str:
         "        location ^~ /gitea {\n"
         "            client_max_body_size 512M;\n"
         "\n"
+        "            # 'set' MUST precede the 'rewrite ... break' below:"
+        " 'break' halts\n"
+        "            # the ngx_http_rewrite_module, so a 'set' placed after"
+        " it never\n"
+        '            # runs and $backend_gitea reads back empty ("no host in'
+        " upstream\n"
+        '            # :3000").\n'
+        '            set $backend_gitea "gitea";\n'
+        "\n"
         "            # Preserve encoded chars (e.g. %2F in branch names)"
         " through the\n"
         "            # rewrite; two-step trick from the Gitea docs.\n"
         "            rewrite ^ $request_uri;\n"
         "            rewrite ^/gitea/?(.*) /$1 break;\n"
         "\n"
-        '            set $backend_gitea "gitea";\n'
         "            proxy_pass http://$backend_gitea:3000$uri;\n"
         "            proxy_http_version 1.1;\n"
         "            proxy_set_header Connection $http_connection;\n"
