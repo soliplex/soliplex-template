@@ -929,8 +929,14 @@ def test_main_happy_no_secrets_no_git(
     load_params.assert_called_once()
     coerce_and_derive.assert_called_once_with(PARAMS)
     validate.assert_called_once_with(PARAMS)
+    expected_ctx = {
+        **PARAMS,
+        "soliplex_template_manifest": gen.render_manifest(
+            PARAMS, gen.read_skill_metadata(gen.SKILL_DIR)
+        ),
+    }
     render_tree.assert_called_once_with(
-        template_root_path.resolve(), out_path.resolve(), PARAMS
+        template_root_path.resolve(), out_path.resolve(), expected_ctx
     )
     ensure_runtime_dirs.assert_called_once_with(out_path.resolve(), "rag/docs")
     write_env.assert_called_once_with(out_path.resolve(), PARAMS)
@@ -964,3 +970,116 @@ def test_main_happy_with_secrets_and_git(
     # secrets generation now defaults on, so main() passes True with no flag.
     maybe_run_secrets.assert_called_once_with(out_path.resolve(), True)
     maybe_git_init.assert_called_once_with(out_path.resolve(), True, False)
+
+
+# --------------------------------------------------------------------------
+# generation manifest (soliplex-template#73)
+# --------------------------------------------------------------------------
+def test_read_skill_metadata_stamped(tmp_path):
+    (tmp_path / "SKILL.md").write_text(
+        "---\n"
+        "name: soliplex-template\n"
+        "description: generation skill\n"
+        "metadata:\n"
+        '  version: "0.8.0"\n'
+        '  source_commit: "deadbee"\n'
+        '  generated: "2026-06-08"\n'
+        "---\n\n# heading\n",
+        encoding="utf-8",
+    )
+
+    meta = gen.read_skill_metadata(tmp_path)
+
+    assert meta == {
+        "version": "0.8.0",
+        "source_commit": "deadbee",
+        "generated": "2026-06-08",
+    }
+
+
+def test_read_skill_metadata_unstamped(tmp_path):
+    # A valid (name + description) but unstamped SKILL.md -> blank fields,
+    # so old skill builds keep generating.
+    (tmp_path / "SKILL.md").write_text(
+        "---\nname: soliplex-template\ndescription: generation skill\n---\n",
+        encoding="utf-8",
+    )
+
+    meta = gen.read_skill_metadata(tmp_path)
+
+    assert meta == {"version": "", "source_commit": "", "generated": ""}
+
+
+def test_sanitize_param_strips_url_userinfo_without_port():
+    result = gen._sanitize_param(
+        "ollama_base_url", "http://user:pass@ollama.invalid"
+    )
+
+    assert result == "http://ollama.invalid"
+
+
+def test_sanitize_param_redacts_secret():
+    result = gen._sanitize_param("ingester_token", "hunter2")
+
+    assert result == "<redacted>"
+
+
+def test_sanitize_param_strips_url_userinfo():
+    result = gen._sanitize_param(
+        "ollama_base_url", "http://user:pass@ollama.invalid:11434"
+    )
+
+    assert result == "http://ollama.invalid:11434"
+
+
+def test_sanitize_param_passthrough():
+    result = gen._sanitize_param("project_name", "soliplex")
+
+    assert result == "soliplex"
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        (True, "true"),
+        (False, "false"),
+        (9443, "9443"),
+        ("plain", '"plain"'),
+        ('has "quote"', '"has \\"quote\\""'),
+    ],
+)
+def test_toml_scalar(value, expected):
+    assert gen._toml_scalar(value) == expected
+
+
+def test_render_manifest_structure():
+    params = {"project_name": "demo", "nginx_https": 9443, "x": True}
+    meta = {
+        "version": "0.8.0",
+        "source_commit": "deadbee",
+        "generated": "2026-06-08",
+    }
+
+    out = gen.render_manifest(params, meta)
+
+    assert "[tool.soliplex-template]" in out
+    assert 'skill_name = "soliplex-template"' in out
+    assert 'skill_version = "0.8.0"' in out
+    assert 'skill_source_commit = "deadbee"' in out
+    assert 'skill_generated = "2026-06-08"' in out
+    assert "[tool.soliplex-template.params]" in out
+    assert 'project_name = "demo"' in out
+    assert "nginx_https = 9443" in out
+    assert "x = true" in out
+
+
+def test_render_manifest_blank_skill_fields_and_redaction():
+    params = {"ingester_token": "secret"}
+    meta = {"version": "", "source_commit": "", "generated": ""}
+
+    out = gen.render_manifest(params, meta)
+
+    assert 'skill_version = ""' in out
+    assert 'skill_source_commit = ""' in out
+    assert 'skill_generated = ""' in out
+    assert 'ingester_token = "<redacted>"' in out

@@ -34,3 +34,5 @@ packages = ["src/${package_name}"]
 [tool.pytest.ini_options]
 testpaths = ["tests/unit"]
 pythonpath = ["src"]
+
+${soliplex_template_manifest}

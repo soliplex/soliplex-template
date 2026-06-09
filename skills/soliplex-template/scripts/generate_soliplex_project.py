@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["mako"]
+# dependencies = ["mako", "skills-ref==0.1.1"]
 # ///
 """Scaffold a new Soliplex Docker Compose project from the embedded template.
 
@@ -30,9 +30,19 @@ import re
 import shutil
 import subprocess
 import sys
+import urllib.parse
 
+import skills_ref
 from mako import exceptions as mako_exceptions
 from mako import template
+
+# This skill's own directory (two levels up from scripts/); its SKILL.md is the
+# source of the generation-manifest skill identity.
+SKILL_DIR = pathlib.Path(__file__).resolve().parent.parent
+
+# Params whose values are secrets and must never be written into the generated
+# project's (committed) pyproject.toml manifest.
+_SENSITIVE_PARAMS = frozenset({"ingester_token"})
 
 # --------------------------------------------------------------------------
 # Parameters
@@ -400,6 +410,71 @@ def validate(params: dict[str, object]) -> None:
 # --------------------------------------------------------------------------
 # Generation
 # --------------------------------------------------------------------------
+def read_skill_metadata(skill_dir: pathlib.Path) -> dict[str, str]:
+    """Return ``version`` / ``source_commit`` / ``generated`` for a skill.
+
+    Reads the generating skill's own (already-validated) SKILL.md frontmatter
+    via ``skills_ref.read_properties``; fields not yet stamped into the build
+    come back blank. The skill must be valid for generation to run at all, so
+    a parse/validation failure here would be a genuine bug, not handled.
+    """
+    # ``metadata`` is None when the frontmatter has no ``metadata:`` block
+    # (e.g. an unstamped build); treat that as empty so fields read back blank.
+    metadata = skills_ref.read_properties(skill_dir).metadata or {}
+    return {
+        key: metadata.get(key, "")
+        for key in ("version", "source_commit", "generated")
+    }
+
+
+def _sanitize_param(key: str, value: object) -> object:
+    """Redact secrets before a param value is recorded in the manifest."""
+    if key in _SENSITIVE_PARAMS:
+        return "<redacted>"
+    if key == "ollama_base_url" and isinstance(value, str):
+        parts = urllib.parse.urlsplit(value)
+        if parts.username or parts.password:
+            host = parts.hostname or ""
+            if parts.port:
+                host = f"{host}:{parts.port}"
+            return urllib.parse.urlunsplit(parts._replace(netloc=host))
+    return value
+
+
+def _toml_scalar(value: object) -> str:
+    """Format a Python scalar as a TOML value (bool/int/string)."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int):
+        return str(value)
+    escaped = str(value).replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
+def render_manifest(params: dict[str, object], meta: dict[str, str]) -> str:
+    """Build the ``[tool.soliplex-template]`` manifest TOML for pyproject.toml.
+
+    Records the generating skill's identity (blank for unstamped fields) and
+    the full resolved parameter set, with secrets redacted, so a later update
+    run can introspect how the project was scaffolded.
+    """
+    lines = [
+        "[tool.soliplex-template]",
+        "# Generation manifest (soliplex-template#73): how this project was",
+        "# scaffolded. Hints for a later `soliplex-template` update run; safe",
+        "# to inspect, do not hand-edit.",
+        'skill_name = "soliplex-template"',
+        f'skill_version = "{meta["version"]}"',
+        f'skill_source_commit = "{meta["source_commit"]}"',
+        f'skill_generated = "{meta["generated"]}"',
+        "",
+        "[tool.soliplex-template.params]",
+    ]
+    for key, value in params.items():
+        lines.append(f"{key} = {_toml_scalar(_sanitize_param(key, value))}")
+    return "\n".join(lines) + "\n"
+
+
 def render_tree(
     template_root: pathlib.Path, out: pathlib.Path, ctx: dict[str, object]
 ) -> None:
@@ -586,7 +661,12 @@ def main(argv: list[str]) -> int:
     validate(params)
 
     out.mkdir(parents=True, exist_ok=True)
-    render_tree(template_root, out, params)
+    manifest = render_manifest(params, read_skill_metadata(SKILL_DIR))
+    render_tree(
+        template_root,
+        out,
+        {**params, "soliplex_template_manifest": manifest},
+    )
     ensure_runtime_dirs(out, str(params["docs_dir"]))
     write_env(out, params)
     ran_secrets = maybe_run_secrets(out, args.generate_secrets)
