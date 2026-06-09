@@ -133,7 +133,7 @@ def test_t_compose():
         '    user: "${PUID:-1000}:${PGID:-1000}"\n'
         '      - "9000:9000"\n'
         '      - "9443:9443"\n'
-        "      command: --public-url https://soliplex.localhost:9443/tui\n"
+        "      command: --public-url https://localhost:9443/tui\n"
         "      command: soliplex-cli serve --no-auth-mode --reload=config\n"
         '      - "8765:8765"\n'
         '      - "5001:5001"\n'
@@ -316,7 +316,15 @@ def test_t_compose_wraps_gitea_on_real_exemplar():
 
     assert "% if include_gitea:\n  gitea:\n" in mako
     assert "    restart: unless-stopped\n\n% endif\nvolumes:\n" in mako
-    assert "<%text>${GITEA_ROOT_URL" in mako
+    # ROOT_URL host+port track ${server_name}/${nginx_https}; the docker
+    # ${GITEA_ROOT_URL:-...} override stays escaped on either side.
+    assert (
+        "<%text>${GITEA_ROOT_URL:-https://</%text>"
+        "${server_name}:${nginx_https}"
+        "<%text>/gitea/}</%text>" in mako
+    )
+    # SSH_DOMAIN stays literal localhost (resolves for git clone everywhere).
+    assert 'GITEA__server__SSH_DOMAIN: "localhost"' in mako
 
 
 def test_t_init_sh_wraps_gitea_on_real_exemplar():

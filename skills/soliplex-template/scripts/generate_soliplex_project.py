@@ -54,7 +54,7 @@ DEFAULTS: dict[str, object] = {
     "docling_port": 5001,
     "postgres_port": 5432,
     # Server / TLS
-    "server_name": "localhost",
+    "server_name": None,  # derived from project_name if unset
     "tls_subject": None,  # derived from server_name if unset
     # Ollama (required)
     "ollama_base_url": None,
@@ -297,6 +297,10 @@ def coerce_and_derive(params: dict[str, object]) -> dict[str, object]:
     # Derived defaults
     if not params.get("setup_id"):
         params["setup_id"] = f"{params['project_name']}-conf"
+    # Per-stack public host: default to '<project>.localhost' so each generated
+    # stack gets its own browser origin. Must precede tls_subject (CN below).
+    if not params.get("server_name"):
+        params["server_name"] = f"{params['project_name']}.localhost"
     if not params.get("tls_subject"):
         params["tls_subject"] = (
             f"/C=US/ST=State/L=City/O=Soliplex/CN={params['server_name']}"

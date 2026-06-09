@@ -53,7 +53,7 @@ services:
     # No host port mapping: the TUI is reached only through nginx so that the
     # '--public-url' baked into the served HTML (used for static assets and
     # the websocket) stays consistent with what the browser sees.
-    command: "/app/.venv/bin/soliplex-tui-serve --backend-url http://backend:8000 --host 0.0.0.0 --port 8002 --public-url https://soliplex.localhost:9443/tui"
+    command: "/app/.venv/bin/soliplex-tui-serve --backend-url http://backend:8000 --host 0.0.0.0 --port 8002 --public-url https://localhost:9443/tui"
 
   backend:
 
@@ -268,7 +268,7 @@ services:
       GITEA__database__PASSWD__FILE: /run/secrets/gitea_db_password
       GITEA__database__SSL_MODE: disable
       GITEA__server__HTTP_PORT: "3000"
-      GITEA__server__SSH_DOMAIN: "soliplex.localhost"
+      GITEA__server__SSH_DOMAIN: "localhost"
       GITEA__server__SSH_PORT: "2222"
       GITEA__server__SSH_LISTEN_PORT: "2222"
       # Reverse-proxied under /gitea/ by nginx on the HTTPS port (9443);
