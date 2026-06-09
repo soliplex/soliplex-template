@@ -1,7 +1,6 @@
 ---
 name: soliplex-template
 description: "Generate a new, runnable Soliplex Docker Compose stack from an embedded template, or inspect and change the configuration of an existing one — query its resolved installation config, and create or update extra RAG databases (with guidance for wiring them into rooms). Use when a user wants to stand up, bootstrap, or create a new Soliplex deployment / compose stack, or to inspect, configure, or add a RAG database to an existing one."
-argument-hint: "[where=DIR] [project=NAME] [ollama=URL] [ports=default] [key=value …]"
 ---
 
 # Soliplex project generation and configuration
