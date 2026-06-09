@@ -145,7 +145,7 @@ def t_compose(text: str) -> str:
             ('- "9000:9000"', '- "${nginx_http}:9000"'),
             ('- "9443:9443"', '- "${nginx_https}:9443"'),
             (
-                "--public-url https://soliplex.localhost:9443/tui",
+                "--public-url https://localhost:9443/tui",
                 "--public-url https://${server_name}:${nginx_https}/tui",
             ),
             (
@@ -196,7 +196,9 @@ def t_compose(text: str) -> str:
     text = opt_replace(
         text,
         "${GITEA_ROOT_URL:-https://localhost:9443/gitea/}",
-        "<%text>${GITEA_ROOT_URL:-https://localhost:9443/gitea/}</%text>",
+        "<%text>${GITEA_ROOT_URL:-https://</%text>"
+        "${server_name}:${nginx_https}"
+        "<%text>/gitea/}</%text>",
     )
     # nginx depends_on the gitea service:
     text = opt_replace(

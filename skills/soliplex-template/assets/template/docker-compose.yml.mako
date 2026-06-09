@@ -284,13 +284,13 @@ services:
       GITEA__database__PASSWD__FILE: /run/secrets/gitea_db_password
       GITEA__database__SSL_MODE: disable
       GITEA__server__HTTP_PORT: "3000"
-      GITEA__server__SSH_DOMAIN: "soliplex.localhost"
+      GITEA__server__SSH_DOMAIN: "localhost"
       GITEA__server__SSH_PORT: "2222"
       GITEA__server__SSH_LISTEN_PORT: "2222"
       # Reverse-proxied under /gitea/ by nginx on the HTTPS port (9443);
       # trailing slash is REQUIRED.  Override in .env if you front the
       # stack with another proxy or use a different hostname.
-      GITEA__server__ROOT_URL: "<%text>${GITEA_ROOT_URL:-https://localhost:9443/gitea/}</%text>"
+      GITEA__server__ROOT_URL: "<%text>${GITEA_ROOT_URL:-https://</%text>${server_name}:${nginx_https}<%text>/gitea/}</%text>"
       # Boot ready (skip the web installer); the DB is configured above.
       GITEA__security__INSTALL_LOCK: "true"
 

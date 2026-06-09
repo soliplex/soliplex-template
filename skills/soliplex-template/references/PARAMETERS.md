@@ -27,11 +27,11 @@ as JSON.
 | `project_name` | `soliplex` | derived `package_name` must be a valid Python identifier | compose `name:`, `pyproject.toml` `[project] name`, `README.md` |
 | `setup_id` | `<project_name>-conf` | derived if unset | `installation.yaml` `id:` |
 | `nginx_http` | `9000` | int 1–65535, unique among host ports | compose host port, `README.md` |
-| `nginx_https` | `9443` | int, unique | compose host port, TUI public-url, `README.md` |
+| `nginx_https` | `9443` | int, unique | compose host port, TUI public-url, Gitea `ROOT_URL` port, `README.md` |
 | `ingester_port` | `8765` | int, unique | compose host port |
 | `docling_port` | `5001` | int, unique | compose host port |
 | `postgres_port` | `5432` | int, unique | compose host port |
-| `server_name` | `localhost` | — | `nginx.conf` `server_name`, TUI public-url, derived `tls_subject` |
+| `server_name` | `<project_name>.localhost` | derived if unset | `nginx.conf` `server_name`, TUI public-url, Gitea `ROOT_URL` host, derived `tls_subject` |
 | `tls_subject` | `/C=US/ST=State/L=City/O=Soliplex/CN=<server_name>` | derived if unset | `nginx/Dockerfile` self-signed cert subject |
 | `ollama_base_url` | *(required)* | non-empty | `.env` |
 | `chat_model` | `gpt-oss:latest` | — | `installation.yaml` `default_chat` |
@@ -57,6 +57,10 @@ as JSON.
 ## Derived values
 
 - `setup_id` ← `<project_name>-conf` when not supplied.
+- `server_name` ← `<project_name>.localhost` when not supplied, so each generated
+  stack gets its own browser origin (per-stack cookie/origin isolation). Gitea's
+  `SSH_DOMAIN` deliberately stays `localhost` so `git clone` works on hosts that
+  don't resolve `*.localhost`.
 - `tls_subject` ← `/C=US/ST=State/L=City/O=Soliplex/CN=<server_name>` when not supplied.
 - `backend_auth_flag` ← `--no-auth-mode` plus a trailing space when `auth_mode == "no-auth"`, else empty
   (consumed by `docker-compose.yml.mako`).
