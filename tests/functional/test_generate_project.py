@@ -29,6 +29,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import tomllib
 import warnings
 
 import pytest
@@ -373,6 +374,25 @@ def test_pyproject_declares_installable_package(generated_project):
     assert "hatchling" in pyproject
     assert f'packages = ["src/{_PACKAGE}"]' in pyproject
     assert "[tool.pytest.ini_options]" in pyproject
+
+
+def test_pyproject_records_generation_manifest(generated_project):
+    out, _params = generated_project
+
+    data = tomllib.loads(_read(out, "pyproject.toml"))
+
+    manifest = data["tool"]["soliplex-template"]
+    assert manifest["skill_name"] == "soliplex-template"
+    # version / source_commit / generated may be blank in-repo (the source
+    # SKILL.md is unstamped); the keys are present regardless.
+    assert {"skill_version", "skill_source_commit", "skill_generated"} <= set(
+        manifest
+    )
+    params = manifest["params"]
+    assert params["project_name"] == "soliplex-functest"
+    assert params["nginx_https"] == 19443  # int preserved
+    assert params["include_gitea"] is False  # bool preserved
+    assert params["ingester_token"] == "<redacted>"  # secret never recorded
 
 
 def test_custom_room_references_package_tool(generated_project):

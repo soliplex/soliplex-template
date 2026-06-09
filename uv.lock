@@ -421,6 +421,7 @@ dev = [
     { name = "pytest-cov" },
     { name = "pyyaml" },
     { name = "ruff" },
+    { name = "skills-ref" },
     { name = "soliplex-skills" },
     { name = "zensical" },
 ]
@@ -435,6 +436,7 @@ dev = [
     { name = "pytest-cov" },
     { name = "pyyaml" },
     { name = "ruff" },
+    { name = "skills-ref", specifier = "==0.1.1" },
     { name = "soliplex-skills", specifier = ">=0.4" },
     { name = "zensical" },
 ]
