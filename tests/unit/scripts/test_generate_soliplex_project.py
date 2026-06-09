@@ -183,7 +183,8 @@ def test_coerce_derives_defaults():
     result = gen.coerce_and_derive(params)
 
     assert result["setup_id"] == "soliplex-conf"
-    assert result["tls_subject"].endswith("CN=localhost")
+    assert result["server_name"] == "soliplex.localhost"
+    assert result["tls_subject"].endswith("CN=soliplex.localhost")
     assert result["backend_auth_flag"] == "--no-auth-mode "
     assert result["nginx_http"] == 9000
     assert result["frontend_release_path"] == "latest"
@@ -200,12 +201,14 @@ def test_coerce_int_error():
 def test_coerce_keeps_supplied_values_and_auth_mode():
     params = dict(gen.DEFAULTS)
     params["setup_id"] = "given-id"
+    params["server_name"] = "given.example"
     params["tls_subject"] = "/CN=given"
     params["auth_mode"] = "auth"
 
     result = gen.coerce_and_derive(params)
 
     assert result["setup_id"] == "given-id"
+    assert result["server_name"] == "given.example"
     assert result["tls_subject"] == "/CN=given"
     assert result["backend_auth_flag"] == ""
 
