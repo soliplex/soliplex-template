@@ -27,6 +27,9 @@ dev = [
     "pytest",
     "pytest-cov",
     "ruff",
+    # Direct runtime dep of generate_soliplex_project.py (read_properties);
+    # pinned to match that script's PEP 723 header.
+    "skills-ref==0.1.1",
     "soliplex-skills >= 0.4",
     "zensical",
 ]

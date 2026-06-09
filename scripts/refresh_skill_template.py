@@ -692,6 +692,8 @@ packages = ["src/${package_name}"]
 [tool.pytest.ini_options]
 testpaths = ["tests/unit"]
 pythonpath = ["src"]
+
+${soliplex_template_manifest}\
 """,
     "src/__package__/tools.py.mako": '''\
 """Custom agent tools for the ``${package_name}`` Soliplex install.
@@ -1433,6 +1435,7 @@ PROBE = dict(
     frontend_release_path="latest",
     docs_dir="d",
     include_gitea=True,
+    soliplex_template_manifest="[tool.soliplex-template]\n",
 )
 
 
