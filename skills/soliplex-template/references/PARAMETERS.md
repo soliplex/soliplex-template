@@ -7,6 +7,26 @@ value with no usable default — it must be provided.
 Run `uv run scripts/generate_soliplex_project.py --print-defaults` to dump the current defaults
 as JSON.
 
+## Shortcut spellings (skill invocation)
+
+When the skill is invoked as `/soliplex-template …`, options may be pre-answered
+inline to skip the matching prompt. The vocabulary lives in
+[`assets/aliases.json`](../assets/aliases.json) (the single source of truth —
+not re-listed here):
+
+- `key=value` — set a parameter, where `key` is any parameter name in the table
+  below **or** a friendly alias from `aliases` (e.g. `project=` → `project_name`,
+  `ollama=` → `ollama_base_url`). The alias `where=` / the name `output_dir=`
+  is special: it sets the `--out` target directory, not a template parameter.
+- `<group>=default` — accept the defaults for a whole `groups` set and skip its
+  prompt, e.g. `ports=default` or `models=default`.
+- `force`, `git=no`, `secrets=no` — the `--force`, `--no-git`, and
+  `--no-generate-secrets` flags.
+
+Anything not supplied inline is prompted for. **Secrets are never accepted
+inline:** `ingester_token` has no alias and is only ever set via the interactive
+prompt (a command-line value would leak into shell history).
+
 ## CLI arguments (not template parameters)
 
 | Argument | Meaning |
