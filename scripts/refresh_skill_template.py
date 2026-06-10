@@ -226,6 +226,18 @@ def t_compose(text: str) -> str:
         "    gitea_db_password:\n"
         "      file: ./.secrets/gitea_db_password.gen\n",
     )
+    # Wrap the opt-in tui fragments in include_tui Mako conditionals, mirroring
+    # gitea: the always-on exemplar carries them; generated projects include
+    # them only when include_tui is true.
+    # nginx depends_on the tui service:
+    text = opt_replace(
+        text,
+        "      - tui\n",
+        "% if include_tui:\n      - tui\n% endif\n",
+    )
+    # the tui service block (open anchor + close anchor before backend):
+    text = opt_replace(text, "  tui:\n", "% if include_tui:\n  tui:\n")
+    text = opt_replace(text, "  backend:\n", "% endif\n  backend:\n")
     return text
 
 
@@ -1011,6 +1023,21 @@ docker compose logs -f backend
 
 Then open <http://localhost:${nginx_http}> for the web frontend.
 
+<%text>## Using the TUI</%text>
+
+Soliplex includes an interactive terminal client. The backend image bundles it,
+so you can run it against the running stack without installing anything on the
+host:
+
+```bash
+docker compose exec backend soliplex-tui --url http://localhost:8000
+```
+% if include_tui:
+
+This stack also serves the same client as a web app via the `tui` service;
+nginx proxies it at <https://${server_name}:${nginx_https}/tui/>.
+% endif
+
 <%text>## Everyday commands</%text>
 
 ```bash
@@ -1068,6 +1095,16 @@ the same store through a bind mount. See [RAG pipeline](../operations/rag.md).
 
 A stateless document converter (CPU image by default; a GPU variant is a
 commented swap in `docker-compose.yml`).
+% if include_tui:
+
+<%text>## tui</%text>
+
+Soliplex's [Textual](https://textual.textualize.io/) terminal client, served
+as a web app over textual-serve; nginx proxies it at `/tui/`, so open
+<https://${server_name}:${nginx_https}/tui/>. The same client is bundled in
+the backend image — to run it from the command line, see
+[Using the TUI](../getting-started/installation.md#using-the-tui).
+% endif
 
 <%text>## postgres</%text>
 
@@ -1435,6 +1472,7 @@ PROBE = dict(
     frontend_release_path="latest",
     docs_dir="d",
     include_gitea=True,
+    include_tui=True,
     soliplex_template_manifest="[tool.soliplex-template]\n",
 )
 

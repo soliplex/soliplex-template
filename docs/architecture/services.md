@@ -4,8 +4,9 @@ icon: lucide/network
 
 # Service graph
 
-The stack is defined in `docker-compose.yml`. Five services cooperate; two of
-them share the RAG vector store through a bind mount.
+The stack is defined in `docker-compose.yml`. Several services cooperate; two of
+them share the RAG vector store through a bind mount. The `tui` service is
+optional (see [tui](#tui) below).
 
 ```mermaid
 graph LR
@@ -49,6 +50,21 @@ is needed. See [RAG pipeline](../operations/rag.md) and
 
 A stateless document converter. The CPU image is used by default; a GPU variant
 is available by a commented swap in `docker-compose.yml`.
+
+## tui
+
+Soliplex's [Textual](https://textual.textualize.io/) terminal client. The
+backend image bundles the client (`soliplex-tui`), so you can run it from the
+command line against the running stack without the `tui` service — see
+[Using the TUI](../getting-started/installation.md#using-the-tui).
+
+This template also serves the same client as a web app via the **optional**
+`tui` service (over
+[textual-serve](https://github.com/Textualize/textual-serve)); nginx proxies it
+at `/tui/`, so open <https://localhost:9443/tui/>. The service has no host port
+mapping (reached only through nginx) and a project scaffolded by the
+[generator](../getting-started/generator.md) includes it only when
+`include_tui=true`.
 
 ## postgres
 

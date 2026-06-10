@@ -538,6 +538,70 @@ def test_render_tree_keeps_init_gitea_when_enabled(tmp_path):
 
 
 # --------------------------------------------------------------------------
+# include_tui (opt-in TUI service)
+# --------------------------------------------------------------------------
+@pytest.mark.parametrize(
+    "it_kw, expected",
+    [
+        ({}, False),
+        ({"include_tui": False}, False),
+        ({"include_tui": "0"}, False),
+        ({"include_tui": "false"}, False),
+        ({"include_tui": "no"}, False),
+        ({"include_tui": "n"}, False),
+        ({"include_tui": "off"}, False),
+        ({"include_tui": True}, True),
+        ({"include_tui": "1"}, True),
+        ({"include_tui": "true"}, True),
+        ({"include_tui": "yes"}, True),
+        ({"include_tui": "y"}, True),
+        ({"include_tui": "on"}, True),
+    ],
+)
+def test_coerce_and_derive_w_valid_include_tui_converts(it_kw, expected):
+    params = dict(gen.DEFAULTS) | it_kw
+
+    result = gen.coerce_and_derive(params)
+
+    assert result["include_tui"] is expected
+
+
+def test_coerce_and_derive_w_invalid_include_tui_raises():
+    params = dict(gen.DEFAULTS)
+    params["include_tui"] = "maybe"
+
+    with pytest.raises(gen.GenError, match="include_tui must be a boolean"):
+        gen.coerce_and_derive(params)
+
+
+def test_render_tree_omits_tui_when_disabled(tmp_path):
+    template = tmp_path / "template"
+    (template / "tui").mkdir(parents=True)
+    (template / "tui" / "Dockerfile").write_text("FROM x\n", encoding="utf-8")
+    out = tmp_path / "out"
+
+    gen.render_tree(
+        template, out, {"project_name": "demo", "include_tui": False}
+    )
+
+    assert not (out / "tui").exists()
+
+
+def test_render_tree_keeps_tui_when_enabled(tmp_path):
+    body = "FROM x\n"
+    template = tmp_path / "template"
+    (template / "tui").mkdir(parents=True)
+    (template / "tui" / "Dockerfile").write_text(body, encoding="utf-8")
+    out = tmp_path / "out"
+
+    gen.render_tree(
+        template, out, {"project_name": "demo", "include_tui": True}
+    )
+
+    assert (out / "tui" / "Dockerfile").read_text() == body
+
+
+# --------------------------------------------------------------------------
 # ensure_runtime_dirs
 # --------------------------------------------------------------------------
 def test_ensure_runtime_dirs(tmp_path):
@@ -815,6 +879,7 @@ PARAMS = {
     "ollama_base_url": "http://o",
     "auth_mode": "no-auth",
     "include_gitea": False,
+    "include_tui": False,
     "docs_dir": "rag/docs",
 }
 

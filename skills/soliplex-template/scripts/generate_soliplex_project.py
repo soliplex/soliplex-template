@@ -98,6 +98,10 @@ DEFAULTS: dict[str, object] = {
     # Gitea service (opt-in): include a local Gitea (postgres-backed,
     # nginx-proxied at /gitea/) plus scripts/init-gitea.sh.
     "include_gitea": False,
+    # TUI service (opt-in): include the textual-serve-backed `tui` service
+    # (web TUI at /tui/) plus the tui/ build context. Omitted entirely when
+    # false; soliplex_tui_constraint only applies when this is true.
+    "include_tui": False,
     # Ingester
     "docs_dir": "rag/docs",
     "ingester_token": "secret",
@@ -337,6 +341,11 @@ def coerce_and_derive(params: dict[str, object]) -> dict[str, object]:
         params.get("include_gitea"), "include_gitea"
     )
 
+    # Opt-in TUI service (consumed by the conditional blocks in the compose
+    # template and the authored docs; gates the tui/ build context in
+    # render_tree).
+    params["include_tui"] = _as_bool(params.get("include_tui"), "include_tui")
+
     # Container UID/GID. Unset (None) -> the host operator's uid/gid so the
     # secret files this run writes are owned by, and the bind mounts are
     # writable by, the in-container service users. An explicit value is coerced
@@ -500,6 +509,10 @@ def render_tree(
         if not ctx.get("include_gitea") and rel == pathlib.Path(
             "scripts/init-gitea.sh"
         ):
+            continue
+        # The tui/ build context only makes sense alongside the tui service;
+        # skip the whole subtree when the TUI was not requested.
+        if not ctx.get("include_tui") and rel.parts and rel.parts[0] == "tui":
             continue
         if src.is_dir():
             (out / rel).mkdir(parents=True, exist_ok=True)
@@ -692,6 +705,7 @@ def main(argv: list[str]) -> int:
     print(f"  ollama:   {params['ollama_base_url']}")
     print(f"  auth:     {params['auth_mode']}")
     print(f"  gitea:    {'yes' if params['include_gitea'] else 'no'}")
+    print(f"  tui:      {'yes' if params['include_tui'] else 'no'}")
     git_status = "initial commit created" if did_git else "not initialized"
     print(f"  git:      {git_status}")
     # Build images explicitly before starting: the nginx image runs a full

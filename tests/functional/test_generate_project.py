@@ -392,6 +392,7 @@ def test_pyproject_records_generation_manifest(generated_project):
     assert params["project_name"] == "soliplex-functest"
     assert params["nginx_https"] == 19443  # int preserved
     assert params["include_gitea"] is False  # bool preserved
+    assert params["include_tui"] is False  # bool preserved
     assert params["ingester_token"] == "<redacted>"  # secret never recorded
 
 
@@ -419,6 +420,22 @@ def test_compose_puts_src_on_backend_pythonpath(generated_project):
 
     assert "PYTHONPATH: /app/src" in compose
     assert 'source: "./src"' in compose
+
+
+def test_default_project_omits_tui_service(generated_project):
+    out, _params = generated_project
+
+    compose = _read(out, "docker-compose.yml")
+
+    # include_tui defaults off: no tui service, no tui/ build context...
+    assert "\n  tui:\n" not in compose
+    assert not (out / "tui").exists()
+    # ...but the CLI client (bundled in the backend image) is still documented.
+    install_doc = _read(out, "docs/getting-started/installation.md")
+    assert "docker compose exec backend" in install_doc
+    assert "soliplex-tui --url http://localhost:8000" in install_doc
+    # The web-TUI-behind-nginx note is gated on include_tui, so absent here.
+    assert "/tui/>" not in install_doc
 
 
 def test_generated_package_is_importable(generated_project):
@@ -587,6 +604,40 @@ def test_docker_compose_config_valid(generated_project, docker_required):
     result = _compose(out, "config", "-q")
 
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.needs_docker
+def test_include_tui_renders_valid_compose(tmp_path, docker_required):
+    missing = [t for t in _GEN_TOOLS if shutil.which(t) is None]
+    if missing:
+        pytest.skip(f"generation needs {', '.join(_GEN_TOOLS)}")
+    out = tmp_path / "project"
+    params_file = tmp_path / "params.json"
+    params_file.write_text(
+        json.dumps({**_PARAMS, "include_tui": True}), encoding="utf-8"
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(_SCRIPT),
+            "--out",
+            str(out),
+            "--params",
+            str(params_file),
+            "--no-git",
+            "--disable-gpg-sign",
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    compose = _read(out, "docker-compose.yml")
+    assert "\n  tui:\n" in compose
+    assert (out / "tui" / "Dockerfile").exists()
+    cfg = _compose(out, "config", "-q")
+    assert cfg.returncode == 0, cfg.stderr
 
 
 @pytest.fixture

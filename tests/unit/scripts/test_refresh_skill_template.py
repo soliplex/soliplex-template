@@ -327,6 +327,18 @@ def test_t_compose_wraps_gitea_on_real_exemplar():
     assert 'GITEA__server__SSH_DOMAIN: "localhost"' in mako
 
 
+def test_t_compose_wraps_tui_on_real_exemplar():
+    exemplar = (rst.REPO / "docker-compose.yml").read_text()
+
+    mako = rst.t_compose(exemplar)
+
+    assert "% if include_tui:\n  tui:\n" in mako
+    # the tui block closes with a % endif immediately before the backend
+    # service, and nginx's depends_on entry is wrapped too.
+    assert "% endif\n  backend:\n" in mako
+    assert "% if include_tui:\n      - tui\n% endif\n" in mako
+
+
 def test_t_init_sh_wraps_gitea_on_real_exemplar():
     exemplar = (rst.REPO / "postgres" / "config" / "init.sh").read_text()
 
