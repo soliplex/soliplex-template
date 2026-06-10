@@ -110,7 +110,7 @@ services:
 
   haiku-ingester:
 
-    image: ghcr.io/ggozad/haiku.rag-slim:0.51.0
+    image: ghcr.io/ggozad/haiku.rag-slim:0.56.0
 
     build:
       context: haiku.rag
