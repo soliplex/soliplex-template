@@ -108,9 +108,10 @@ docker compose down -v           # stop AND wipe the postgres volume
 ```
 
 !!! danger "`down -v` is destructive"
-    `docker compose down -v` drops the `postgres_data` volume — all chat threads
-    and authorization grants go with it. The ingester's SQLite job queue lives
-    separately under `rag/db/` (a bind mount), so it survives a `down -v`.
+    `docker compose down -v` drops the `postgres_data` volume — chat threads,
+    authorization grants, and the ingester's job queue (now its own Postgres
+    database) all go with it. The RAG vector store and your documents live
+    under `rag/db/` (a bind mount), so they survive a `down -v`.
 
 ## Notes
 

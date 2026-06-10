@@ -36,6 +36,14 @@ elif [ -z "$GITEA_DB_PASS" ]; then
 fi
 % endif
 
+# Read password from secret file if available, otherwise fallback to environment variable
+if [ -f "$INGESTER_DB_PASS_FILE" ]; then
+    INGESTER_DB_PASS=$(cat "$INGESTER_DB_PASS_FILE")
+elif [ -z "$INGESTER_DB_PASS" ]; then
+    echo "ERROR: Neither INGESTER_DB_PASS_FILE nor INGESTER_DB_PASS is set"
+    exit 1
+fi
+
 
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
     -- Create ragserver AGUI application user with password
@@ -48,6 +56,9 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
     -- Create Gitea application user with password
     CREATE USER soliplex_gitea WITH PASSWORD '$GITEA_DB_PASS';
 % endif
+
+    -- Create haiku-ingester application user with password
+    CREATE USER soliplex_ingester WITH PASSWORD '$INGESTER_DB_PASS';
 
     -- Create database owned by postgres (not application user)
     CREATE DATABASE ${agui_db};
@@ -62,6 +73,10 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
     CREATE DATABASE soliplex_gitea;
     ALTER DATABASE soliplex_gitea OWNER TO postgres;
 % endif
+
+    -- Create database owned by postgres (not application user)
+    CREATE DATABASE soliplex_ingester;
+    ALTER DATABASE soliplex_ingester OWNER TO postgres;
 
     -- Connect to the ${agui_db} database to set up schema permissions
     \c ${agui_db}
@@ -103,6 +118,19 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
     GRANT ALL PRIVILEGES ON DATABASE soliplex_gitea to soliplex_gitea;
     GRANT ALL PRIVILEGES ON SCHEMA public TO soliplex_gitea;
 % endif
+
+    -- Connect to the soliplex_ingester database to set up schema permissions
+    \c soliplex_ingester
+
+    -- Grant minimal required PRIVILEGES (EVAL.md #14 recommendation)
+    -- Only CONNECT, not superuser or database ownership
+    GRANT CONNECT ON DATABASE soliplex_ingester TO soliplex_ingester;
+
+    -- Schema-level permissions
+    GRANT USAGE ON SCHEMA public TO soliplex_ingester;
+
+    GRANT ALL PRIVILEGES ON DATABASE soliplex_ingester to soliplex_ingester;
+    GRANT ALL PRIVILEGES ON SCHEMA public TO soliplex_ingester;
 EOSQL
 
 echo "Database '${agui_db}' initialized with minimal privileges for user '${agui_db}'"
@@ -110,3 +138,4 @@ echo "Database '${authz_db}' initialized with minimal privileges for user '${aut
 % if include_gitea:
 echo "Database 'soliplex_gitea' initialized with minimal privileges for user 'soliplex_gitea'"
 % endif
+echo "Database 'soliplex_ingester' initialized with minimal privileges for user 'soliplex_ingester'"

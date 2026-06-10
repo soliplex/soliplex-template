@@ -29,10 +29,10 @@ corresponding `SOLIPLEX_*` environment variables instead of using files.
 
 ## The `down -v` caveat
 
-`docker compose down -v` drops the `postgres_data` volume — all chat threads and
-authorization grants go with it. The ingester's SQLite job queue lives
-separately under `rag/db/` (a bind mount, not the postgres volume), so a
-`down -v` does not touch it.
+`docker compose down -v` drops the `postgres_data` volume — chat threads,
+authorization grants, and the ingester's job queue (its own `soliplex_ingester`
+database) all go with it. The RAG vector store under `rag/db/` (a bind mount,
+not the postgres volume) is separate, so a `down -v` does not touch it.
 
 If you destroy the secret files **and** the Postgres volume already exists, the
 backend can no longer authenticate to the database. Recover by re-running the

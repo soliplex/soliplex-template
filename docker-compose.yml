@@ -127,9 +127,7 @@ services:
       - -c
       - |
         INGESTER_DB_PASSWORD="$$(cat /run/secrets/ingester_db_password)"
-        sed -e "s|__INGESTER_TOKEN__|$$INGESTER_TOKEN|" \
-            -e "s|__INGESTER_DB_PASSWORD__|$$INGESTER_DB_PASSWORD|" \
-            /app/haiku.rag.yaml > /tmp/haiku.rag.yaml
+        sed -e "s|__INGESTER_TOKEN__|$$INGESTER_TOKEN|" -e "s|__INGESTER_DB_PASSWORD__|$$INGESTER_DB_PASSWORD|" /app/haiku.rag.yaml > /tmp/haiku.rag.yaml
         exec haiku-ingester --config /tmp/haiku.rag.yaml serve
 
     ports:
