@@ -141,6 +141,16 @@ unknown at generation time).
   side of each mapping.
 - `agui_db` / `authz_db` are used as both the Postgres role name and the
   database name (the template uses identical names for each).
+- The model parameters all resolve via `ollama_base_url` (the default Ollama
+  provider — the template pins no other): `chat_model`, `chat_model_alt`,
+  `title_model`, `rag_qa_model`, `rag_research_model` (chat-style) and
+  `rag_embed_model` (embedding). `rag_embed_dim` and `chunk_size` are in the
+  `models` shortcut group but are **not** model names — `rag_embed_dim` must
+  match the embedding model's vector dimension. The skill's interview probes
+  each chosen model for responsiveness against `ollama_base_url` *before*
+  generating (see `SKILL.md`); after the stack is up, `soliplex-cli audit
+  ollama` / `soliplex-cli ollama pull` verify and repair the models the install
+  references.
 - The backend `soliplex` version pin (`soliplex_backend_constraint`) lands in
   `backend/constraints.txt`. Choose it from the published releases on PyPI
   (`https://pypi.org/pypi/soliplex/json`) rather than guessing — pin one

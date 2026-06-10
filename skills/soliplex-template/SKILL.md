@@ -60,7 +60,9 @@ from the user and invoke it.
      `ingester_port`, `docling_port`, `postgres_port`.
    - **auth** — `auth_mode`: `no-auth` (default) or `auth`.
    - **models** — offer "use defaults" vs "customize"; `models=default`
-     pre-answers this.
+     pre-answers this. Whichever way the models are chosen, **probe them
+     against `ollama_base_url` before generating** — see *Choosing and checking
+     models* below.
    - **versions** — `frontend_version` and `soliplex_backend_constraint` (use
      the version-listing guidance below; they are independent choices).
    - **gitea** — `include_gitea`: include the opt-in local Gitea service or not.
@@ -72,6 +74,57 @@ from the user and invoke it.
    ```bash
    uv run scripts/generate_soliplex_project.py --print-defaults
    ```
+
+   **Choosing and checking models.** Every model parameter resolves through the
+   default Ollama provider at `ollama_base_url` — the template pins no other
+   provider — so each chosen model must exist *and load* on that server. The
+   chat-style model parameters are `chat_model`, `chat_model_alt`,
+   `title_model`, `rag_qa_model`, and `rag_research_model`; the embedding model
+   is `rag_embed_model`. (`rag_embed_dim` and `chunk_size` ride in the same
+   `models` shortcut group but are **not** model names — `rag_embed_dim` must
+   match the embedding model's vector dimension.)
+
+   **Offer real choices** instead of asking the user to recall a tag: list the
+   models the server actually has and present them (defaults pre-selected),
+   keeping the chat models and the embedding model in separate questions so an
+   embedding model isn't picked for chat:
+
+   ```bash
+   curl -s "$OLLAMA_BASE_URL/api/tags" | jq -r '.models[].name'
+   ```
+
+   **Probe responsiveness before generating — always, even for
+   `models=default`** (the `gpt-oss:*` / `qwen3-embedding:4b` defaults are not
+   guaranteed to be present or to load). Don't merely check that a name is in
+   the list; actually exercise each selected model, so one that is missing, not
+   pulled, or won't load (OOM, bad quantization) is caught before the project is
+   written. Probe chat-style models via the OpenAI-compatible
+   `/v1/chat/completions` endpoint and the embedding model via `/v1/embeddings`
+   (a non-2xx / curl failure means it isn't usable):
+
+   ```bash
+   # each chat-style model (chat_model, chat_model_alt, title_model, rag_qa_model, rag_research_model)
+   curl -sf "$OLLAMA_BASE_URL/v1/chat/completions" \
+     -d '{"model":"<name>","messages":[{"role":"user","content":"ping"}],"max_tokens":1}'
+
+   # the embedding model (rag_embed_model)
+   curl -sf "$OLLAMA_BASE_URL/v1/embeddings" -d '{"model":"<name>","input":"ping"}'
+   ```
+
+   For any model whose probe fails, offer the user a fix: either **switch to a
+   model the server has** (from the `/api/tags` list, then re-probe), or **pull
+   the missing model now** and re-probe to confirm it loads:
+
+   ```bash
+   curl -s "$OLLAMA_BASE_URL/api/pull" -d '{"model":"<name>","stream":false}'
+   ```
+
+   If `ollama_base_url` itself is unreachable at this point (e.g. a remote
+   server that isn't up yet), say so, fall back to the defaults or free-text
+   entry, and note that an authoritative check will run after the stack is up
+   (see *Report the result* below). A post-generation live probe is also coming
+   to `soliplex-cli audit ollama` (soliplex#1067); the pre-generation probe here
+   is the skill's own, complementary check.
 
    The frontend version (`frontend_version`) and the backend `soliplex`
    version (`soliplex_backend_constraint`) are **independent choices**: the
@@ -143,6 +196,21 @@ from the user and invoke it.
    can take several minutes — a separate `build` step makes that wait legible
    instead of hiding it inside `up`.
 
+   Once the backend reports healthy, **verify the Ollama models the install
+   actually references** with the backend's own audit, and pull any that are
+   missing. This is the authoritative, config-driven check — it runs against the
+   *resolved* installation, so it covers the models named in every referenced
+   YAML file (and only those that resolve via Ollama), not just the ones you
+   set in the interview:
+
+   ```bash
+   # reachable / MISSING / OK per configured Ollama URL
+   docker compose run --rm backend /app/.venv/bin/soliplex-cli audit ollama /environment
+
+   # if any URL reports MISSING, pull them (run with -n first to preview)
+   docker compose run --rm backend /app/.venv/bin/soliplex-cli ollama pull /environment
+   ```
+
 ### Notes
 
 - `.mako` files in the template are rendered with the parameters; all other
@@ -188,6 +256,28 @@ outside the installation is skipped with a warning on stderr. Pass
 
 The script needs PyYAML; `uv run scripts/soliplex_config.py …` supplies it from
 the script's inline metadata, or `pip install pyyaml` first.
+
+### Checking and repairing Ollama models
+
+The model names a running stack uses all resolve through the Ollama server at
+`OLLAMA_BASE_URL`; if that URL changes (edited in `.env`) or the server loses
+models (a flush, a cache eviction), requests will start failing. Check the
+install's referenced models against each configured server — and pull back any
+that went missing — with the backend's own audit, run from the stack directory
+in a one-off `backend` container the same way as `soliplex_config.py`:
+
+```bash
+# reachable / MISSING / OK per configured Ollama URL
+docker compose run --rm backend /app/.venv/bin/soliplex-cli audit ollama /environment
+
+# pull whatever the install references (-n previews; -u URL scopes to one server)
+docker compose run --rm backend /app/.venv/bin/soliplex-cli ollama pull /environment
+```
+
+`audit ollama` exits non-zero when a server is unreachable or missing models,
+and with `-q` (placed before the `ollama` subcommand) prints a JSON error
+report, so it is scriptable. Both commands need the stack's images built and
+should be run from the directory holding `docker-compose.yml`.
 
 ## Creating and updating extra RAG databases
 
