@@ -41,6 +41,16 @@ the same store through a bind mount. See [RAG pipeline](../operations/rag.md).
 
 A stateless document converter (CPU image by default; a GPU variant is a
 commented swap in `docker-compose.yml`).
+% if include_tui:
+
+<%text>## tui</%text>
+
+Soliplex's [Textual](https://textual.textualize.io/) terminal client, served
+as a web app over textual-serve; nginx proxies it at `/tui/`, so open
+<https://${server_name}:${nginx_https}/tui/>. The same client is bundled in
+the backend image — to run it from the command line, see
+[Using the TUI](../getting-started/installation.md#using-the-tui).
+% endif
 
 <%text>## postgres</%text>
 

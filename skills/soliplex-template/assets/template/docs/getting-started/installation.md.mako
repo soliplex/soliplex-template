@@ -73,6 +73,21 @@ docker compose logs -f backend
 
 Then open <http://localhost:${nginx_http}> for the web frontend.
 
+<%text>## Using the TUI</%text>
+
+Soliplex includes an interactive terminal client. The backend image bundles it,
+so you can run it against the running stack without installing anything on the
+host:
+
+```bash
+docker compose exec backend soliplex-tui --url http://localhost:8000
+```
+% if include_tui:
+
+This stack also serves the same client as a web app via the `tui` service;
+nginx proxies it at <https://${server_name}:${nginx_https}/tui/>.
+% endif
+
 <%text>## Everyday commands</%text>
 
 ```bash

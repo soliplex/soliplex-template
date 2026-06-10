@@ -15,7 +15,9 @@ services:
 
     depends_on:
       - backend
+% if include_tui:
       - tui
+% endif
 % if include_gitea:
       - gitea
 % endif
@@ -38,6 +40,7 @@ services:
         target: /app/error-pages
         read_only: true
 
+% if include_tui:
   tui:
 
     build:
@@ -57,6 +60,7 @@ services:
     # the websocket) stays consistent with what the browser sees.
     command: "/app/.venv/bin/soliplex-tui-serve --backend-url http://backend:8000 --host 0.0.0.0 --port 8002 --public-url https://${server_name}:${nginx_https}/tui"
 
+% endif
   backend:
 
     build:

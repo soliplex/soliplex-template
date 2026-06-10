@@ -13,7 +13,11 @@ echo 'OLLAMA_BASE_URL=http://your-ollama-host:11434' > .env
 docker compose up
 ```
 
-Then open <http://localhost:9000>.
+Then open <http://localhost:9000>. The terminal client (TUI) is bundled in the
+backend image — run it against the stack with
+`docker compose exec backend soliplex-tui --url http://localhost:8000`. This
+template also serves the TUI as a web app (the optional `tui` service) at
+<https://localhost:9443/tui/>.
 
 `OLLAMA_BASE_URL` must point at an Ollama server that serves the models
 referenced in `backend/environment/installation.yaml`. The first `up` builds
