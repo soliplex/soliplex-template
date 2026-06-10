@@ -15,7 +15,8 @@ graph LR
   backend -->|reads LanceDB| ragdb[(rag/db)]
   ingester[haiku-ingester] -->|writes LanceDB| ragdb
   ingester -->|convert/chunk| docling[docling-serve]
-  backend -->|threads + authz| postgres[(postgres)]
+  ingester -->|job queue| postgres[(postgres)]
+  backend -->|threads + authz| postgres
 ```
 
 ## nginx
@@ -36,8 +37,9 @@ see [Backend image & dependencies](backend.md).
 ## haiku-ingester
 
 The **writer** process for the LanceDB at `rag/db/`. Runs `haiku-ingester serve`
-with a persistent SQLite job queue (`/data/ingester.db`), an async worker pool,
-retries + a dead-letter queue, and an HTTP control plane on `8765`. The
+with a Postgres-backed job queue (its own `soliplex_ingester` database), an
+async worker pool, retries + a dead-letter queue, and an HTTP control plane on
+`8765`. The
 filesystem source polls `rag/docs/` and emits upsert/delete jobs that
 docling-serve converts and chunks.
 

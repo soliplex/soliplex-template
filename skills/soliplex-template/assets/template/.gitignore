@@ -15,11 +15,11 @@
 # misc
 tmp/
 
-# RAG vector store + ingester SQLite queue, created under rag/db at runtime.
+# RAG vector store (LanceDB), created under rag/db at runtime.
 # Ignore the data, but keep the directory itself tracked (via its README):
 # the haiku-ingester bind-mounts rag/db at /data, and a missing bind-mount
 # source is recreated root-owned by the Docker daemon, after which the
-# uid-1000 ingester can't open /data/ingester.db.
+# uid-1000 ingester can't write the LanceDB under /data.
 rag/db/*
 !rag/db/README.md
 

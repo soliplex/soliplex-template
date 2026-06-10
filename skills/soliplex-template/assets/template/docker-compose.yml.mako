@@ -125,21 +125,24 @@ services:
 
   haiku-ingester:
 
-    image: ghcr.io/ggozad/haiku.rag-slim:0.51.0
+    image: ghcr.io/ggozad/haiku.rag-slim:0.56.0
 
     build:
       context: haiku.rag
       dockerfile: Dockerfile
 
-    # Render the bind-mounted yaml into /tmp with INGESTER_TOKEN
-    # substituted, then exec the ingester against the rendered copy.
-    # haiku.rag's yaml loader has no env-var interpolation so we do
-    # the substitution before haiku-ingester reads the config.
+    # Render the bind-mounted yaml into /tmp with INGESTER_TOKEN and the
+    # Postgres queue password substituted, then exec the ingester against the
+    # rendered copy. haiku.rag's yaml loader has no env-var interpolation so we
+    # do the substitution before haiku-ingester reads the config. The DB
+    # password is read from its Docker secret (the generated value is
+    # alphanumeric, so it is safe as a sed replacement and inside the DBURI).
     command:
       - sh
       - -c
       - |
-        sed "s|__INGESTER_TOKEN__|$$INGESTER_TOKEN|" /app/haiku.rag.yaml > /tmp/haiku.rag.yaml
+        INGESTER_DB_PASSWORD="$$(cat /run/secrets/ingester_db_password)"
+        sed -e "s|__INGESTER_TOKEN__|$$INGESTER_TOKEN|" -e "s|__INGESTER_DB_PASSWORD__|$$INGESTER_DB_PASSWORD|" /app/haiku.rag.yaml > /tmp/haiku.rag.yaml
         exec haiku-ingester --config /tmp/haiku.rag.yaml serve
 
     ports:
@@ -164,6 +167,9 @@ services:
 
     user: "<%text>${PUID:-1000}</%text>:<%text>${PGID:-1000}</%text>"
 
+    secrets:
+      - ingester_db_password
+
     # LanceDB's full-text-search (content_fts) index merge opens many
     # files at once; the default soft limit of 1024 trips EMFILE
     # ("Too many open files") and the merge is skipped. Raise it.
@@ -174,6 +180,8 @@ services:
 
     depends_on:
       docling-serve:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
 
     # shutdown_grace_s defaults to 60s — give Docker enough to drain
@@ -242,6 +250,7 @@ services:
 % if include_gitea:
       GITEA_DB_PASS_FILE: /run/secrets/gitea_db_password
 % endif
+      INGESTER_DB_PASS_FILE: /run/secrets/ingester_db_password
       POSTGRES_INITDB_ARGS: "-A scram-sha-256"
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
       POSTGRES_USER: postgres
@@ -266,6 +275,7 @@ services:
 % if include_gitea:
       - source: gitea_db_password
 % endif
+      - source: ingester_db_password
       - source: postgres_password
     ports:
       - "${postgres_port}:5432"
@@ -348,6 +358,8 @@ secrets:
     gitea_db_password:
       file: ./.secrets/gitea_db_password.gen
 % endif
+    ingester_db_password:
+      file: ./.secrets/ingester_db_password.gen
     postgres_password:
       file: ./.secrets/postgres_password.gen
     url_safe_token_secret:

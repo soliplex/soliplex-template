@@ -35,9 +35,9 @@ Ports exposed to the host: `9000` (nginx HTTP), `9443` (nginx HTTPS, self-signed
 
 - **nginx** — serves the Flutter web frontend (built from the `soliplex/frontend` release tarball inside `nginx/Dockerfile`) and reverse-proxies `/api/` and `/mcp/` to `backend:8000`. Terminates TLS on 9443 with a self-signed cert generated at build time.
 - **backend** — runs `soliplex-cli serve /environment`. **Currently launched with `--no-auth-mode`** (see `docker-compose.yml`; marked temporary). The `--reload=config` flag means edits under `backend/environment/` take effect without rebuild.
-- **haiku-ingester** — writer process for the LanceDB at `rag/db/`. Runs `haiku-ingester serve` with a persistent SQLite job queue at `/data/ingester.db`, async worker pool, retries + DLQ, and an HTTP control plane on `8765`. The FS source under `ingester.sources` in `haiku.rag.yaml` polls `rag/docs/` and emits upsert/delete jobs that docling-serve converts and chunks. Single-writer constraint: only one ingester per LanceDB. The backend reads the same LanceDB through a bind mount, so no separate MCP server is needed.
+- **haiku-ingester** — writer process for the LanceDB at `rag/db/`. Runs `haiku-ingester serve` with a Postgres-backed job queue (its own `soliplex_ingester` database), async worker pool, retries + DLQ, and an HTTP control plane on `8765`. The FS source under `ingester.sources` in `haiku.rag.yaml` polls `rag/docs/` and emits upsert/delete jobs that docling-serve converts and chunks. Single-writer constraint: only one ingester per LanceDB. The backend reads the same LanceDB through a bind mount, so no separate MCP server is needed.
 - **docling-serve** — stateless document converter. CPU image by default; comment swap in `docker-compose.yml` for GPU.
-- **postgres** — application databases created on first boot by `postgres/config/init.sh`: `soliplex_agui` (thread persistence), `soliplex_authz` (authorization policy)${", `soliplex_gitea` (Gitea backing store)" if include_gitea else ""}. Each gets a dedicated low-privilege role whose password is read from `/run/secrets/<name>_db_password`. Init runs only on an empty data volume; to re-run, `docker compose down -v`.
+- **postgres** — application databases created on first boot by `postgres/config/init.sh`: `soliplex_agui` (thread persistence), `soliplex_authz` (authorization policy)${", `soliplex_gitea` (Gitea backing store)" if include_gitea else ""}, `soliplex_ingester` (haiku-ingester job queue). Each gets a dedicated low-privilege role whose password is read from `/run/secrets/<name>_db_password`. Init runs only on an empty data volume; to re-run, `docker compose down -v`.
 % if include_gitea:
 - **gitea** — rootless Gitea (`docker.gitea.com/gitea:*-rootless`) backed by the `soliplex_gitea` database, reverse-proxied by nginx at `https://localhost:9443/gitea/` (HTTPS only; override via `GITEA_ROOT_URL`). State lives in the `gitea_data` / `gitea_config` named volumes; built-in SSH on host `:2222`. Provision an admin user, access token, and tracking repo with `scripts/init-gitea.sh`.
 % endif
@@ -68,7 +68,7 @@ The `.secrets/*.gen` files are mode `0600`. They're readable in-container becaus
 ### RAG pipeline
 
 `rag/db/` is the single source of truth for vector data and is mounted by **two** services:
-- `haiku-ingester` is the writer (`/data`). It also owns `/data/ingester.db`, the persistent SQLite job queue.
+- `haiku-ingester` is the writer (`/data`). Its job queue is a Postgres database (`soliplex_ingester`), not a file under `rag/db/`.
 - `backend` reads it via the `haiku.rag.skills.rag` skill (`/db`, configured by `RAG_LANCE_DB_PATH` env var in `installation.yaml`).
 
 To add documents, drop files into `rag/docs/` — the FS source under `ingester.sources` in `haiku.rag/haiku.rag.yaml` will pick them up on its next poll. To add other sources (S3, HTTP, WebDAV), append entries under `ingester.sources` in the same file and restart the ingester.
@@ -78,7 +78,7 @@ To add documents, drop files into `rag/docs/` — the FS source under `ingester.
 - `constraints.txt` pins `soliplex >= 0.60.0.1, < 0.61`. Bumping this is a backend rebuild.
 - The frontend is pulled from **the latest** `soliplex/frontend` GitHub release inside `nginx/Dockerfile` — rebuilds are not reproducible across time unless you pin the tarball URL. Cache-bust hash is captured from the release tag and written to `/tmp/soliplex-frontend-release-hash` during build.
 - Backend `--no-auth-mode` is explicitly labeled temporary in `docker-compose.yml`. Don't assume auth is enforced end-to-end in this template.
-- `docker compose down -v` drops the `postgres_data` volume — all chat threads and authz grants go with it. The ingester's SQLite job queue lives separately at `rag/db/ingester.db` (bind mount, not the postgres volume), so a `down -v` doesn't touch it.
+- `docker compose down -v` drops the `postgres_data` volume — all chat threads, authz grants, and the ingester's job queue (its own `soliplex_ingester` database) go with it. The RAG vector store under `rag/db/` (bind mount, not the postgres volume) is separate, so a `down -v` doesn't touch it.
 
 ### Ingester control plane auth
 

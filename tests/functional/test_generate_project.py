@@ -256,6 +256,24 @@ def test_escaped_literals_survived(generated_project):
     assert "__INGESTER_TOKEN__" in haiku
 
 
+def test_ingester_wired_to_postgres_queue(generated_project):
+    # #68: the ingester job queue is a dedicated Postgres database
+    # (soliplex_ingester), created by init.sh and addressed by a dburi whose
+    # password is sed-substituted from the ingester_db_password secret.
+    out, _params = generated_project
+
+    compose = _read(out, "docker-compose.yml")
+    init_sh = _read(out, "postgres/config/init.sh")
+    haiku = _read(out, "haiku.rag/haiku.rag.yaml")
+
+    assert (
+        "dburi: postgresql+asyncpg://soliplex_ingester:"
+        "__INGESTER_DB_PASSWORD__@postgres/soliplex_ingester" in haiku
+    )
+    assert "CREATE DATABASE soliplex_ingester;" in init_sh
+    assert "ingester_db_password:\n      file: ./.secrets/" in compose
+
+
 def test_runtime_dirs_have_gitkeep(generated_project):
     out, params = generated_project
 
@@ -273,8 +291,8 @@ def test_runtime_bind_mount_dirs_are_git_tracked(generated_project):
     # #50/#51: every host bind-mount source dir must be committed so it
     # survives a fresh clone. A missing source is recreated root-owned by the
     # Docker daemon, after which the uid-1000 ingester/backend can't write it
-    # (the ingester dies opening /data/ingester.db). Tracked placeholders keep
-    # the directories present.
+    # (e.g. the ingester can't write the LanceDB under /data). Tracked
+    # placeholders keep the directories present.
     out, params = generated_project
     expected = {
         "rag/db/README.md",
@@ -299,11 +317,11 @@ def test_runtime_bind_mount_dirs_are_git_tracked(generated_project):
 
 def test_runtime_data_stays_gitignored(generated_project):
     # The bind-mount dirs are tracked, but the data written into them at
-    # runtime (ingester SQLite queue, LanceDB, uploads, sandbox scratch) must
-    # remain ignored so it never lands in the project's git history.
+    # runtime (LanceDB, uploads, sandbox scratch) must remain ignored so it
+    # never lands in the project's git history. (The ingester job queue now
+    # lives in Postgres, not a file under rag/db/.)
     out, _params = generated_project
     data_paths = [
-        "rag/db/ingester.db",
         "rag/db/haiku.rag.lancedb/chunks.lance",
         "backend/uploads/rooms/secret.pdf",
         "backend/sandbox/workdirs/run1/scratch.py",
@@ -563,6 +581,7 @@ def test_secrets_generated_by_default(generated_project):
     assert gen_files == [
         "agui_db_password.gen",
         "authz_db_password.gen",
+        "ingester_db_password.gen",
         "postgres_password.gen",
         "url_safe_token_secret.gen",
     ]
@@ -713,7 +732,9 @@ def test_postgres_init_creates_databases_and_roles(postgres_up):
     expected = {
         f"db:{params['agui_db']}",
         f"db:{params['authz_db']}",
+        "db:soliplex_ingester",
         f"role:{params['agui_db']}",
         f"role:{params['authz_db']}",
+        "role:soliplex_ingester",
     }
     assert expected <= catalog, sorted(expected - catalog)

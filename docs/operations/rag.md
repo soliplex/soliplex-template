@@ -7,8 +7,8 @@ icon: lucide/database
 `rag/db/` is the single source of truth for vector data. It is mounted by
 **two** services:
 
-- **haiku-ingester** is the writer (`/data`). It also owns `/data/ingester.db`,
-  the persistent SQLite job queue.
+- **haiku-ingester** is the writer (`/data`). Its job queue is a Postgres
+  database (`soliplex_ingester`), not a file under `rag/db/`.
 - **backend** reads it via the `haiku.rag.skills.rag` skill (`/db`, configured by
   the `RAG_LANCE_DB_PATH` env var in `installation.yaml`).
 

@@ -14,7 +14,8 @@ graph LR
   backend -->|reads LanceDB| ragdb[(rag/db)]
   ingester[haiku-ingester] -->|writes LanceDB| ragdb
   ingester -->|convert/chunk| docling[docling-serve]
-  backend -->|threads + authz| postgres[(postgres)]
+  ingester -->|job queue| postgres[(postgres)]
+  backend -->|threads + authz| postgres
 ```
 
 <%text>## nginx</%text>
@@ -32,10 +33,11 @@ flag means edits under `backend/environment/` take effect without a rebuild.
 <%text>## haiku-ingester</%text>
 
 The **writer** for the LanceDB at `rag/db/`. Runs `haiku-ingester serve` with a
-persistent SQLite job queue, an async worker pool, retries + a dead-letter
-queue, and an HTTP control plane on host port ${ingester_port}. There is a
-**single-writer constraint**: only one ingester per LanceDB. The backend reads
-the same store through a bind mount. See [RAG pipeline](../operations/rag.md).
+Postgres-backed job queue (its own `soliplex_ingester` database), an async
+worker pool, retries + a dead-letter queue, and an HTTP control plane on host
+port ${ingester_port}. There is a **single-writer constraint**: only one
+ingester per LanceDB. The backend reads the same store through a bind mount.
+See [RAG pipeline](../operations/rag.md).
 
 <%text>## docling-serve</%text>
 

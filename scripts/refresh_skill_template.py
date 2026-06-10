@@ -1047,9 +1047,10 @@ docker compose down -v           # stop AND wipe the postgres volume
 ```
 
 !!! danger "`down -v` is destructive"
-    `docker compose down -v` drops the `postgres_data` volume — all chat
-    threads and authorization grants go with it. The ingester's SQLite job
-    queue lives under `rag/db/` (a bind mount), so it survives a `down -v`.
+    `docker compose down -v` drops the `postgres_data` volume — chat threads,
+    authorization grants, and the ingester's job queue (now its own Postgres
+    database) all go with it. The RAG vector store and your documents live
+    under `rag/db/` (a bind mount), so they survive a `down -v`.
 """,
     "docs/architecture/services.md.mako": """\
 ---
@@ -1068,7 +1069,8 @@ graph LR
   backend -->|reads LanceDB| ragdb[(rag/db)]
   ingester[haiku-ingester] -->|writes LanceDB| ragdb
   ingester -->|convert/chunk| docling[docling-serve]
-  backend -->|threads + authz| postgres[(postgres)]
+  ingester -->|job queue| postgres[(postgres)]
+  backend -->|threads + authz| postgres
 ```
 
 <%text>## nginx</%text>
@@ -1086,10 +1088,11 @@ flag means edits under `backend/environment/` take effect without a rebuild.
 <%text>## haiku-ingester</%text>
 
 The **writer** for the LanceDB at `rag/db/`. Runs `haiku-ingester serve` with a
-persistent SQLite job queue, an async worker pool, retries + a dead-letter
-queue, and an HTTP control plane on host port ${ingester_port}. There is a
-**single-writer constraint**: only one ingester per LanceDB. The backend reads
-the same store through a bind mount. See [RAG pipeline](../operations/rag.md).
+Postgres-backed job queue (its own `soliplex_ingester` database), an async
+worker pool, retries + a dead-letter queue, and an HTTP control plane on host
+port ${ingester_port}. There is a **single-writer constraint**: only one
+ingester per LanceDB. The backend reads the same store through a bind mount.
+See [RAG pipeline](../operations/rag.md).
 
 <%text>## docling-serve</%text>
 
@@ -1274,9 +1277,10 @@ corresponding `SOLIPLEX_*` environment variables instead of using files.
 
 <%text>## The `down -v` caveat</%text>
 
-`docker compose down -v` drops the `postgres_data` volume — all chat threads
-and authorization grants go with it. The ingester's SQLite job queue lives
-separately under `rag/db/` (a bind mount), so a `down -v` does not touch it.
+`docker compose down -v` drops the `postgres_data` volume — chat threads,
+authorization grants, and the ingester's job queue (its own `soliplex_ingester`
+database) all go with it. The RAG vector store under `rag/db/` (a bind mount)
+is separate, so a `down -v` does not touch it.
 """,
     "docs/operations/rag.md.mako": """\
 ---
@@ -1288,8 +1292,8 @@ icon: lucide/database
 `rag/db/` is the single source of truth for vector data. It is mounted by
 **two** services:
 
-- **haiku-ingester** is the writer (`/data`); it also owns the persistent
-  SQLite job queue.
+- **haiku-ingester** is the writer (`/data`); its job queue is a Postgres
+  database (`soliplex_ingester`), not a file under `rag/db/`.
 - **backend** reads it via the `haiku.rag.skills.rag` skill.
 
 Only one ingester may write a given LanceDB (the single-writer constraint).

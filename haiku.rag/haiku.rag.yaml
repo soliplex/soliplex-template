@@ -7,16 +7,21 @@ storage:
   data_dir: /data
 
 # Continuous ingestion (haiku-ingester service). One filesystem source
-# pointed at the bind-mounted /docs; the persistent SQLite queue lives
-# under /data so it survives container restarts.
+# pointed at the bind-mounted /docs; the job queue lives in its own
+# Postgres database (soliplex_ingester) so it survives container restarts
+# and shares the stack's Postgres instance. (The LanceDB vector store still
+# lives on the /data bind mount; only the queue moved off SQLite.)
 #
-# The literal string '__INGESTER_TOKEN__' is replaced with the value
-# of the INGESTER_TOKEN env var at container start (see the
-# 'haiku-ingester' command in docker-compose.yml). haiku.rag's YAML
-# loader has no env-var interpolation of its own.
+# The literal strings '__INGESTER_TOKEN__' and '__INGESTER_DB_PASSWORD__'
+# are replaced at container start (see the 'haiku-ingester' command in
+# docker-compose.yml) with the INGESTER_TOKEN env var and the
+# ingester_db_password Docker secret, respectively. haiku.rag's YAML loader
+# has no env-var interpolation of its own.
 ingester:
   queue:
-    path: /data/ingester.db
+    # SQLAlchemy async URL; overrides the default SQLite path. asyncpg ships
+    # in the slim image's 'ingester' extra.
+    dburi: postgresql+asyncpg://soliplex_ingester:__INGESTER_DB_PASSWORD__@postgres/soliplex_ingester
   api:
     host: 0.0.0.0
     auth_token: __INGESTER_TOKEN__
