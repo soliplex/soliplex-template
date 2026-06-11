@@ -61,6 +61,17 @@ class GiteaError(Exception):
         )
 
     @classmethod
+    def reserved_user(cls, name):
+        return cls(
+            f"web-UI admin user may not be {name!r}: it is the rotating "
+            "service account"
+        )
+
+    @classmethod
+    def password_mismatch(cls):
+        return cls("passwords did not match")
+
+    @classmethod
     def token_request_failed(cls, code, body):
         return cls(f"token request failed: HTTP {code}: {body}")
 
@@ -141,8 +152,8 @@ def _docker_compose_gitea(*args, project_dir):
     )
 
 
-def ensure_admin_user(password: str, *, project_dir) -> None:
-    """Create the admin user, or reset its password if it already exists."""
+def ensure_admin_user(username, email, password, *, project_dir) -> None:
+    """Create the named site-admin user, or reset its password if it exists."""
     created = _docker_compose_gitea(
         "gitea",
         "admin",
@@ -150,9 +161,9 @@ def ensure_admin_user(password: str, *, project_dir) -> None:
         "create",
         "--admin",
         "--username",
-        ADMIN_USER,
+        username,
         "--email",
-        ADMIN_EMAIL,
+        email,
         "--password",
         password,
         "--must-change-password=false",
@@ -160,14 +171,14 @@ def ensure_admin_user(password: str, *, project_dir) -> None:
     )
     if created.returncode == 0:
         return
-    print("  user exists; resetting password")
+    print(f"  user {username!r} exists; resetting password")
     result = _docker_compose_gitea(
         "gitea",
         "admin",
         "user",
         "change-password",
         "--username",
-        ADMIN_USER,
+        username,
         "--password",
         password,
         "--must-change-password=false",
@@ -224,31 +235,44 @@ def set_env_var(env_path, key: str, value: str) -> None:
     env_path.write_text("\n".join(out) + "\n")
 
 
-def _print_summary() -> None:
+def _print_summary(webui_user=None) -> None:
     print()
     print("=== Gitea provisioned ===")
-    print(f"  admin user : {ADMIN_USER}")
-    print(f"  repository : {ADMIN_USER}/{REPO_NAME}")
+    print(f"  service account : {ADMIN_USER} (rotating; token in .env)")
+    print(f"  repository      : {ADMIN_USER}/{REPO_NAME}")
     print("  GITEA_HOST / GITEA_ACCESS_TOKEN written to .env")
+    if webui_user is not None:
+        print(
+            f"  web-UI admin    : {webui_user} "
+            "(log in with the password you just set)"
+        )
     print()
     print("Restart the backend so it picks up the new '.env':")
     print("  docker compose up -d backend")
 
 
-def provision_gitea(project_dir) -> None:
-    """Provision Gitea end-to-end (wait, admin user, token, repo, ``.env``).
+def provision_gitea(
+    project_dir, *, webui_user=None, webui_password=None
+) -> None:
+    """Provision the stack's Gitea: service account, token, repo, ``.env``.
 
-    The generated admin password is **transient**: it is created fresh on
-    every run (rotating an existing admin user's password), used only
-    in-process to mint the token and create the repo, and then discarded -- it
-    is never printed, persisted, or returned, so the operator cannot recover or
-    reuse it.
+    The ``soliplex-admin`` **service account** is transient: its password is
+    created fresh on every run (rotating any existing one), used only
+    in-process to mint the token and create the repo, then discarded -- it is
+    never printed, persisted, or returned, so the operator cannot recover it.
+    The durable credential is the minted access token, written -- with
+    ``GITEA_HOST`` -- into the stack's ``.env`` for the backend to read.
 
-    The durable credential is the minted access token, which is written --
-    along with ``GITEA_HOST`` -- into the stack's ``.env`` for the backend to
-    read. Nothing is returned: the side effect (the updated ``.env``) is the
-    result.
+    When ``webui_user`` is given (and must not be the service account), a
+    *distinct* site-admin user is created-or-updated with the operator-supplied
+    ``webui_password`` -- a stable, known login for the Gitea web UI. No token
+    is minted for it and its password is not persisted by this script.
+
+    Nothing is returned: the side effects (the updated ``.env`` and the Gitea
+    accounts) are the result.
     """
+    if webui_user == ADMIN_USER:
+        raise GiteaError.reserved_user(webui_user)
     project = pathlib.Path(project_dir).resolve()
     print("=== Gitea provisioning ===")
     print(f"Waiting for Gitea at {GITEA_HTTP} ...")
@@ -256,8 +280,8 @@ def provision_gitea(project_dir) -> None:
         raise GiteaError.not_ready(GITEA_HTTP)
 
     password = generate_admin_password()
-    print(f"Ensuring admin user '{ADMIN_USER}' ...")
-    ensure_admin_user(password, project_dir=project)
+    print(f"Ensuring service account '{ADMIN_USER}' ...")
+    ensure_admin_user(ADMIN_USER, ADMIN_EMAIL, password, project_dir=project)
 
     print("Minting access token ...")
     token = mint_token(password, token_name=f"concierge-{int(time.time())}")
@@ -265,8 +289,17 @@ def provision_gitea(project_dir) -> None:
     print(f"Ensuring repository '{ADMIN_USER}/{REPO_NAME}' ...")
     create_repo(password)
 
+    if webui_user is not None:
+        print(f"Ensuring web-UI admin user '{webui_user}' ...")
+        ensure_admin_user(
+            webui_user,
+            f"{webui_user}@soliplex.localhost",
+            webui_password,
+            project_dir=project,
+        )
+
     env_path = project / ENV_FILE
     set_env_var(env_path, "GITEA_HOST", GITEA_INTERNAL_URL)
     set_env_var(env_path, "GITEA_ACCESS_TOKEN", token)
 
-    _print_summary()
+    _print_summary(webui_user)
