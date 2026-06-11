@@ -56,7 +56,7 @@ The `.secrets/*.gen` files are mode `0600`. They're readable in-container becaus
 ### Soliplex configuration layout (`backend/environment/`, bind-mounted to `/environment`)
 
 - `installation.yaml` — the top-level Soliplex install config (agents, secrets, environment vars, room list, skills, DB URIs, upload/sandbox paths). Start here when reasoning about backend behavior. The file is heavily commented with pointers to <https://soliplex.github.io/soliplex/config/> — those comments describe defaults, so a section being empty/absent is not the same as being unconfigured.
-- `rooms/<name>/room_config.yaml` — per-room agent prompts, tools, skills. The `room_paths` list in `installation.yaml` is the source of truth for which rooms are loaded; adding a directory under `rooms/` without listing it there does nothing.
+- `rooms/<name>/room_config.yaml` — per-room agent prompts, tools, skills. `room_paths` in `installation.yaml` points at `./rooms`, so every `rooms/<name>/room_config.yaml` is loaded; to exclude a room, remove its directory or replace `./rooms` with an explicit list of the wanted rooms.
 - `skills/<name>/` — filesystem skills discovered via `filesystem_skills_paths`. Must also be declared in `skill_configs` to be enabled.
 - `completions/`, `quizzes/`, `oidc/`, `logging.yaml`, `haiku.rag.yaml` — feature-specific configs referenced from `installation.yaml`.
 

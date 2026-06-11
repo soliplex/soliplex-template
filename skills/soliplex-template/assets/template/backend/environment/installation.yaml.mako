@@ -352,20 +352,14 @@ skill_configs:
 #==========================================================================
 # See: https://soliplex.github.io/soliplex/config/rooms/
 #
-# We avoid the default here, because the 'mcptest' room uses the SmitheryAI
-# registry, and hence requires additional secrets
+# A directory entry loads every room beneath it (each
+# '<dir>/room_config.yaml'), so './rooms' loads all the rooms shipped here.
+# To exclude a room -- e.g. one that needs extra secrets (an external model
+# provider, or an MCP registry such as SmitheryAI) -- list the wanted rooms
+# explicitly here instead of './rooms'.
 #==========================================================================
 room_paths:
-  - "./rooms/chat"
-  - "./rooms/search"
-  - "./rooms/analysis"
-  - "./rooms/joker"
-  - "./rooms/faux"
-  - "./rooms/quiztest"
-  - "./rooms/skillstest"
-  - "./rooms/feedback"
-  - "./rooms/bwrap_sandbox"
-  - "./rooms/custom"
+  - "./rooms"
 
 #==========================================================================
 # Completions configuration

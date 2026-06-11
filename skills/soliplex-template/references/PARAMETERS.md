@@ -151,6 +151,11 @@ unknown at generation time).
   generating (see `SKILL.md`); after the stack is up, `soliplex-cli audit
   ollama` / `soliplex-cli ollama pull` verify and repair the models the install
   references.
+- The set of rooms is **fixed at generation time** (the template's `room_paths`
+  list is not parameterized). To add a room to a *generated* stack afterwards,
+  use `scripts/add_room.py` — it renders a bundled room template into
+  `backend/environment/rooms/<id>/` and splices the `room_paths` entry; see the
+  *Adding a room to an existing stack* section of `SKILL.md`.
 - The backend `soliplex` version pin (`soliplex_backend_constraint`) lands in
   `backend/constraints.txt`. Choose it from the published releases on PyPI
   (`https://pypi.org/pypi/soliplex/json`) rather than guessing — pin one

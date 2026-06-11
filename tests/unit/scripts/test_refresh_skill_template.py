@@ -179,7 +179,6 @@ def test_t_installation():
         '    alt: "gpt-oss:20b"\n'
         "db: soliplex_agui authz: soliplex_authz\n"
         'haiku_rag_config_file: "./haiku.rag.yaml"\n'
-        '  - "./rooms/bwrap_sandbox"\n'
     )
 
     out = rst.t_installation(text)
@@ -193,8 +192,7 @@ def test_t_installation():
     # The hypothetical 'my_package' meta example now points at this project.
     assert '"${package_name}.config.MyToolConfig"' in out
     assert "my_package" not in out
-    # The demo room is loaded and the package's router is registered.
-    assert '  - "./rooms/custom"' in out
+    # The package's FastAPI router is registered.
     assert 'router_name: "${package_name}.views.router"' in out
 
 
