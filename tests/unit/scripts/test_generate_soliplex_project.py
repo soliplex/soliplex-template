@@ -509,8 +509,8 @@ def test_coerce_and_derive_w_invalid_include_gitea_raises():
 def test_render_tree_omits_init_gitea_when_disabled(tmp_path):
     template = tmp_path / "template"
     (template / "scripts").mkdir(parents=True)
-    (template / "scripts" / "init-gitea.sh").write_text(
-        "#!/bin/sh\n", encoding="utf-8"
+    (template / "scripts" / "init_gitea.py").write_text(
+        "#!/usr/bin/env python3\n", encoding="utf-8"
     )
     out = tmp_path / "out"
 
@@ -518,14 +518,14 @@ def test_render_tree_omits_init_gitea_when_disabled(tmp_path):
         template, out, {"project_name": "demo", "include_gitea": False}
     )
 
-    assert not (out / "scripts" / "init-gitea.sh").exists()
+    assert not (out / "scripts" / "init_gitea.py").exists()
 
 
 def test_render_tree_keeps_init_gitea_when_enabled(tmp_path):
-    shebang = "#!/bin/sh\n"
+    shebang = "#!/usr/bin/env python3\n"
     template = tmp_path / "template"
     (template / "scripts").mkdir(parents=True)
-    (template / "scripts" / "init-gitea.sh").write_text(
+    (template / "scripts" / "init_gitea.py").write_text(
         shebang, encoding="utf-8"
     )
     out = tmp_path / "out"
@@ -534,7 +534,7 @@ def test_render_tree_keeps_init_gitea_when_enabled(tmp_path):
         template, out, {"project_name": "demo", "include_gitea": True}
     )
 
-    assert (out / "scripts" / "init-gitea.sh").read_text() == shebang
+    assert (out / "scripts" / "init_gitea.py").read_text() == shebang
 
 
 # --------------------------------------------------------------------------
@@ -642,50 +642,25 @@ def test_write_env(tmp_path):
 # --------------------------------------------------------------------------
 # maybe_run_secrets
 # --------------------------------------------------------------------------
-def test_maybe_run_secrets_disabled(run):
+@pytest.fixture
+def generate_secrets(monkeypatch):
+    generate_secrets = mock.Mock()
+    monkeypatch.setattr(gen, "generate_secrets", generate_secrets)
+    return generate_secrets
+
+
+def test_maybe_run_secrets_disabled(generate_secrets):
     result = gen.maybe_run_secrets(pathlib.Path("/nowhere"), run=False)
 
     assert result is False
-    run.assert_not_called()
+    generate_secrets.assert_not_called()
 
 
-@pytest.mark.parametrize(
-    "present, expected_which",
-    [
-        # bash missing -> probe stops at bash (short-circuit on the `or`).
-        ({"bash": None, "openssl": "/usr/bin/openssl"}, [mock.call("bash")]),
-        # bash present, openssl missing -> both are probed, in order.
-        (
-            {"bash": "/bin/bash", "openssl": None},
-            [mock.call("bash"), mock.call("openssl")],
-        ),
-    ],
-)
-def test_maybe_run_secrets_missing_tools(
-    which, run, capsys, present, expected_which
-):
-    which.side_effect = lambda name: present[name]
-
-    result = gen.maybe_run_secrets(pathlib.Path("/nowhere"), run=True)
-
-    assert result is False
-    assert "skipped generate-secrets.sh" in capsys.readouterr().out
-    assert which.call_args_list == expected_which
-    run.assert_not_called()
-
-
-def test_maybe_run_secrets_runs(which, run, tmp_path):
-    which.return_value = "/usr/bin/tool"
-
+def test_maybe_run_secrets_runs(generate_secrets, tmp_path):
     result = gen.maybe_run_secrets(tmp_path, run=True)
 
     assert result is True
-    assert which.call_args_list == [mock.call("bash"), mock.call("openssl")]
-    run.assert_called_once_with(
-        ["bash", str(tmp_path / "scripts" / "generate-secrets.sh")],
-        cwd=tmp_path,
-        check=True,
-    )
+    generate_secrets.assert_called_once_with(tmp_path)
 
 
 # --------------------------------------------------------------------------
@@ -992,7 +967,7 @@ def test_main_happy_no_secrets_no_git(
 
     captured = capsys.readouterr().out
     assert rc == 0
-    assert "generate-secrets.sh" in captured
+    assert "scripts/generate_secrets.py" in captured
     assert "not initialized" in captured
     load_params.assert_called_once()
     coerce_and_derive.assert_called_once_with(PARAMS)
@@ -1034,7 +1009,7 @@ def test_main_happy_with_secrets_and_git(
     captured = capsys.readouterr().out
     assert rc == 0
     assert "initial commit created" in captured
-    assert "generate-secrets.sh" not in captured
+    assert "scripts/generate_secrets.py" not in captured
     # secrets generation now defaults on, so main() passes True with no flag.
     maybe_run_secrets.assert_called_once_with(out_path.resolve(), True)
     maybe_git_init.assert_called_once_with(out_path.resolve(), True, False)

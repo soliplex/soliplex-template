@@ -325,7 +325,7 @@ secrets:
 #  Secrets in '.secrets/*' files
 #------------------------------------------------------------------------------
 #
-#  Generate those with '.gen' suffixes using 'scripts/generate-secrets.sh'
+#  Generate those with '.gen' suffixes using 'scripts/generate_secrets.py'
 #------------------------------------------------------------------------------
     agui_db_password:
       file: ./.secrets/agui_db_password.gen

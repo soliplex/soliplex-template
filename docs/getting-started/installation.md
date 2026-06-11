@@ -14,7 +14,8 @@ customized stack, see [Generate a custom project](generator.md).)
   referenced in `backend/environment/installation.yaml` (the defaults use
   `gpt-oss:*` chat/title models and a `qwen3-embedding` model for RAG). You set
   its URL in step 3.
-- Standard shell tooling (`bash`, `openssl`) for the secrets script.
+- [`uv`](https://docs.astral.sh/uv/) to run the secrets script
+  (`scripts/generate_secrets.py`).
 
 ## 1. Clone the template
 
@@ -29,7 +30,7 @@ The Postgres roles and Soliplex backend read their credentials from Docker
 secrets mounted at `/run/secrets/*`. Generate them before the first `up`:
 
 ```bash
-./scripts/generate-secrets.sh   # populates .secrets/*.gen (gitignored)
+uv run scripts/generate_secrets.py   # populates .secrets/*.gen (gitignored)
 ```
 
 !!! warning "Don't hand-edit `.secrets/*.gen`"

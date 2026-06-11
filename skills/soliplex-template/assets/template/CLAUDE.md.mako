@@ -11,7 +11,7 @@ A Docker Compose template that assembles a running Soliplex stack (backend, Flut
 First-time setup (required before `up`):
 
 ```bash
-./scripts/generate-secrets.sh   # populates .secrets/*.gen (gitignored)
+uv run scripts/generate_secrets.py   # populates .secrets/*.gen (gitignored)
 ```
 
 Run the stack:
@@ -39,19 +39,19 @@ Ports exposed to the host: `9000` (nginx HTTP), `9443` (nginx HTTPS, self-signed
 - **docling-serve** — stateless document converter. CPU image by default; comment swap in `docker-compose.yml` for GPU.
 - **postgres** — application databases created on first boot by `postgres/config/init.sh`: `soliplex_agui` (thread persistence), `soliplex_authz` (authorization policy)${", `soliplex_gitea` (Gitea backing store)" if include_gitea else ""}, `soliplex_ingester` (haiku-ingester job queue). Each gets a dedicated low-privilege role whose password is read from `/run/secrets/<name>_db_password`. Init runs only on an empty data volume; to re-run, `docker compose down -v`.
 % if include_gitea:
-- **gitea** — rootless Gitea (`docker.gitea.com/gitea:*-rootless`) backed by the `soliplex_gitea` database, reverse-proxied by nginx at `https://localhost:9443/gitea/` (HTTPS only; override via `GITEA_ROOT_URL`). State lives in the `gitea_data` / `gitea_config` named volumes; built-in SSH on host `:2222`. Provision an admin user, access token, and tracking repo with `scripts/init-gitea.sh`.
+- **gitea** — rootless Gitea (`docker.gitea.com/gitea:*-rootless`) backed by the `soliplex_gitea` database, reverse-proxied by nginx at `https://localhost:9443/gitea/` (HTTPS only; override via `GITEA_ROOT_URL`). State lives in the `gitea_data` / `gitea_config` named volumes; built-in SSH on host `:2222`. Provision an admin user, access token, and tracking repo with `scripts/init_gitea.py`.
 % endif
 
 ### Secrets
 
 Two modes, documented at the bottom of `docker-compose.yml`:
 
-- **File-based (active):** `.secrets/*.gen` created by `scripts/generate-secrets.sh` and mounted as Docker secrets at `/run/secrets/*`. `.secrets/` is gitignored.
+- **File-based (active):** `.secrets/*.gen` created by `scripts/generate_secrets.py` and mounted as Docker secrets at `/run/secrets/*`. `.secrets/` is gitignored.
 - **Env-var (commented):** uncomment the env-var secret blocks and set `SOLIPLEX_*` vars.
 
 Don't hand-edit `.secrets/*.gen` — re-run the script. Destroying those files after the Postgres volume exists will break backend auth to the DB; you must also `down -v` and re-init.
 
-The `.secrets/*.gen` files are mode `0600`. They're readable in-container because every built image runs as `PUID:PGID` (compose `build.args`, sourced from `.env`; default `1000:1000`) and `generate-secrets.sh` makes the files owned by `PUID:PGID` (re-owning via a throwaway container when the operator's uid differs). This repo has no committed `.env`, so its own stack defaults to `1000:1000`; the generator (`skill/scripts/generate_soliplex_project.py`) seeds `PUID`/`PGID` from the host operator and writes them into the generated project's `.env`. Changing the uid means a `docker compose build` (it's baked in at build time).
+The `.secrets/*.gen` files are mode `0600`. They're readable in-container because every built image runs as `PUID:PGID` (compose `build.args`, sourced from `.env`; default `1000:1000`) and `generate_secrets.py` makes the files owned by `PUID:PGID` (re-owning via a throwaway container when the operator's uid differs). This repo has no committed `.env`, so its own stack defaults to `1000:1000`; the generator (`skill/scripts/generate_soliplex_project.py`) seeds `PUID`/`PGID` from the host operator and writes them into the generated project's `.env`. Changing the uid means a `docker compose build` (it's baked in at build time).
 
 ### Soliplex configuration layout (`backend/environment/`, bind-mounted to `/environment`)
 

@@ -13,6 +13,8 @@ is already done. Bringing the stack up takes three steps.
 - An **Ollama** server reachable from the containers, serving the models named
   in `backend/environment/installation.yaml`. Its URL is recorded in `.env` as
   `OLLAMA_BASE_URL` (see step 2).
+- [`uv`](https://docs.astral.sh/uv/) to run the secrets script
+  (`scripts/generate_secrets.py`).
 
 <%text>## 1. Generate secrets</%text>
 
@@ -20,7 +22,7 @@ The Postgres roles and the backend read their credentials from Docker secrets.
 Generate them before the first `up`:
 
 ```bash
-./scripts/generate-secrets.sh   # populates .secrets/*.gen (gitignored)
+uv run scripts/generate_secrets.py   # populates .secrets/*.gen (gitignored)
 ```
 
 !!! warning "Don't hand-edit `.secrets/*.gen`"

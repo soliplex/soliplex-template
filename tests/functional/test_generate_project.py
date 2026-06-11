@@ -11,7 +11,8 @@ valid to Docker, and the ``postgres`` service (whose ``init.sh`` + secret
 wiring is itself generated) starts and reports healthy.
 
 Every live dependency is gated and **skips with a warning** when absent:
-git/bash/openssl for the generation step, and the docker CLI/daemon for the
+``git`` for the generation step (secrets are now generated in-process by the
+stdlib-only ``soliplex_template.secrets``), and the docker CLI/daemon for the
 ``docker compose`` tiers.
 
 This tree is opt-in -- it is not in ``testpaths``. Run it with:
@@ -64,7 +65,7 @@ _PARAMS = {
     "frontend_version": "v9.9.9-test",
 }
 
-_GEN_TOOLS = ("git", "bash", "openssl")
+_GEN_TOOLS = ("git",)
 
 
 # --------------------------------------------------------------------------
@@ -183,7 +184,7 @@ def test_key_artifacts_exist(generated_project):
         "backend/environment/installation.yaml",
         "nginx/nginx.conf",
         "postgres/config/init.sh",
-        "scripts/generate-secrets.sh",
+        "scripts/generate_secrets.py",
     ]
 
     missing = [rel for rel in expected if not (out / rel).is_file()]

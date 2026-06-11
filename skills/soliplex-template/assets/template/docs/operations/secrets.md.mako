@@ -10,12 +10,12 @@ secrets. There are two modes, both documented at the bottom of
 
 <%text>## File-based (active by default)</%text>
 
-`scripts/generate-secrets.sh` writes `.secrets/*.gen` files, which Compose
+`scripts/generate_secrets.py` writes `.secrets/*.gen` files, which Compose
 mounts as Docker secrets at `/run/secrets/*`. `.secrets/` is gitignored, so the
 initial commit never captures secrets.
 
 ```bash
-./scripts/generate-secrets.sh
+uv run scripts/generate_secrets.py
 ```
 
 !!! warning "Don't hand-edit `.secrets/*.gen`"
@@ -30,20 +30,21 @@ The secret files are mode `0600` (owner-only). For an in-container service
 container runs as**. The stack ties both ends to `PUID` / `PGID` in `.env`:
 
 - every built image runs as `PUID:PGID` (Compose `build.args`), and
-- `scripts/generate-secrets.sh` ensures the `.secrets/*.gen` files end up owned
+- `scripts/generate_secrets.py` ensures the `.secrets/*.gen` files end up owned
   by `PUID:PGID`.
 
 The generator defaults `PUID` / `PGID` to the host operator who scaffolded the
 project, so on a single-developer machine this is automatic. On a deploy host
 whose login uid differs from the runtime service account, set `PUID` / `PGID`
-explicitly (and rebuild — see below); `generate-secrets.sh` then re-owns the
+explicitly (and rebuild — see below); `generate_secrets.py` then re-owns the
 secret files to that uid/gid via a throwaway container (it needs Docker for
 that step).
 
 !!! warning "Changing `PUID` / `PGID` needs a rebuild"
     The uid is baked into the images at build time, so after editing `PUID` /
     `PGID` in `.env` you must `docker compose build` (and re-run
-    `./scripts/generate-secrets.sh` so the secret files are re-owned to match).
+    `uv run scripts/generate_secrets.py` so the secret files are re-owned to
+    match).
 
 !!! note "Override uid: who owns the secret files"
     When `PUID` differs from your login uid, the `.secrets/*.gen` files are

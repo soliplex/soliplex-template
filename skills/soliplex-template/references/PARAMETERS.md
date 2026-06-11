@@ -35,7 +35,7 @@ prompt (a command-line value would leak into shell history).
 | `--params FILE` | JSON object of parameter overrides. |
 | `--interactive` | Prompt for each parameter on stdin (blank keeps the default). |
 | `--force` | Allow writing into a non-empty `--out`. |
-| `--generate-secrets` / `--no-generate-secrets` | Run `scripts/generate-secrets.sh` in the new project after scaffolding. **Default: enabled**; pass `--no-generate-secrets` to skip. |
+| `--generate-secrets` / `--no-generate-secrets` | Run `scripts/generate_secrets.py` in the new project after scaffolding. **Default: enabled**; pass `--no-generate-secrets` to skip. |
 | `--no-git` | Skip `git init` / initial commit. |
 | `--disable-gpg-sign` | Pass `commit.gpgsign=false` for the initial commit. Default: respect the host git config. |
 | `--print-defaults` | Print default parameters as JSON and exit. |
@@ -68,7 +68,7 @@ prompt (a command-line value would leak into shell history).
 | `soliplex_tui_constraint` | `>= 0.60.6, < 0.61` | non-empty; only applies when `include_tui` is true | `tui/constraints.txt` |
 | `frontend_version` | `latest` | `latest` or a release tag (letters, digits, `.`, `_`, `-`) | `nginx/Dockerfile` frontend release fetched at image build |
 | `auth_mode` | `no-auth` | `no-auth` or `auth` | backend `command` (`--no-auth-mode` present/absent) |
-| `include_gitea` | `false` | bool (`true`/`false`, or `yes`/`no`/`1`/`0`) | adds the opt-in gitea service (postgres-backed, nginx `/gitea/` on 9443, `gitea_db_password` secret) plus `scripts/init-gitea.sh`; omitted entirely when false |
+| `include_gitea` | `false` | bool (`true`/`false`, or `yes`/`no`/`1`/`0`) | adds the opt-in gitea service (postgres-backed, nginx `/gitea/` on 9443, `gitea_db_password` secret) plus `scripts/init_gitea.py`; omitted entirely when false |
 | `include_tui` | `false` | bool (`true`/`false`, or `yes`/`no`/`1`/`0`) | adds the opt-in `tui` service (web TUI proxied by nginx at `/tui/`) plus the `tui/` build context; omitted entirely when false |
 | `docs_dir` | `rag/docs` | relative path inside the project | compose ingester bind mount; created at generation time |
 | `ingester_token` | `secret` | weak default — override for real deployments | `.env` `INGESTER_TOKEN` |
