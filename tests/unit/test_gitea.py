@@ -550,7 +550,24 @@ def test_set_origin_updates_when_present(monkeypatch):
     assert second.args == ("remote", "set-url", "origin", "ssh://x/r.git")
 
 
-def test_push_initial_pushes_with_ssh_env(monkeypatch):
+def test_configure_stack_ssh_persists_local_known_hosts(tmp_path, monkeypatch):
+    (tmp_path / ".git").mkdir()
+    stale = tmp_path / ".git" / "gitea_known_hosts"
+    stale.write_text("stale host key\n")
+    git = mock.Mock()
+    monkeypatch.setattr(st_gitea, "_git", git)
+
+    st_gitea.configure_stack_ssh(tmp_path)
+
+    assert not stale.exists()  # cleared so a recreated gitea is re-accepted
+    git.assert_called_once()
+    assert git.call_args.args[:2] == ("config", "core.sshCommand")
+    ssh_command = git.call_args.args[2]
+    assert f'UserKnownHostsFile="{stale}"' in ssh_command
+    assert "StrictHostKeyChecking=accept-new" in ssh_command
+
+
+def test_push_initial_pushes_without_touching_global_known_hosts(monkeypatch):
     git = mock.Mock(return_value=mock.Mock(returncode=0))
     monkeypatch.setattr(st_gitea, "_git", git)
 
@@ -559,7 +576,8 @@ def test_push_initial_pushes_with_ssh_env(monkeypatch):
     call = git.call_args
     assert call.args == ("push", "-u", "origin", "main")
     assert call.kwargs["project_dir"] == "/stack"
-    assert "accept-new" in call.kwargs["env"]["GIT_SSH_COMMAND"]
+    # SSH options are persisted in core.sshCommand, not forced here.
+    assert "GIT_SSH_COMMAND" not in call.kwargs["env"]
     assert call.kwargs["env"]["GIT_TERMINAL_PROMPT"] == "0"
 
 
@@ -601,6 +619,8 @@ def test_push_stack_to_gitea_uploads_creates_sets_origin_pushes(
     monkeypatch.setattr(st_gitea, "upload_ssh_key", upload)
     monkeypatch.setattr(st_gitea, "create_repo", create)
     monkeypatch.setattr(st_gitea, "set_origin", set_origin)
+    configure = mock.Mock()
+    monkeypatch.setattr(st_gitea, "configure_stack_ssh", configure)
     monkeypatch.setattr(st_gitea, "current_branch", lambda p: "main")
     monkeypatch.setattr(st_gitea, "push_initial", push)
 
@@ -611,4 +631,5 @@ def test_push_stack_to_gitea_uploads_creates_sets_origin_pushes(
     set_origin.assert_called_once_with(
         tmp_path, st_gitea.stack_ssh_url("myrepo")
     )
+    configure.assert_called_once_with(tmp_path)
     push.assert_called_once_with(tmp_path, "main")

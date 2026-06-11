@@ -343,13 +343,34 @@ def set_origin(project_dir, url: str) -> None:
     ).check_returncode()
 
 
+def configure_stack_ssh(project_dir) -> None:
+    """Persist a stack-local ``known_hosts`` for git-over-SSH to this gitea.
+
+    Every gitea SSH endpoint is ``localhost:2222`` (one stack can bind the host
+    port at a time, and SSH has no Host-based routing), so pinning the gitea
+    host key in the operator's ``~/.ssh/known_hosts`` makes each new stack
+    collide with the previous one's key ("HOST IDENTIFICATION HAS CHANGED").
+
+    Instead, route this repo's git-over-SSH through a known_hosts file under
+    ``.git`` via ``core.sshCommand`` -- so pushes/pulls never read or write the
+    global file. The file is cleared each run, so a recreated gitea (a new host
+    key) is re-accepted on the next provision via ``accept-new``.
+    """
+    project = pathlib.Path(project_dir)
+    known_hosts = project / ".git" / "gitea_known_hosts"
+    known_hosts.unlink(missing_ok=True)
+    ssh_command = (
+        f'ssh -o UserKnownHostsFile="{known_hosts}" '
+        "-o StrictHostKeyChecking=accept-new"
+    )
+    _git(
+        "config", "core.sshCommand", ssh_command, project_dir=project
+    ).check_returncode()
+
+
 def push_initial(project_dir, branch: str) -> None:
-    """Push ``branch`` to ``origin`` over SSH, trusting the host key once."""
-    env = {
-        **os.environ,
-        "GIT_SSH_COMMAND": "ssh -o StrictHostKeyChecking=accept-new",
-        "GIT_TERMINAL_PROMPT": "0",
-    }
+    """Push ``branch`` to ``origin`` (SSH opts from ``core.sshCommand``)."""
+    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
     result = _git(
         "push", "-u", "origin", branch, project_dir=project_dir, env=env
     )
@@ -366,7 +387,8 @@ def push_stack_to_gitea(
     repo ``soliplex-admin/<repo_name>``, points the stack's ``origin`` at its
     SSH URL, and pushes the current branch. No token or password lands in the
     stack's git config -- the durable push credential is the operator's SSH
-    key.
+    key. git-over-SSH is routed through a stack-local ``known_hosts`` (see
+    :func:`configure_stack_ssh`) so the global one is never touched.
     """
     project = pathlib.Path(project_dir)
     if not (project / ".git").is_dir():
@@ -382,6 +404,7 @@ def push_stack_to_gitea(
     url = stack_ssh_url(repo_name)
     print(f"Setting 'origin' to {url} ...")
     set_origin(project, url)
+    configure_stack_ssh(project)
     branch = current_branch(project)
     print(f"Pushing '{branch}' to Gitea ...")
     push_initial(project, branch)
