@@ -428,7 +428,7 @@ def test_installation_registers_package_router(generated_project):
     installation = _read(out, "backend/environment/installation.yaml")
 
     assert f'router_name: "{_PACKAGE}.views.router"' in installation
-    assert '- "./rooms/custom"' in installation
+    assert '- "./rooms"' in installation
 
 
 def test_compose_puts_src_on_backend_pythonpath(generated_project):
