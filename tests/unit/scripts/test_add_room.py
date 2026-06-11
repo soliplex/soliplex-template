@@ -194,6 +194,15 @@ def test_add_room_path_added_after_anchor():
     assert lines[anchor + 1] == '  - "./rooms/handbook"'
 
 
+def test_add_room_path_covered_by_rooms_parent():
+    text = 'room_paths:\n  - "./rooms"\n'
+
+    new, action = add_room.add_room_path(text, "handbook")
+
+    assert action == add_room.COVERED
+    assert new == text
+
+
 def test_add_room_path_unchanged_when_present():
     text = _INSTALLATION.replace('"./rooms/chat"', '"./rooms/handbook"')
 
@@ -447,6 +456,29 @@ def test_add_room_exists_without_force(tmp_path):
                 "handbook",
             ]
         )
+
+
+def test_add_room_covered_leaves_installation_untouched(tmp_path):
+    project = _make_stack(tmp_path)
+    inst = _installation(project)
+    inst.write_text('room_paths:\n  - "./rooms"\n')
+    before = inst.read_text()
+
+    rc = add_room.main(
+        [
+            "add",
+            "--project-dir",
+            str(project),
+            "--template",
+            "chat",
+            "--room-id",
+            "handbook",
+        ]
+    )
+
+    assert rc == 0
+    assert (_room_dir(project) / "room_config.yaml").is_file()
+    assert inst.read_text() == before
 
 
 def test_add_force_overwrites_with_paths_unchanged(tmp_path):

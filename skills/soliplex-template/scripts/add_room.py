@@ -82,6 +82,10 @@ _ROOM_PATHS_RE = re.compile(r"^room_paths:\s*$")
 
 ADDED = "added"
 UNCHANGED = "unchanged"
+# room_paths may point at the rooms parent directory to auto-discover every
+# room beneath it; when it does, a new room needs no room_paths entry.
+ROOMS_PARENT_ENTRY = "./rooms"
+COVERED = f'covered by "{ROOMS_PARENT_ENTRY}"'
 
 # A starting system prompt per template, used when neither --system-prompt nor
 # --prompt-file is given. Templates without an entry fall back to _GENERIC.
@@ -252,18 +256,25 @@ def build_context(
 
 
 def add_room_path(text: str, room_id: str) -> tuple[str, str]:
-    """Splice ``- "./rooms/<room_id>"`` into the ``room_paths:`` list.
+    """Ensure ``room_paths`` loads ``rooms/<room_id>``; return (text, action).
 
-    Returns ``(new_text, action)`` where action is ``"unchanged"`` (the entry
-    is already present) or ``"added"``. The edit is line-based, so comments and
-    unrelated layout are preserved. Raises ``AddRoomError`` when the file has
-    no top-level ``room_paths:`` block.
+    Action is ``"unchanged"`` when the explicit entry is already listed,
+    ``COVERED`` when a ``./rooms`` entry already auto-discovers every room
+    beneath it (so no entry is needed), or ``"added"`` when the
+    ``- "./rooms/<id>"`` entry is spliced in. The edit is line-based, so
+    comments and unrelated layout are preserved. Raises ``AddRoomError`` when
+    the file has no top-level ``room_paths:`` block.
     """
-    entry = f"./rooms/{room_id}"
+    entry = f"{ROOMS_PARENT_ENTRY}/{room_id}"
     probe = re.compile(r'-\s*["\']?' + re.escape(entry) + r'["\']?\s*$')
+    parent_probe = re.compile(
+        r'-\s*["\']?' + re.escape(ROOMS_PARENT_ENTRY) + r'/?["\']?\s*$'
+    )
     lines = text.splitlines(keepends=True)
     if any(probe.search(line) for line in lines):
         return text, UNCHANGED
+    if any(parent_probe.search(line) for line in lines):
+        return text, COVERED
     idx = next(
         (i for i, line in enumerate(lines) if _ROOM_PATHS_RE.match(line)),
         None,
@@ -353,7 +364,7 @@ def do_add(args: argparse.Namespace) -> int:
     config_path.write_text(config_text)
     if prompt_text is not None:
         (room_dir / PROMPT_FILE_NAME).write_text(prompt_text)
-    if path_action != UNCHANGED:
+    if path_action == ADDED:
         installation.write_text(new_installation)
 
     _print_summary(config_path, path_action, args.room_id, project)
@@ -368,7 +379,7 @@ def _print_dry_run(
 ) -> None:
     print(f"# would write {config_path}:")
     print(config_text)
-    print(f"# would add room_paths entry './rooms/{room_id}': {path_action}")
+    print(f"# room_paths './rooms/{room_id}': {path_action}")
 
 
 def _print_summary(

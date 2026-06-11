@@ -24,8 +24,10 @@ comments describe **defaults** — so a section being empty or absent is not the
 same as being unconfigured.
 
 !!! note "Two sources of truth to remember"
-    - The `room_paths` list in `installation.yaml` determines which rooms load.
-      Adding a directory under `rooms/` without listing it there does nothing.
+    - `room_paths` in `installation.yaml` lists the directories rooms load
+      from. It points at `./rooms`, so every `rooms/<name>/room_config.yaml`
+      is loaded; to leave a room out, remove its directory or replace `./rooms`
+      with an explicit list.
     - A filesystem skill must be both present under a `filesystem_skills_paths`
       directory **and** declared in `skill_configs` to be enabled.
 
