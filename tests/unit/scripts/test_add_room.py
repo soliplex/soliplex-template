@@ -1,14 +1,14 @@
-"""Unit tests for the bundled ``skill/scripts/add_room.py``.
+"""Unit tests for the bundled ``skill/scripts/add_room.py`` CLI front end.
 
 The script ships inside the ``soliplex-template`` skill and is not part of an
-importable package, so it is loaded here by file path via ``importlib.util``.
-Tests are hermetic: everything is routed through ``tmp_path`` and the bundled
-templates -- no Docker, no network, no running backend (adding a room is pure
-filesystem + Mako render).
+importable package, so it is loaded here by file path via ``importlib.util``
+(it imports the generic core from the installed ``soliplex_template.rooms``).
+Tests cover the skill-owned bits -- the template catalog, Mako rendering, and
+the CLI -- and exercise ``add`` end-to-end through the real package. The
+generic core is unit-tested separately in ``tests/unit/test_rooms.py``.
 
-Each test is laid out in three blank-line-separated phases -- setup, then the
-single call under test (the "act"), then the assertions -- and performs that
-act exactly once (cases that would repeat it are parametrized or split).
+Hermetic: everything routed through ``tmp_path`` and the bundled templates --
+no Docker, no network. AAA layout, single act per test.
 """
 
 from __future__ import annotations
@@ -47,16 +47,14 @@ _INSTALLATION = (
 )
 
 
-def _make_stack(tmp_path, *, compose=True, installation=True):
+def _make_stack(tmp_path):
     """A stack directory with the bits ``resolve_project`` checks for."""
     project = tmp_path / "stack"
     (project / "backend" / "environment").mkdir(parents=True, exist_ok=True)
-    if compose:
-        (project / "docker-compose.yml").write_text("services: {}\n")
-    if installation:
-        (project / "backend" / "environment" / "installation.yaml").write_text(
-            _INSTALLATION
-        )
+    (project / "docker-compose.yml").write_text("services: {}\n")
+    (project / "backend" / "environment" / "installation.yaml").write_text(
+        _INSTALLATION
+    )
     return project
 
 
@@ -89,7 +87,7 @@ def _installation(project):
 
 
 # --------------------------------------------------------------------------
-# Templates
+# Template catalog (skill-owned)
 # --------------------------------------------------------------------------
 def test_available_templates_has_bundled_set():
     templates = add_room.available_templates()
@@ -111,24 +109,13 @@ def test_resolve_template_ok():
 
 
 def test_resolve_template_unknown():
-    with pytest.raises(add_room.AddRoomError, match="unknown --template"):
+    with pytest.raises(add_room.AddRoomError, match="unknown template"):
         add_room.resolve_template("does-not-exist")
 
 
 # --------------------------------------------------------------------------
-# Pure helpers
+# Rendering (skill-owned)
 # --------------------------------------------------------------------------
-@pytest.mark.parametrize("room_id", ["chat", "a", "a.b_c-1", "Z9"])
-def test_validate_room_id_accepts(room_id):
-    add_room.validate_room_id(room_id)
-
-
-@pytest.mark.parametrize("room_id", ["", ".hidden", "a/b", "a b", "../x"])
-def test_validate_room_id_rejects(room_id):
-    with pytest.raises(add_room.AddRoomError, match="must match"):
-        add_room.validate_room_id(room_id)
-
-
 def test_format_system_prompt_file():
     result = add_room.format_system_prompt(None, "prompt.txt")
 
@@ -184,42 +171,6 @@ def test_build_context_prompt_file_reference():
     assert ctx["system_prompt_yaml"] == '"./prompt.txt"'
 
 
-def test_add_room_path_added_after_anchor():
-    new, action = add_room.add_room_path(_INSTALLATION, "handbook")
-
-    assert action == add_room.ADDED
-    assert "# rooms loaded by this install" in new
-    lines = new.splitlines()
-    anchor = lines.index("room_paths:")
-    assert lines[anchor + 1] == '  - "./rooms/handbook"'
-
-
-def test_add_room_path_covered_by_rooms_parent():
-    text = 'room_paths:\n  - "./rooms"\n'
-
-    new, action = add_room.add_room_path(text, "handbook")
-
-    assert action == add_room.COVERED
-    assert new == text
-
-
-def test_add_room_path_unchanged_when_present():
-    text = _INSTALLATION.replace('"./rooms/chat"', '"./rooms/handbook"')
-
-    new, action = add_room.add_room_path(text, "handbook")
-
-    assert action == add_room.UNCHANGED
-    assert new == text
-
-
-def test_add_room_path_no_anchor():
-    with pytest.raises(add_room.AddRoomError, match="room_paths"):
-        add_room.add_room_path("name: x\n", "handbook")
-
-
-# --------------------------------------------------------------------------
-# Rendering each bundled template
-# --------------------------------------------------------------------------
 @pytest.mark.parametrize("template", ["chat", "search", "minimal", "sandbox"])
 def test_render_template_is_valid_yaml(template):
     args = _add_args(name="My Room", description="Desc", system_prompt="Hi")
@@ -272,70 +223,6 @@ def test_render_escapes_quotes_in_name():
 
 
 # --------------------------------------------------------------------------
-# Stack discovery
-# --------------------------------------------------------------------------
-def test_resolve_project_ok(tmp_path):
-    project = _make_stack(tmp_path)
-
-    result = add_room.resolve_project(str(project))
-
-    assert result == project.resolve()
-
-
-def test_resolve_project_no_compose(tmp_path):
-    project = _make_stack(tmp_path, compose=False)
-
-    with pytest.raises(add_room.AddRoomError, match="docker-compose.yml"):
-        add_room.resolve_project(str(project))
-
-
-def test_resolve_project_not_a_stack(tmp_path):
-    project = _make_stack(tmp_path, installation=False)
-
-    with pytest.raises(add_room.AddRoomError, match="not a generated"):
-        add_room.resolve_project(str(project))
-
-
-def test_resolve_package_name_override(tmp_path):
-    project = _make_stack(tmp_path)
-
-    result = add_room.resolve_package_name(project, "acme_pkg")
-
-    assert result == "acme_pkg"
-
-
-def test_resolve_package_name_from_src(tmp_path):
-    project = _make_stack(tmp_path)
-    (project / "src" / "mypkg").mkdir(parents=True)
-    (project / "src" / "mypkg" / "tools.py").write_text(
-        "def greeting(): ...\n"
-    )
-    (project / "src" / "notpkg").mkdir()  # excluded: no tools.py
-    (project / "src" / "stray.txt").write_text("x")  # excluded: not a dir
-
-    result = add_room.resolve_package_name(project, None)
-
-    assert result == "mypkg"
-
-
-def test_resolve_package_name_src_without_package(tmp_path):
-    project = _make_stack(tmp_path)
-    (project / "src").mkdir()
-
-    result = add_room.resolve_package_name(project, None)
-
-    assert result == add_room.DEFAULT_PACKAGE_NAME
-
-
-def test_resolve_package_name_no_src(tmp_path):
-    project = _make_stack(tmp_path)
-
-    result = add_room.resolve_package_name(project, None)
-
-    assert result == add_room.DEFAULT_PACKAGE_NAME
-
-
-# --------------------------------------------------------------------------
 # CLI: list
 # --------------------------------------------------------------------------
 def test_list(capsys):
@@ -348,7 +235,7 @@ def test_list(capsys):
 
 
 # --------------------------------------------------------------------------
-# CLI: add
+# CLI: add (end-to-end through the real soliplex_template.rooms)
 # --------------------------------------------------------------------------
 def test_add_writes_room_and_updates_paths(tmp_path):
     project = _make_stack(tmp_path)
@@ -401,7 +288,7 @@ def test_add_with_prompt_file(tmp_path):
 def test_add_prompt_file_missing(tmp_path):
     project = _make_stack(tmp_path)
 
-    with pytest.raises(add_room.AddRoomError, match="prompt-file"):
+    with pytest.raises(add_room.AddRoomError, match="prompt file"):
         add_room.main(
             [
                 "add",
@@ -438,73 +325,3 @@ def test_add_dry_run_writes_nothing(tmp_path, capsys):
     assert "would write" in capsys.readouterr().out
     assert not _room_dir(project).exists()
     assert _installation(project).read_text() == before
-
-
-def test_add_room_exists_without_force(tmp_path):
-    project = _make_stack(tmp_path)
-    _room_dir(project).mkdir(parents=True)
-
-    with pytest.raises(add_room.AddRoomError, match="already exists"):
-        add_room.main(
-            [
-                "add",
-                "--project-dir",
-                str(project),
-                "--template",
-                "chat",
-                "--room-id",
-                "handbook",
-            ]
-        )
-
-
-def test_add_room_covered_leaves_installation_untouched(tmp_path):
-    project = _make_stack(tmp_path)
-    inst = _installation(project)
-    inst.write_text('room_paths:\n  - "./rooms"\n')
-    before = inst.read_text()
-
-    rc = add_room.main(
-        [
-            "add",
-            "--project-dir",
-            str(project),
-            "--template",
-            "chat",
-            "--room-id",
-            "handbook",
-        ]
-    )
-
-    assert rc == 0
-    assert (_room_dir(project) / "room_config.yaml").is_file()
-    assert inst.read_text() == before
-
-
-def test_add_force_overwrites_with_paths_unchanged(tmp_path):
-    project = _make_stack(tmp_path)
-    room = _room_dir(project)
-    room.mkdir(parents=True)
-    (room / "room_config.yaml").write_text("id: stale\n")
-    inst = _installation(project)
-    inst.write_text(
-        inst.read_text().replace('"./rooms/chat"', '"./rooms/handbook"')
-    )
-
-    rc = add_room.main(
-        [
-            "add",
-            "--project-dir",
-            str(project),
-            "--template",
-            "minimal",
-            "--room-id",
-            "handbook",
-            "--force",
-        ]
-    )
-
-    assert rc == 0
-    assert inst.read_text().count('"./rooms/handbook"') == 1
-    data = yaml.safe_load((room / "room_config.yaml").read_text())
-    assert data["id"] == "handbook"

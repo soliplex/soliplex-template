@@ -1,0 +1,26 @@
+name: Build & publish soliplex-template to pypi
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # PyPI Trusted Publishing (OIDC) -- no API token. Configure the project's
+    # trusted publisher (this repo + workflow) on PyPI after the first manual
+    # release creates the project.
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version-file: "pyproject.toml"
+      - name: Build soliplex-template
+        run: uv build --sdist --wheel
+      - name: Publish soliplex-template
+        run: uv publish --trusted-publishing always
