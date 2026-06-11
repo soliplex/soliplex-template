@@ -7,9 +7,11 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    # PyPI Trusted Publishing (OIDC) -- no API token. Configure the project's
-    # trusted publisher (this repo + workflow) on PyPI after the first manual
-    # release creates the project.
+    # PyPI Trusted Publishing (OIDC) -- no API token. The 'pypi' GitHub
+    # environment must match the trusted-publisher config on PyPI (repo +
+    # workflow + environment); without it the OIDC 'environment' claim is None
+    # and PyPI rejects the token (422 invalid-publisher).
+    environment: pypi
     permissions:
       id-token: write
     steps:
