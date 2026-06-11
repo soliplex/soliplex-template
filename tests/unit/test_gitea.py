@@ -155,14 +155,14 @@ def test_ensure_admin_user_creates(monkeypatch):
     compose = mock.Mock(return_value=mock.Mock(returncode=0))
     monkeypatch.setattr(st_gitea, "_docker_compose_gitea", compose)
 
-    st_gitea.ensure_admin_user("pw", project_dir="/stack")
+    st_gitea.ensure_admin_user("svc", "svc@x", "pw", project_dir="/stack")
 
     assert compose.call_count == 1
     create_call = compose.call_args_list[0]
     assert "create" in create_call.args
-    assert "--password" in create_call.args
+    assert "svc" in create_call.args
+    assert "svc@x" in create_call.args
     assert "pw" in create_call.args
-    assert st_gitea.ADMIN_USER in create_call.args
     assert create_call.kwargs == {"project_dir": "/stack"}
 
 
@@ -172,7 +172,7 @@ def test_ensure_admin_user_resets_when_exists(monkeypatch, capsys):
     compose = mock.Mock(side_effect=[created, changed])
     monkeypatch.setattr(st_gitea, "_docker_compose_gitea", compose)
 
-    st_gitea.ensure_admin_user("pw", project_dir="/stack")
+    st_gitea.ensure_admin_user("svc", "svc@x", "pw", project_dir="/stack")
 
     assert compose.call_count == 2
     create_call, change_call = compose.call_args_list
@@ -180,7 +180,7 @@ def test_ensure_admin_user_resets_when_exists(monkeypatch, capsys):
     assert "change-password" in change_call.args
     assert "change-password" not in create_call.args
     assert "pw" in change_call.args
-    assert "user exists" in capsys.readouterr().out
+    assert "resetting password" in capsys.readouterr().out
     changed.check_returncode.assert_called_once_with()
 
 
@@ -300,8 +300,9 @@ def test_provision_gitea_not_ready_raises(tmp_path, monkeypatch):
 
 def test_provision_gitea_writes_env(tmp_path, monkeypatch):
     mint = mock.Mock(return_value="tok999")
+    ensure = mock.Mock()
     monkeypatch.setattr(st_gitea, "wait_for_gitea", lambda **kw: True)
-    monkeypatch.setattr(st_gitea, "ensure_admin_user", mock.Mock())
+    monkeypatch.setattr(st_gitea, "ensure_admin_user", ensure)
     monkeypatch.setattr(st_gitea, "mint_token", mint)
     monkeypatch.setattr(st_gitea, "create_repo", mock.Mock())
 
@@ -313,3 +314,29 @@ def test_provision_gitea_writes_env(tmp_path, monkeypatch):
     assert "GITEA_ACCESS_TOKEN=tok999" in env_text
     # the token name is an internal 'concierge-<epoch>' default.
     assert mint.call_args.kwargs["token_name"].startswith("concierge-")
+    # with no web-UI user, only the rotating service account is ensured.
+    assert ensure.call_count == 1
+    assert ensure.call_args_list[0].args[0] == st_gitea.ADMIN_USER
+
+
+def test_provision_gitea_creates_distinct_webui_admin(tmp_path, monkeypatch):
+    ensure = mock.Mock()
+    monkeypatch.setattr(st_gitea, "wait_for_gitea", lambda **kw: True)
+    monkeypatch.setattr(st_gitea, "ensure_admin_user", ensure)
+    monkeypatch.setattr(st_gitea, "mint_token", mock.Mock(return_value="t"))
+    monkeypatch.setattr(st_gitea, "create_repo", mock.Mock())
+
+    st_gitea.provision_gitea(tmp_path, webui_user="alice", webui_password="pw")
+
+    assert ensure.call_count == 2
+    service_call, webui_call = ensure.call_args_list
+    assert service_call.args[0] == st_gitea.ADMIN_USER
+    assert webui_call.args[0] == "alice"
+    assert webui_call.args[2] == "pw"
+
+
+def test_provision_gitea_rejects_service_account_as_webui(tmp_path):
+    with pytest.raises(st_gitea.GiteaError, match="rotating service account"):
+        st_gitea.provision_gitea(
+            tmp_path, webui_user=st_gitea.ADMIN_USER, webui_password="pw"
+        )

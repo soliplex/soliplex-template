@@ -576,7 +576,9 @@ def t_claude(text: str) -> str:
         " `GITEA_ROOT_URL`). State lives in the `gitea_data` /"
         " `gitea_config` named volumes; built-in SSH on host `:2222`."
         " Provision an admin user, access token, and tracking repo with"
-        " `scripts/init_gitea.py`.\n",
+        " `scripts/init_gitea.py` (a rotating service account whose password"
+        " is never persisted; pass `--admin-user NAME` to also create a"
+        " distinct, known web-UI admin login, prompted for its password).\n",
     )
 
 
