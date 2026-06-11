@@ -9,12 +9,12 @@ There are two modes, both documented at the bottom of `docker-compose.yml`.
 
 ## File-based (active by default)
 
-`scripts/generate-secrets.sh` writes `.secrets/*.gen` files, which Compose
+`scripts/generate_secrets.py` writes `.secrets/*.gen` files, which Compose
 mounts as Docker secrets at `/run/secrets/*`. `.secrets/` is gitignored, so the
 initial commit never captures secrets.
 
 ```bash
-./scripts/generate-secrets.sh
+uv run scripts/generate_secrets.py
 ```
 
 !!! warning "Don't hand-edit `.secrets/*.gen`"

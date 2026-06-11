@@ -8,7 +8,7 @@ Docker Compose.
 ```bash
 git clone https://github.com/soliplex/soliplex-template.git
 cd soliplex-template
-./scripts/generate-secrets.sh        # populates .secrets/*.gen (gitignored)
+uv run scripts/generate_secrets.py   # populates .secrets/*.gen (gitignored)
 echo 'OLLAMA_BASE_URL=http://your-ollama-host:11434' > .env
 docker compose up
 ```

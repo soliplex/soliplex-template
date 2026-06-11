@@ -7,7 +7,7 @@ haiku-ingester + Postgres, plus docling-serve and a TUI), scaffolded from the
 <%text>## First-time setup</%text>
 
 ```bash
-./scripts/generate-secrets.sh   # populates .secrets/*.gen (gitignored)
+uv run scripts/generate_secrets.py   # populates .secrets/*.gen (gitignored)
 ```
 
 Set `OLLAMA_BASE_URL` in `.env` if it is not already correct.

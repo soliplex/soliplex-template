@@ -49,6 +49,9 @@ EXCLUDE_PATHSPECS = [
     ":!tests",  # this repo's test suite, not project files
     ":!scripts/build_skill.py",  # skill-build tooling, not project files
     ":!scripts/refresh_skill_template.py",
+    # The repo's own published package; a generated project depends on it from
+    # PyPI (via the bundled scripts' PEP 723 metadata), not a vendored copy.
+    ":!src/soliplex_template",
     ":!pyproject.toml",  # repo tooling; project gets pyproject.toml.mako
     ":!uv.lock",  # repo tooling lockfile
     ":!README.md",  # replaced by the authored README.md.mako
@@ -573,7 +576,7 @@ def t_claude(text: str) -> str:
         " `GITEA_ROOT_URL`). State lives in the `gitea_data` /"
         " `gitea_config` named volumes; built-in SSH on host `:2222`."
         " Provision an admin user, access token, and tracking repo with"
-        " `scripts/init-gitea.sh`.\n",
+        " `scripts/init_gitea.py`.\n",
     )
 
 
@@ -609,7 +612,7 @@ haiku-ingester + Postgres, plus docling-serve and a TUI), scaffolded from the
 <%text>## First-time setup</%text>
 
 ```bash
-./scripts/generate-secrets.sh   # populates .secrets/*.gen (gitignored)
+uv run scripts/generate_secrets.py   # populates .secrets/*.gen (gitignored)
 ```
 
 Set `OLLAMA_BASE_URL` in `.env` if it is not already correct.
@@ -958,6 +961,8 @@ is already done. Bringing the stack up takes three steps.
 - An **Ollama** server reachable from the containers, serving the models named
   in `backend/environment/installation.yaml`. Its URL is recorded in `.env` as
   `OLLAMA_BASE_URL` (see step 2).
+- [`uv`](https://docs.astral.sh/uv/) to run the secrets script
+  (`scripts/generate_secrets.py`).
 
 <%text>## 1. Generate secrets</%text>
 
@@ -965,7 +970,7 @@ The Postgres roles and the backend read their credentials from Docker secrets.
 Generate them before the first `up`:
 
 ```bash
-./scripts/generate-secrets.sh   # populates .secrets/*.gen (gitignored)
+uv run scripts/generate_secrets.py   # populates .secrets/*.gen (gitignored)
 ```
 
 !!! warning "Don't hand-edit `.secrets/*.gen`"
@@ -1226,12 +1231,12 @@ secrets. There are two modes, both documented at the bottom of
 
 <%text>## File-based (active by default)</%text>
 
-`scripts/generate-secrets.sh` writes `.secrets/*.gen` files, which Compose
+`scripts/generate_secrets.py` writes `.secrets/*.gen` files, which Compose
 mounts as Docker secrets at `/run/secrets/*`. `.secrets/` is gitignored, so the
 initial commit never captures secrets.
 
 ```bash
-./scripts/generate-secrets.sh
+uv run scripts/generate_secrets.py
 ```
 
 !!! warning "Don't hand-edit `.secrets/*.gen`"
@@ -1246,20 +1251,21 @@ The secret files are mode `0600` (owner-only). For an in-container service
 container runs as**. The stack ties both ends to `PUID` / `PGID` in `.env`:
 
 - every built image runs as `PUID:PGID` (Compose `build.args`), and
-- `scripts/generate-secrets.sh` ensures the `.secrets/*.gen` files end up owned
+- `scripts/generate_secrets.py` ensures the `.secrets/*.gen` files end up owned
   by `PUID:PGID`.
 
 The generator defaults `PUID` / `PGID` to the host operator who scaffolded the
 project, so on a single-developer machine this is automatic. On a deploy host
 whose login uid differs from the runtime service account, set `PUID` / `PGID`
-explicitly (and rebuild — see below); `generate-secrets.sh` then re-owns the
+explicitly (and rebuild — see below); `generate_secrets.py` then re-owns the
 secret files to that uid/gid via a throwaway container (it needs Docker for
 that step).
 
 !!! warning "Changing `PUID` / `PGID` needs a rebuild"
     The uid is baked into the images at build time, so after editing `PUID` /
     `PGID` in `.env` you must `docker compose build` (and re-run
-    `./scripts/generate-secrets.sh` so the secret files are re-owned to match).
+    `uv run scripts/generate_secrets.py` so the secret files are re-owned to
+    match).
 
 !!! note "Override uid: who owns the secret files"
     When `PUID` differs from your login uid, the `.secrets/*.gen` files are

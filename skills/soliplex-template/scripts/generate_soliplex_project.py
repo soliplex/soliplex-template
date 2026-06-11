@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["mako", "skills-ref==0.1.1"]
+# dependencies = ["mako", "skills-ref==0.1.1", "soliplex-template>=0.12"]
 # ///
 """Scaffold a new Soliplex Docker Compose project from the embedded template.
 
@@ -35,6 +35,8 @@ import urllib.parse
 import skills_ref
 from mako import exceptions as mako_exceptions
 from mako import template
+
+from soliplex_template.secrets import generate_secrets
 
 # This skill's own directory (two levels up from scripts/); its SKILL.md is the
 # source of the generation-manifest skill identity.
@@ -96,7 +98,7 @@ DEFAULTS: dict[str, object] = {
     # Auth: "no-auth" | "auth"
     "auth_mode": "no-auth",
     # Gitea service (opt-in): include a local Gitea (postgres-backed,
-    # nginx-proxied at /gitea/) plus scripts/init-gitea.sh.
+    # nginx-proxied at /gitea/) plus scripts/init_gitea.py.
     "include_gitea": False,
     # TUI service (opt-in): include the textual-serve-backed `tui` service
     # (web TUI at /tui/) plus the tui/ build context. Omitted entirely when
@@ -507,7 +509,7 @@ def render_tree(
         # The Gitea provisioning script only makes sense alongside the gitea
         # service; skip it when gitea was not requested.
         if not ctx.get("include_gitea") and rel == pathlib.Path(
-            "scripts/init-gitea.sh"
+            "scripts/init_gitea.py"
         ):
             continue
         # The tui/ build context only makes sense alongside the tui service;
@@ -556,7 +558,7 @@ def write_env(out: pathlib.Path, params: dict[str, object]) -> None:
         f"INGESTER_TOKEN={params['ingester_token']}",
         # UID/GID the containers build and run as (and that owns the generated
         # .secrets/*.gen files). Compose reads these; changing them requires a
-        # rebuild of the built images. See scripts/generate-secrets.sh.
+        # rebuild of the built images. See scripts/generate_secrets.py.
         f"PUID={params['puid']}",
         f"PGID={params['pgid']}",
         "",
@@ -565,13 +567,13 @@ def write_env(out: pathlib.Path, params: dict[str, object]) -> None:
 
 
 def maybe_run_secrets(out: pathlib.Path, run: bool) -> bool:
-    script = out / "scripts" / "generate-secrets.sh"
     if not run:
         return False
-    if shutil.which("bash") is None or shutil.which("openssl") is None:
-        print("  (skipped generate-secrets.sh: bash/openssl not available)")
-        return False
-    subprocess.run(["bash", str(script)], cwd=out, check=True)
+    # Call the library directly rather than the bundled shim: the shim resolves
+    # 'soliplex-template' from PyPI via 'uv run', but the same logic lives in
+    # the package we already import, so this works from the editable checkout
+    # (and is what keeps the functional test green before a release publishes).
+    generate_secrets(out)
     return True
 
 
@@ -631,7 +633,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--generate-secrets",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="run scripts/generate-secrets.sh after scaffolding "
+        help="generate the stack's Docker secrets after scaffolding "
         "(default: enabled; use --no-generate-secrets to skip)",
     )
     p.add_argument(
@@ -714,7 +716,7 @@ def main(argv: list[str]) -> int:
     print("\nNext steps:")
     steps = []
     if not ran_secrets:
-        steps.append("./scripts/generate-secrets.sh")
+        steps.append("uv run scripts/generate_secrets.py")
     steps.append("docker compose build   # build images (first build is slow)")
     steps.append("docker compose up -d   # start the stack in the background")
     steps.append("docker compose ps      # wait until services are healthy")

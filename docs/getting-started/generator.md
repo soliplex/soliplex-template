@@ -27,7 +27,7 @@ uv run skill/scripts/generate_soliplex_project.py --out ../my-stack --params par
 falls back to a sensible default. Useful flags:
 
 - `--interactive` — prompt for each parameter on stdin.
-- `--run-secrets` — also run `generate-secrets.sh` in the new project.
+- `--run-secrets` — also run `generate_secrets.py` in the new project.
 - `--no-git` — skip the initial git commit.
 
 ## What the generated project adds
