@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "soliplex-template"
 version = "0.12dev0"
 description = "Docker Compose template for a Soliplex stack, plus the soliplex-template Agent Skill and its build tooling."
+readme = "README.md"
 requires-python = ">=3.12"
 # The 'soliplex_template' package (src/) is stdlib-only; the bundled skill's
 # add_room.py imports 'soliplex_template.rooms' from it.
