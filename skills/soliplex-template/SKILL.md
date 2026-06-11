@@ -343,6 +343,63 @@ after `create`. Either way:
    room that already has a `skills:` block but no `haiku.rag.skills.rag` entry
    is reported so you can wire it by hand. See `docs/operations/rag.md`.
 
+## Adding a room to an existing stack
+
+A generated stack ships with a fixed set of rooms; its `room_paths` list is
+baked in at generation time. To add a *new* room afterwards — to this template's
+stacks or any hand-built Soliplex installation laid out the same way — render one
+of the skill's bundled room templates with `scripts/add_room.py`. It is pure
+filesystem work (no Docker, no running backend): it writes
+`backend/environment/rooms/<room-id>/room_config.yaml` and splices
+`./rooms/<room-id>` into the installation's `room_paths` (line-based, so comments
+and layout are preserved). The backend serves with `--reload=config`, so the new
+room is picked up without an image rebuild or restart.
+
+1. **Show the bundled templates** and let the user choose one:
+
+   ```bash
+   uv run scripts/add_room.py list
+   ```
+
+   The templates are `chat` (conversational RAG), `search` (search-and-answer
+   with citations), `minimal` (bare agent + prompt), and `sandbox` (file upload +
+   bubblewrap code execution + RAG). Each renders with commented-out examples for
+   adding custom tools and skills (both filesystem and entrypoint), for the
+   operator to uncomment later.
+
+2. **Gather the parameters** with `AskUserQuestion`: `--room-id` (required;
+   letters/digits/`.`/`_`/`-`, no leading dot — also the directory name and the
+   `room_paths` entry), `--name`, `--description`, `--agent-template` (an agent
+   `template_id` from `installation.yaml`, default `default_chat`; the other
+   shipped templates are `alternate_chat` and `title`), a system prompt
+   (`--system-prompt "…"` inline, or `--prompt-file PATH` to drop a `prompt.txt`
+   in the room and reference it; omit both to take the template's default), and
+   `--rag-stem` for the chat/search/sandbox templates (the LanceDB stem the room
+   reads, default `haiku.rag` — set it to a database created with `rag_db.py`).
+
+3. **Dry-run first**, then apply (run from the stack dir, or pass
+   `--project-dir`):
+
+   ```bash
+   uv run scripts/add_room.py add --project-dir /path/to/stack \
+       --template chat --room-id handbook \
+       --name "Handbook" --description "Q&A over the staff handbook" --dry-run
+   ```
+
+   Drop `--dry-run` to write. The room directory must not already exist (pass
+   `--force` to overwrite it); re-adding an already-listed `room_paths` entry is
+   reported as `unchanged`.
+
+4. **Verify** the install now loads the room (the `--reload=config` backend
+   needs no rebuild):
+
+   ```bash
+   python3 scripts/soliplex_config.py rooms --project-dir /path/to/stack
+   ```
+
+   Then point the user at the generated `room_config.yaml` to uncomment the
+   tool/skill examples or refine the prompt.
+
 ## Managing this skill's version
 
 `scripts/skill_versions.py` lists, diffs, and upgrades published builds of this
