@@ -333,7 +333,7 @@ after `create`. Either way:
 
    ```bash
    python3 scripts/rag_db.py add-rag-to-room --db-name handbook \
-       --room chat --room search
+       --room <room_id> [--room <room_id> ...]
    ```
 
    It resolves those ids to their `room_config.yaml` the same way (via the
