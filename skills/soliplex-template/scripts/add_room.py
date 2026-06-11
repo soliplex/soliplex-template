@@ -1,23 +1,18 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["mako"]
+# dependencies = ["soliplex-template>=0.11", "mako"]
 # ///
 """Add a new room to an existing Soliplex stack from a bundled template.
 
-A generated stack ships a fixed set of rooms; its ``room_paths`` list in
-``backend/environment/installation.yaml`` is baked in at generation time. This
-script grows that stack *after the fact*: it renders one of the skill's bundled
-room templates (under ``assets/rooms/<name>/``) into
-``backend/environment/rooms/<room_id>/room_config.yaml`` and splices
-``./rooms/<room_id>`` into the installation's ``room_paths`` list.
+This is the skill's CLI front end. It owns the bundled room templates (under
+``assets/rooms/<name>/``) and renders the chosen one with Mako, then delegates
+the stack-level work -- writing the room, wiring ``room_paths`` -- to
+``soliplex_template.rooms`` (provisioned by ``uv run`` from the PEP 723
+dependency above). Templates stay in the skill; the generic, template-agnostic
+logic lives in the published ``soliplex-template`` package.
 
-It is pure filesystem work -- no Docker, no running backend. The backend serves
-with ``--reload=config``, so a room added under ``backend/environment/`` is
-picked up without an image rebuild or restart.
-
-Run it from the skill directory (``uv run`` provisions Mako from the PEP 723
-header above), pointing ``--project-dir`` at the stack::
+Run it from the skill directory, pointing ``--project-dir`` at the stack::
 
     # list the bundled room templates
     python3 add_room.py list
@@ -30,22 +25,29 @@ header above), pointing ``--project-dir`` at the stack::
     # preview without writing
     python3 add_room.py add --template chat --room-id handbook --dry-run
 
-The room template is rendered with Mako (mirroring the project generator), so
-its comments -- including the commented-out examples for custom tools and for
-filesystem / entrypoint skills -- carry through to the generated file for the
-operator to uncomment and edit. The ``room_paths`` splice is line-based (not a
-YAML round-trip), so comments and unrelated layout in ``installation.yaml`` are
-preserved (mirrors ``rag_db.py``'s ``wire_room_stem``).
+The room template is rendered with Mako, so its comments -- including the
+commented-out examples for custom tools and skills -- carry through to the
+generated file for the operator to edit. ``room_paths`` is left untouched when
+it already points at ``./rooms`` (the new room is auto-discovered); installs
+that enumerate rooms get ``- "./rooms/<room-id>"`` spliced in line-based.
 """
 
 from __future__ import annotations
 
 import argparse
 import pathlib
-import re
 import sys
 
 from mako.template import Template
+
+from soliplex_template.rooms import DEFAULT_PACKAGE_NAME
+from soliplex_template.rooms import INSTALLATION_FILE
+from soliplex_template.rooms import PROMPT_FILE_NAME
+from soliplex_template.rooms import AddRoomError
+from soliplex_template.rooms import install_room
+from soliplex_template.rooms import resolve_package_name
+from soliplex_template.rooms import resolve_project
+from soliplex_template.rooms import validate_room_id
 
 # Bundled room templates live beside this script under '<skill>/assets/rooms/'
 # (this file is '<skill>/scripts/add_room.py'); resolve them relative to
@@ -58,34 +60,8 @@ TEMPLATE_FILE = "room_config.yaml.mako"
 # comment, so it never renders into the room_config.yaml).
 _SUMMARY_PREFIX = "## summary:"
 
-# A room id usable as a path segment and a YAML id: no '/', no '..', no
-# leading dot (mirrors rag_db.py's DB_NAME_RE).
-ROOM_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
-
 DEFAULT_AGENT_TEMPLATE = "default_chat"
 DEFAULT_RAG_STEM = "haiku.rag"
-# Placeholder when the stack's own package can't be inferred (no 'src/<pkg>/');
-# the '<pkg>.tools.greeting' demo tool in the templates references it.
-DEFAULT_PACKAGE_NAME = "your_package"
-# Written into the room dir when --prompt-file is given; the config then points
-# its system_prompt at this file (the 'search' demo room uses the same form).
-PROMPT_FILE_NAME = "prompt.txt"
-
-# Stack markers: the files that mark --project-dir as a generated stack.
-COMPOSE_FILE = "docker-compose.yml"
-ENVIRONMENT_DIR = pathlib.PurePosixPath("backend", "environment")
-INSTALLATION_FILE = ENVIRONMENT_DIR / "installation.yaml"
-ROOMS_DIR = ENVIRONMENT_DIR / "rooms"
-
-# room_paths splice: the anchor line and the entry-already-present probe.
-_ROOM_PATHS_RE = re.compile(r"^room_paths:\s*$")
-
-ADDED = "added"
-UNCHANGED = "unchanged"
-# room_paths may point at the rooms parent directory to auto-discover every
-# room beneath it; when it does, a new room needs no room_paths entry.
-ROOMS_PARENT_ENTRY = "./rooms"
-COVERED = f'covered by "{ROOMS_PARENT_ENTRY}"'
 
 # A starting system prompt per template, used when neither --system-prompt nor
 # --prompt-file is given. Templates without an entry fall back to _GENERIC.
@@ -114,57 +90,8 @@ _DEFAULT_PROMPTS = {
 }
 
 
-class AddRoomError(Exception):
-    """A user-facing error (printed without a traceback).
-
-    Message construction lives in these classmethod factories so call sites
-    read ``raise AddRoomError.<reason>(...)`` with no inline message string.
-    """
-
-    @classmethod
-    def compose_not_found(cls, path):
-        return cls(
-            f"no {COMPOSE_FILE} at {path} "
-            "(run with --project-dir pointing at the stack directory)"
-        )
-
-    @classmethod
-    def not_a_stack(cls, path):
-        return cls(
-            f"{path} is not a generated Soliplex stack: missing "
-            f"'{INSTALLATION_FILE}'"
-        )
-
-    @classmethod
-    def bad_room_id(cls, room_id):
-        return cls(
-            f"--room-id {room_id!r} must match {ROOM_ID_RE.pattern} "
-            "(letters, digits, '.', '_', '-'; no leading dot)"
-        )
-
-    @classmethod
-    def unknown_template(cls, name, available):
-        avail = ", ".join(sorted(available)) or "(none found)"
-        return cls(f"unknown --template {name!r}; available: {avail}")
-
-    @classmethod
-    def prompt_file_missing(cls, path):
-        return cls(f"--prompt-file {path} does not exist")
-
-    @classmethod
-    def room_exists(cls, path):
-        return cls(f"{path} already exists (use --force to overwrite it)")
-
-    @classmethod
-    def no_room_paths(cls, path):
-        return cls(
-            f"no 'room_paths:' block in {path} to extend "
-            "(unexpected installation.yaml shape)"
-        )
-
-
 # --------------------------------------------------------------------------
-# Templates
+# Templates (skill-owned)
 # --------------------------------------------------------------------------
 def _template_summary(text: str) -> str:
     """The template's ``## summary:`` line, or '' when it has none."""
@@ -192,13 +119,8 @@ def resolve_template(name: str) -> pathlib.Path:
 
 
 # --------------------------------------------------------------------------
-# Rendering helpers (pure)
+# Rendering (skill-owned)
 # --------------------------------------------------------------------------
-def validate_room_id(room_id: str) -> None:
-    if not ROOM_ID_RE.match(room_id):
-        raise AddRoomError.bad_room_id(room_id)
-
-
 def _dq(value: str) -> str:
     """Escape a string for a YAML double-quoted scalar."""
     return value.replace("\\", "\\\\").replace('"', '\\"')
@@ -255,69 +177,6 @@ def build_context(
     }
 
 
-def add_room_path(text: str, room_id: str) -> tuple[str, str]:
-    """Ensure ``room_paths`` loads ``rooms/<room_id>``; return (text, action).
-
-    Action is ``"unchanged"`` when the explicit entry is already listed,
-    ``COVERED`` when a ``./rooms`` entry already auto-discovers every room
-    beneath it (so no entry is needed), or ``"added"`` when the
-    ``- "./rooms/<id>"`` entry is spliced in. The edit is line-based, so
-    comments and unrelated layout are preserved. Raises ``AddRoomError`` when
-    the file has no top-level ``room_paths:`` block.
-    """
-    entry = f"{ROOMS_PARENT_ENTRY}/{room_id}"
-    probe = re.compile(r'-\s*["\']?' + re.escape(entry) + r'["\']?\s*$')
-    parent_probe = re.compile(
-        r'-\s*["\']?' + re.escape(ROOMS_PARENT_ENTRY) + r'/?["\']?\s*$'
-    )
-    lines = text.splitlines(keepends=True)
-    if any(probe.search(line) for line in lines):
-        return text, UNCHANGED
-    if any(parent_probe.search(line) for line in lines):
-        return text, COVERED
-    idx = next(
-        (i for i, line in enumerate(lines) if _ROOM_PATHS_RE.match(line)),
-        None,
-    )
-    if idx is None:
-        raise AddRoomError.no_room_paths(INSTALLATION_FILE)
-    lines.insert(idx + 1, f'  - "{entry}"\n')
-    return "".join(lines), ADDED
-
-
-# --------------------------------------------------------------------------
-# Stack discovery
-# --------------------------------------------------------------------------
-def resolve_project(project_dir: str) -> pathlib.Path:
-    project = pathlib.Path(project_dir).resolve()
-    if not (project / COMPOSE_FILE).is_file():
-        raise AddRoomError.compose_not_found(project / COMPOSE_FILE)
-    if not (project / INSTALLATION_FILE).is_file():
-        raise AddRoomError.not_a_stack(project)
-    return project
-
-
-def resolve_package_name(project: pathlib.Path, override: str | None) -> str:
-    """The stack's own package (for ``<pkg>.tools.greeting``), or placeholder.
-
-    Prefer an explicit ``override``; otherwise infer the single package under
-    ``src/`` (the generator scaffolds ``src/<package_name>/tools.py``); failing
-    that, return ``DEFAULT_PACKAGE_NAME`` for the operator to edit.
-    """
-    if override is not None:
-        return override
-    src = project / "src"
-    if src.is_dir():
-        packages = [
-            child.name
-            for child in sorted(src.iterdir())
-            if child.is_dir() and (child / "tools.py").is_file()
-        ]
-        if len(packages) == 1:
-            return packages[0]
-    return DEFAULT_PACKAGE_NAME
-
-
 # --------------------------------------------------------------------------
 # Subcommands
 # --------------------------------------------------------------------------
@@ -342,32 +201,27 @@ def do_add(args: argparse.Namespace) -> int:
             raise AddRoomError.prompt_file_missing(prompt_src)
         prompt_text = prompt_src.read_text()
 
-    room_dir = project / ROOMS_DIR / args.room_id
-    if room_dir.exists() and not args.force:
-        raise AddRoomError.room_exists(room_dir)
-
     package_name = resolve_package_name(project, args.package_name)
     ctx = build_context(args, args.template, package_name)
     config_text = render_room_config(template_path, ctx)
 
-    installation = project / INSTALLATION_FILE
-    new_installation, path_action = add_room_path(
-        installation.read_text(), args.room_id
+    result = install_room(
+        project,
+        args.room_id,
+        config_text=config_text,
+        prompt_text=prompt_text,
+        force=args.force,
+        dry_run=args.dry_run,
     )
 
-    config_path = room_dir / "room_config.yaml"
     if args.dry_run:
-        _print_dry_run(config_path, config_text, path_action, args.room_id)
-        return 0
-
-    room_dir.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(config_text)
-    if prompt_text is not None:
-        (room_dir / PROMPT_FILE_NAME).write_text(prompt_text)
-    if path_action == ADDED:
-        installation.write_text(new_installation)
-
-    _print_summary(config_path, path_action, args.room_id, project)
+        _print_dry_run(
+            result.config_path, config_text, result.path_action, args.room_id
+        )
+    else:
+        _print_summary(
+            result.config_path, result.path_action, args.room_id, project
+        )
     return 0
 
 

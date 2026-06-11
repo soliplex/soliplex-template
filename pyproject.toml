@@ -1,8 +1,14 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "soliplex-template"
 version = "0.11dev0"
 description = "Docker Compose template for a Soliplex stack, plus the soliplex-template Agent Skill and its build tooling."
 requires-python = ">=3.12"
+# The 'soliplex_template' package (src/) is stdlib-only; the bundled skill's
+# add_room.py imports 'soliplex_template.rooms' from it.
 dependencies = []
 
 # Tooling for the soliplex-template skill. The scripts also carry PEP 723
@@ -34,10 +40,13 @@ dev = [
     "zensical",
 ]
 
-# This repo is configuration + Dockerfiles + skill source, not an installable
-# Python package; don't try to build/install the root project.
-[tool.uv]
-package = false
+# The repo is configuration + Dockerfiles + skill source, but it also ships the
+# importable 'soliplex_template' package (src/), so it builds as a wheel. PEP 420
+# namespace package (no __init__.py); clients import the module directly, e.g.
+# 'from soliplex_template.rooms import ...'.
+[tool.setuptools.packages.find]
+where = ["src"]
+namespaces = true
 
 # Hermetic unit tests for the repo's Python scripts. The suite holds 100% branch
 # coverage; --cov=scripts measures the repo-level build tooling, --cov=skill/scripts
@@ -51,7 +60,7 @@ python_files = "test_*.py"
 # (--no-cov because the generator runs in a child process, so it isn't measured
 # and would otherwise trip --cov-fail-under). They are not collected by default.
 testpaths = ["tests/unit"]
-addopts = "--cov=scripts --cov=skills/soliplex-template/scripts --cov=tests/unit --cov-branch --cov-fail-under=100"
+addopts = "--cov=scripts --cov=skills/soliplex-template/scripts --cov=src/soliplex_template --cov=tests/unit --cov-branch --cov-fail-under=100"
 markers = [
     "needs_docker: functional test requiring the docker CLI + daemon",
 ]
