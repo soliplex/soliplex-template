@@ -68,7 +68,7 @@ prompt (a command-line value would leak into shell history).
 | `soliplex_tui_constraint` | `>= 0.60.6, < 0.61` | non-empty; only applies when `include_tui` is true | `tui/constraints.txt` |
 | `frontend_version` | `latest` | `latest` or a release tag (letters, digits, `.`, `_`, `-`) | `nginx/Dockerfile` frontend release fetched at image build |
 | `auth_mode` | `no-auth` | `no-auth` or `auth` | backend `command` (`--no-auth-mode` present/absent) |
-| `include_gitea` | `false` | bool (`true`/`false`, or `yes`/`no`/`1`/`0`) | adds the opt-in gitea service (postgres-backed, nginx `/gitea/` on 9443, `gitea_db_password` secret) plus `scripts/init_gitea.py`; omitted entirely when false |
+| `include_gitea` | `false` | bool (`true`/`false`, or `yes`/`no`/`1`/`0`) | adds the opt-in gitea service (postgres-backed, nginx `/gitea/` on 9443, `gitea_db_password` secret) plus `scripts/init_gitea.py` (run after `up`; `--admin-user NAME` adds a web-UI login, `--push-to-gitea` sets `origin` to a Gitea repo over SSH and pushes the initial commit); omitted entirely when false |
 | `include_tui` | `false` | bool (`true`/`false`, or `yes`/`no`/`1`/`0`) | adds the opt-in `tui` service (web TUI proxied by nginx at `/tui/`) plus the `tui/` build context; omitted entirely when false |
 | `docs_dir` | `rag/docs` | relative path inside the project | compose ingester bind mount; created at generation time |
 | `ingester_token` | `secret` | weak default — override for real deployments | `.env` `INGESTER_TOKEN` |

@@ -578,7 +578,10 @@ def t_claude(text: str) -> str:
         " Provision an admin user, access token, and tracking repo with"
         " `scripts/init_gitea.py` (a rotating service account whose password"
         " is never persisted; pass `--admin-user NAME` to also create a"
-        " distinct, known web-UI admin login, prompted for its password).\n",
+        " distinct, known web-UI admin login, prompted for its password)."
+        " Pass `--push-to-gitea` to also set this stack's git `origin` to a"
+        " Gitea"
+        " repo over SSH and push the initial commit.\n",
     )
 
 
