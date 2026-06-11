@@ -36,6 +36,9 @@ def test_parse_args_defaults_to_none():
 
     assert args.project_dir is None
     assert args.admin_user is None
+    assert args.push_to_gitea is False
+    assert args.stack_repo is None
+    assert args.ssh_key is None
 
 
 def test_main_uses_default_project(monkeypatch):
@@ -46,7 +49,12 @@ def test_main_uses_default_project(monkeypatch):
 
     assert rc == 0
     provision_gitea.assert_called_once_with(
-        shim.default_project(), webui_user=None, webui_password=None
+        shim.default_project(),
+        webui_user=None,
+        webui_password=None,
+        push_to_gitea=False,
+        stack_repo=None,
+        ssh_key=None,
     )
 
 
@@ -58,7 +66,12 @@ def test_main_uses_project_dir_arg(monkeypatch):
 
     assert rc == 0
     provision_gitea.assert_called_once_with(
-        "/some/stack", webui_user=None, webui_password=None
+        "/some/stack",
+        webui_user=None,
+        webui_password=None,
+        push_to_gitea=False,
+        stack_repo=None,
+        ssh_key=None,
     )
 
 
@@ -73,7 +86,31 @@ def test_main_admin_user_prompts_for_password(monkeypatch):
 
     assert rc == 0
     provision_gitea.assert_called_once_with(
-        shim.default_project(), webui_user="alice", webui_password="s3kr3t"
+        shim.default_project(),
+        webui_user="alice",
+        webui_password="s3kr3t",
+        push_to_gitea=False,
+        stack_repo=None,
+        ssh_key=None,
+    )
+
+
+def test_main_push_to_gitea_threads_options_through(monkeypatch):
+    provision_gitea = mock.Mock()
+    monkeypatch.setattr(shim, "provision_gitea", provision_gitea)
+
+    rc = shim.main(
+        ["--push-to-gitea", "--stack-repo", "acme", "--ssh-key", "/k.pub"]
+    )
+
+    assert rc == 0
+    provision_gitea.assert_called_once_with(
+        shim.default_project(),
+        webui_user=None,
+        webui_password=None,
+        push_to_gitea=True,
+        stack_repo="acme",
+        ssh_key="/k.pub",
     )
 
 

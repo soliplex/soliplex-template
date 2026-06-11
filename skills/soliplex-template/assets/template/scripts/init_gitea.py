@@ -22,6 +22,13 @@ Pass ``--admin-user NAME`` to also create (or update) a *distinct* Gitea
 site-admin account for web-UI login -- you are prompted for its password (it is
 never taken on the command line). The rotating service account is unaffected,
 and ``NAME`` may not be that service account.
+
+Pass ``--push-to-gitea`` to also back this stack's own git repository with
+Gitea: your SSH key(s) are registered on the service account, an empty repo is
+created, ``origin`` is set to its SSH URL, and the current branch is pushed.
+The repo is named after the stack directory unless ``--stack-repo NAME`` is
+given; ``--ssh-key PATH`` overrides which public key is registered (default:
+the keys loaded in your ssh-agent, else ``~/.ssh/*.pub``).
 """
 
 from __future__ import annotations
@@ -59,6 +66,27 @@ def build_parser() -> argparse.ArgumentParser:
         "name for web-UI login (you are prompted for its password); omit to "
         "skip. May not be the rotating service account.",
     )
+    parser.add_argument(
+        "--push-to-gitea",
+        action="store_true",
+        help="back this stack's git repo with Gitea: register your SSH "
+        "key(s), create a repo, set 'origin', and push the initial commit.",
+    )
+    parser.add_argument(
+        "--stack-repo",
+        default=None,
+        metavar="NAME",
+        help="name for the backing repo (with --push-to-gitea); default: the "
+        "stack directory name. Pass this when that name is not a valid Gitea "
+        "repo name.",
+    )
+    parser.add_argument(
+        "--ssh-key",
+        default=None,
+        metavar="PATH",
+        help="public key to register with Gitea (with --push-to-gitea); "
+        "default: ssh-agent keys, else ~/.ssh/*.pub.",
+    )
     return parser
 
 
@@ -85,6 +113,9 @@ def main(argv: list[str]) -> int:
         args.project_dir or default_project(),
         webui_user=args.admin_user,
         webui_password=webui_password,
+        push_to_gitea=args.push_to_gitea,
+        stack_repo=args.stack_repo,
+        ssh_key=args.ssh_key,
     )
     return 0
 

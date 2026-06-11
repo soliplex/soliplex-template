@@ -13,6 +13,7 @@ act exactly once (cases that would repeat it are parametrized or split).
 from __future__ import annotations
 
 import io
+import json
 import urllib.error
 from unittest import mock
 
@@ -340,3 +341,274 @@ def test_provision_gitea_rejects_service_account_as_webui(tmp_path):
         st_gitea.provision_gitea(
             tmp_path, webui_user=st_gitea.ADMIN_USER, webui_password="pw"
         )
+
+
+def test_provision_gitea_push_to_gitea_uses_dir_name(tmp_path, monkeypatch):
+    push = mock.Mock()
+    monkeypatch.setattr(st_gitea, "wait_for_gitea", lambda **kw: True)
+    monkeypatch.setattr(st_gitea, "ensure_admin_user", mock.Mock())
+    monkeypatch.setattr(st_gitea, "mint_token", mock.Mock(return_value="t"))
+    monkeypatch.setattr(st_gitea, "create_repo", mock.Mock())
+    monkeypatch.setattr(st_gitea, "push_stack_to_gitea", push)
+
+    st_gitea.provision_gitea(tmp_path, push_to_gitea=True)
+
+    push.assert_called_once()
+    assert push.call_args.kwargs["repo_name"] == tmp_path.name
+    assert push.call_args.kwargs["ssh_key"] is None
+
+
+def test_provision_gitea_push_to_gitea_honors_overrides(tmp_path, monkeypatch):
+    push = mock.Mock()
+    monkeypatch.setattr(st_gitea, "wait_for_gitea", lambda **kw: True)
+    monkeypatch.setattr(st_gitea, "ensure_admin_user", mock.Mock())
+    monkeypatch.setattr(st_gitea, "mint_token", mock.Mock(return_value="t"))
+    monkeypatch.setattr(st_gitea, "create_repo", mock.Mock())
+    monkeypatch.setattr(st_gitea, "push_stack_to_gitea", push)
+
+    st_gitea.provision_gitea(
+        tmp_path, push_to_gitea=True, stack_repo="custom", ssh_key="/k.pub"
+    )
+
+    assert push.call_args.kwargs["repo_name"] == "custom"
+    assert push.call_args.kwargs["ssh_key"] == "/k.pub"
+
+
+# --------------------------------------------------------------------------
+# stack_ssh_url
+# --------------------------------------------------------------------------
+def test_stack_ssh_url():
+    url = st_gitea.stack_ssh_url("myrepo")
+
+    assert url == f"ssh://git@localhost:2222/{st_gitea.ADMIN_USER}/myrepo.git"
+
+
+# --------------------------------------------------------------------------
+# create_repo (named, non-auto-init: the stack-backing variant)
+# --------------------------------------------------------------------------
+def test_create_repo_posts_name_and_auto_init(monkeypatch):
+    urlopen = mock.Mock(return_value=_urlopen_returning(getcode=201))
+    monkeypatch.setattr(st_gitea.urllib.request, "urlopen", urlopen)
+
+    code = st_gitea.create_repo("pw", name="stackrepo", auto_init=False)
+
+    assert code == 201
+    body = json.loads(urlopen.call_args.args[0].data)
+    assert body == {"name": "stackrepo", "auto_init": False, "private": False}
+
+
+# --------------------------------------------------------------------------
+# discover_ssh_keys
+# --------------------------------------------------------------------------
+def test_discover_ssh_keys_explicit(tmp_path):
+    keyfile = tmp_path / "id.pub"
+    keyfile.write_text("ssh-ed25519 AAAA explicit\n")
+
+    keys = st_gitea.discover_ssh_keys(ssh_key=str(keyfile))
+
+    assert keys == ["ssh-ed25519 AAAA explicit"]
+
+
+def test_discover_ssh_keys_from_agent(monkeypatch):
+    run = mock.Mock(
+        return_value=mock.Mock(returncode=0, stdout="ssh-ed25519 AAAA agent\n")
+    )
+    monkeypatch.setattr(st_gitea.subprocess, "run", run)
+
+    keys = st_gitea.discover_ssh_keys()
+
+    assert keys == ["ssh-ed25519 AAAA agent"]
+    run.assert_called_once_with(
+        ["ssh-add", "-L"], capture_output=True, text=True
+    )
+
+
+def test_discover_ssh_keys_falls_back_to_files_when_agent_empty(
+    tmp_path, monkeypatch
+):
+    ssh_dir = tmp_path / ".ssh"
+    ssh_dir.mkdir()
+    (ssh_dir / "id_ed25519.pub").write_text("ssh-ed25519 AAAA file\n")
+    no_ids = mock.Mock(
+        return_value=mock.Mock(returncode=1, stdout="no identities.\n")
+    )
+    monkeypatch.setattr(st_gitea.subprocess, "run", no_ids)
+    monkeypatch.setattr(st_gitea.pathlib.Path, "home", lambda: tmp_path)
+
+    keys = st_gitea.discover_ssh_keys()
+
+    assert keys == ["ssh-ed25519 AAAA file"]
+
+
+def test_discover_ssh_keys_falls_back_when_no_agent(tmp_path, monkeypatch):
+    ssh_dir = tmp_path / ".ssh"
+    ssh_dir.mkdir()
+    (ssh_dir / "id.pub").write_text("ssh-rsa BBBB noagent\n")
+    monkeypatch.setattr(
+        st_gitea.subprocess, "run", mock.Mock(side_effect=OSError("absent"))
+    )
+    monkeypatch.setattr(st_gitea.pathlib.Path, "home", lambda: tmp_path)
+
+    keys = st_gitea.discover_ssh_keys()
+
+    assert keys == ["ssh-rsa BBBB noagent"]
+
+
+# --------------------------------------------------------------------------
+# _key_title
+# --------------------------------------------------------------------------
+def test_key_title_is_prefixed():
+    title = st_gitea._key_title("ssh-ed25519 AAAA me")
+
+    assert title.startswith("soliplex-template-")
+    assert len(title) == len("soliplex-template-") + 12
+
+
+# --------------------------------------------------------------------------
+# upload_ssh_key
+# --------------------------------------------------------------------------
+def test_upload_ssh_key_success(monkeypatch):
+    urlopen = mock.Mock(return_value=_urlopen_returning())
+    monkeypatch.setattr(st_gitea.urllib.request, "urlopen", urlopen)
+
+    st_gitea.upload_ssh_key("ssh-ed25519 AAAA", password="pw", title="t")
+
+    req = urlopen.call_args.args[0]
+    assert req.full_url.endswith("/api/v1/user/keys")
+    assert json.loads(req.data) == {"title": "t", "key": "ssh-ed25519 AAAA"}
+
+
+def test_upload_ssh_key_already_present_is_ignored(monkeypatch):
+    monkeypatch.setattr(
+        st_gitea.urllib.request,
+        "urlopen",
+        mock.Mock(side_effect=_http_error(422)),
+    )
+
+    st_gitea.upload_ssh_key("k", password="pw", title="t")
+
+
+def test_upload_ssh_key_other_error_raises(monkeypatch):
+    monkeypatch.setattr(
+        st_gitea.urllib.request,
+        "urlopen",
+        mock.Mock(side_effect=_http_error(500, b'{"message": "boom"}')),
+    )
+
+    with pytest.raises(st_gitea.GiteaError, match="HTTP 500.*boom"):
+        st_gitea.upload_ssh_key("k", password="pw", title="t")
+
+
+# --------------------------------------------------------------------------
+# _git / current_branch / set_origin / push_initial
+# --------------------------------------------------------------------------
+def test_git_runs_in_project_dir(monkeypatch):
+    run = mock.Mock(return_value="ok")
+    monkeypatch.setattr(st_gitea.subprocess, "run", run)
+
+    result = st_gitea._git("status", project_dir="/stack")
+
+    assert result == "ok"
+    run.assert_called_once_with(
+        ["git", "-C", "/stack", "status"],
+        capture_output=True,
+        text=True,
+        env=None,
+    )
+
+
+def test_current_branch_returns_name(monkeypatch):
+    git = mock.Mock(return_value=mock.Mock(stdout="feature-x\n"))
+    monkeypatch.setattr(st_gitea, "_git", git)
+
+    branch = st_gitea.current_branch("/stack")
+
+    assert branch == "feature-x"
+    git.assert_called_once_with(
+        "rev-parse", "--abbrev-ref", "HEAD", project_dir="/stack"
+    )
+
+
+def test_set_origin_adds_when_absent(monkeypatch):
+    git = mock.Mock(side_effect=[mock.Mock(stdout="upstream\n"), mock.Mock()])
+    monkeypatch.setattr(st_gitea, "_git", git)
+
+    st_gitea.set_origin("/stack", "ssh://x/r.git")
+
+    second = git.call_args_list[1]
+    assert second.args == ("remote", "add", "origin", "ssh://x/r.git")
+    assert second.kwargs == {"project_dir": "/stack"}
+
+
+def test_set_origin_updates_when_present(monkeypatch):
+    git = mock.Mock(side_effect=[mock.Mock(stdout="origin\n"), mock.Mock()])
+    monkeypatch.setattr(st_gitea, "_git", git)
+
+    st_gitea.set_origin("/stack", "ssh://x/r.git")
+
+    second = git.call_args_list[1]
+    assert second.args == ("remote", "set-url", "origin", "ssh://x/r.git")
+
+
+def test_push_initial_pushes_with_ssh_env(monkeypatch):
+    git = mock.Mock(return_value=mock.Mock(returncode=0))
+    monkeypatch.setattr(st_gitea, "_git", git)
+
+    st_gitea.push_initial("/stack", "main")
+
+    call = git.call_args
+    assert call.args == ("push", "-u", "origin", "main")
+    assert call.kwargs["project_dir"] == "/stack"
+    assert "accept-new" in call.kwargs["env"]["GIT_SSH_COMMAND"]
+    assert call.kwargs["env"]["GIT_TERMINAL_PROMPT"] == "0"
+
+
+def test_push_initial_failure_raises(monkeypatch):
+    git = mock.Mock(return_value=mock.Mock(returncode=1, stderr="denied\n"))
+    monkeypatch.setattr(st_gitea, "_git", git)
+
+    with pytest.raises(st_gitea.GiteaError, match="denied"):
+        st_gitea.push_initial("/stack", "main")
+
+
+# --------------------------------------------------------------------------
+# push_stack_to_gitea
+# --------------------------------------------------------------------------
+def test_push_stack_to_gitea_rejects_non_git_dir(tmp_path):
+    with pytest.raises(st_gitea.GiteaError, match="not a git repository"):
+        st_gitea.push_stack_to_gitea(tmp_path, "pw", repo_name="r")
+
+
+def test_push_stack_to_gitea_requires_an_ssh_key(tmp_path, monkeypatch):
+    (tmp_path / ".git").mkdir()
+    monkeypatch.setattr(st_gitea, "discover_ssh_keys", lambda **kw: [])
+
+    with pytest.raises(st_gitea.GiteaError, match="no SSH public key"):
+        st_gitea.push_stack_to_gitea(tmp_path, "pw", repo_name="r")
+
+
+def test_push_stack_to_gitea_uploads_creates_sets_origin_pushes(
+    tmp_path, monkeypatch
+):
+    (tmp_path / ".git").mkdir()
+    upload = mock.Mock()
+    create = mock.Mock()
+    set_origin = mock.Mock()
+    push = mock.Mock()
+    monkeypatch.setattr(
+        st_gitea, "discover_ssh_keys", lambda **kw: ["k1", "k2"]
+    )
+    monkeypatch.setattr(st_gitea, "upload_ssh_key", upload)
+    monkeypatch.setattr(st_gitea, "create_repo", create)
+    monkeypatch.setattr(st_gitea, "set_origin", set_origin)
+    monkeypatch.setattr(st_gitea, "current_branch", lambda p: "main")
+    monkeypatch.setattr(st_gitea, "push_initial", push)
+
+    st_gitea.push_stack_to_gitea(tmp_path, "pw", repo_name="myrepo")
+
+    assert upload.call_count == 2
+    create.assert_called_once_with("pw", name="myrepo", auto_init=False)
+    set_origin.assert_called_once_with(
+        tmp_path, st_gitea.stack_ssh_url("myrepo")
+    )
+    push.assert_called_once_with(tmp_path, "main")
