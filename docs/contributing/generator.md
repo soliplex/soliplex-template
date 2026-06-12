@@ -48,4 +48,5 @@ configuration.
   [`skill/SKILL.md`](https://github.com/soliplex/soliplex-template/blob/main/skill/SKILL.md)
 
 Once generated, the new project runs exactly like a clone — follow
-[Installation](installation.md) from the secrets step onward.
+[Installation](../users/getting-started/installation.md) from the secrets step
+onward.

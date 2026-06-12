@@ -380,6 +380,55 @@ def test_t_gitignore_missing_block_raises():
         rst.t_gitignore("/.env\n/tmp/\n")
 
 
+def test_t_user_doc():
+    text = (
+        "# Title\n"
+        "\n"
+        "## Section\n"
+        "\n"
+        "Open <http://localhost:9000>. Token `${INGESTER_TOKEN:-secret}`.\n"
+        "\n"
+        "<!-- if:tui -->\n"
+        "tui only\n"
+        "<!-- endif -->\n"
+    )
+    params = [("http://localhost:9000>", "http://localhost:${nginx_http}>")]
+
+    out = rst.t_user_doc(text, params)
+
+    # H1 left alone; H2+ wrapped so Mako doesn't read '##' as a comment.
+    assert "# Title\n" in out
+    assert "<%text>## Section</%text>" in out
+    # Concrete default -> live ${...}; literal ${...} escaped through.
+    assert "Open <http://localhost:${nginx_http}>." in out
+    assert "Token `<%text>${INGESTER_TOKEN:-secret}</%text>`." in out
+    # HTML-comment conditional fences become Mako control lines.
+    assert "% if include_tui:\ntui only\n% endif\n" in out
+
+
+def test_t_user_doc_strips_site_only_block():
+    text = (
+        "# Title\n"
+        "\n"
+        "<!-- site-only -->\n"
+        '!!! note "About this page"\n'
+        "    Repo-site banner.\n"
+        "<!-- endsite-only -->\n"
+        "\n"
+        "Body paragraph.\n"
+    )
+
+    out = rst.t_user_doc(text, [])
+
+    # The banner (and its trailing blank line) is gone; the body is untouched.
+    assert out == "# Title\n\nBody paragraph.\n"
+
+
+def test_t_user_doc_missing_anchor_raises():
+    with pytest.raises(rst.RefreshError, match="expected to find"):
+        rst.t_user_doc("nothing\n", [("absent", "${x}")])
+
+
 # --------------------------------------------------------------------------
 # tracked_files
 # --------------------------------------------------------------------------
@@ -434,6 +483,52 @@ def test_build_into_happy_path(tmp_path, monkeypatch):
     assert (dest / "d.txt.mako").read_text() == "MAKO:derive me\n"
     assert not (dest / "d.txt").exists()
     assert (dest / "authored.md").read_text() == "authored body\n"
+
+
+def test_build_into_derives_user_docs(tmp_path, monkeypatch):
+    src = tmp_path / "repo"
+    (src / "docs" / "users" / "operations").mkdir(parents=True)
+    (src / "docs" / "users" / "index.md").write_text(
+        "# Home\n", encoding="utf-8"
+    )
+    (src / "docs" / "users" / "operations" / "rag.md").write_text(
+        "## RAG\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(rst, "REPO", src)
+    monkeypatch.setattr(rst, "VERBATIM_EDITS", {})
+    monkeypatch.setattr(rst, "DERIVED", {})
+    monkeypatch.setattr(rst, "AUTHORED", {})
+    monkeypatch.setattr(rst, "USER_DOC_PARAMS", {})
+    dest = tmp_path / "dest"
+
+    derived, authored = rst._build_into(dest, [])
+
+    # Both user docs count as derived; the users/ segment is stripped so a
+    # project gets docs/<...>.md.mako.
+    assert (derived, authored) == (2, 0)
+    assert (dest / "docs" / "index.md.mako").read_text() == "# Home\n"
+    assert (
+        dest / "docs" / "operations" / "rag.md.mako"
+    ).read_text() == "<%text>## RAG</%text>\n"
+    assert not (dest / "docs" / "users").exists()
+
+
+def test_build_into_user_doc_error_is_wrapped(tmp_path, monkeypatch):
+    src = tmp_path / "repo"
+    (src / "docs" / "users").mkdir(parents=True)
+    (src / "docs" / "users" / "bad.md").write_text("x\n", encoding="utf-8")
+    monkeypatch.setattr(rst, "REPO", src)
+    monkeypatch.setattr(rst, "VERBATIM_EDITS", {})
+    monkeypatch.setattr(rst, "DERIVED", {})
+    monkeypatch.setattr(rst, "AUTHORED", {})
+    monkeypatch.setattr(
+        rst, "USER_DOC_PARAMS", {"bad.md": [("absent", "${x}")]}
+    )
+
+    with pytest.raises(
+        rst.RefreshError, match="docs/users/bad.md: expected to find"
+    ):
+        rst._build_into(tmp_path / "dest", [])
 
 
 def test_build_into_verbatim_source_missing(tmp_path, monkeypatch):
