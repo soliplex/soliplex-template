@@ -1,0 +1,76 @@
+name: Docs checks
+
+# Docs-only changes are skipped by the other workflows' path filters, so this
+# gives the docs their own checks:
+#
+# - pymarkdown: the very same hook as pre-commit (revision pinned in
+#   .pre-commit-config.yaml, rules in pyproject.toml [tool.pymarkdown]), so a
+#   local `pre-commit run pymarkdown` and this job stay in lock-step.
+# - build: `zensical build --strict` as a smoke test -- it aborts on warnings
+#   (e.g. unresolved links / footnotes) that the linter does not catch. The
+#   built site is thrown away; publishing is docs.yaml's job (on push to main).
+
+on:
+  pull_request:
+    paths:
+      - '**/*.md'
+      - 'zensical.toml'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.pre-commit-config.yaml'
+      - '.github/workflows/docs-lint.yaml'
+  push:
+    branches: [main]
+    paths:
+      - '**/*.md'
+      - 'zensical.toml'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.pre-commit-config.yaml'
+      - '.github/workflows/docs-lint.yaml'
+  workflow_dispatch:
+
+# Cancel superseded runs on the same ref (e.g. rapid PR pushes).
+concurrency:
+  group: docs-lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pymarkdown:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version-file: "pyproject.toml"
+
+      # Runs `pre-commit run pymarkdown --all-files`, using the repo's
+      # .pre-commit-config.yaml (hook pin) + pyproject.toml (rules).
+      - uses: pre-commit/action@v3.0.1
+        with:
+          extra_args: pymarkdown --all-files
+
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version-file: "pyproject.toml"
+
+      # The 'dev' group provides zensical (pinned via uv.lock).
+      - name: Install dependencies
+        run: uv sync --frozen --group dev
+
+      # Smoke test only: --strict aborts on warnings (e.g. unresolved links or
+      # footnotes). The site/ output is discarded -- this job never publishes.
+      - name: Build docs (strict)
+        run: uv run zensical build --strict
