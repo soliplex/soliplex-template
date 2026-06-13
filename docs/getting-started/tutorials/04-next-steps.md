@@ -2,7 +2,7 @@
 icon: lucide/layers
 ---
 
-# Additional topics
+# Next steps
 
 You've finished the core walkthroughs — [First steps](01-first-steps.md),
 [Populate RAG](02-populate-rag.md), and

@@ -64,7 +64,7 @@ An administrator reviews these requests, creates the room with the
 `soliplex-concierge-admin` skill. See
 [Resolve room requests](concierge-admin.md).
 
-Back to [Additional topics](04-additional-topics.md).
+Back to [Next steps](04-next-steps.md).
 
 [^1]: The concierge can file against any Gitea repository, so your stack need
     not run its own `gitea` service at all. If you use an **external** Gitea

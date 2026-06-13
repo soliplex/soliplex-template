@@ -28,5 +28,5 @@ uses the ingester's.
 
 ## Where next
 
-Back to [Additional topics](04-additional-topics.md) for the other optional
+Back to [Next steps](04-next-steps.md) for the other optional
 walkthroughs.

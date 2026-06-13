@@ -72,4 +72,4 @@ stack now runs code you shipped through its own review workflow.
 
 The [Concierge room](concierge-room.md) walkthrough builds on this one — adding
 an `about-<project>` room where users request new rooms that land as Gitea
-issues. See also the other [Additional topics](04-additional-topics.md).
+issues. See also the other [Next steps](04-next-steps.md).

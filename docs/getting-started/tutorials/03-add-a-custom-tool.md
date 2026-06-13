@@ -87,7 +87,7 @@ git commit -m "Add a farewell tool (with a test) to the custom room"
 
 ## Where next
 
-That completes the core series: [Additional topics](04-additional-topics.md)
+That completes the core series: [Next steps](04-next-steps.md)
 collects the optional walkthroughs you can take from here.
 
 Related: [Work with Gitea](work-with-gitea.md) ships a change like the one you

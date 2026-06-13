@@ -81,7 +81,7 @@ The admin skill also resolves *private-room access* requests — granting or
 denying a user access to an existing room — which work the same way: review,
 act, and close.
 
-Back to [Additional topics](04-additional-topics.md).
+Back to [Next steps](04-next-steps.md).
 
 [^1]: You can let the push close the request instead of doing step 4: add a
     closing keyword to the commit message — e.g. a `Closes #<number>` line — and
