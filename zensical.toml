@@ -21,11 +21,17 @@ Copyright &copy; Soliplex
 # Explicit navigation. Pages not listed here still build, but the sidebar
 # order/grouping below is the source of truth.
 # Reference: https://zensical.org/docs/setup/navigation/
-# Two audiences (see docs/index.md): `users/` documents a generated stack (and
-# is the source the shipped docs/*.md.mako are derived from); `contributing/`
-# documents developing this template repo itself.
+# Most pages under `docs/users/` are the source the shipped docs/*.md.mako are
+# derived from (they document a generated stack). `getting-started/generator.md`
+# is the exception: it documents *creating* a stack, so it lives with the user
+# docs here but is repo-only (USER_DOCS_NOSHIP in refresh_skill_template.py) --
+# a generated project doesn't need a "how to generate" page. A "Developing the
+# template" section will join this nav once those docs are written.
 nav = [
     { "Home" = "index.md" },
+    { "Create a stack" = [
+        "users/getting-started/generator.md",
+    ] },
     { "Using a generated stack" = [
         "users/getting-started/installation.md",
         "users/architecture/services.md",
@@ -35,9 +41,6 @@ nav = [
         "users/operations/rag.md",
         "users/operations/ingester.md",
         "users/custom-package.md",
-    ] },
-    { "Working on the template" = [
-        "contributing/generator.md",
     ] },
 ]
 

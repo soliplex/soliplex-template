@@ -18,8 +18,14 @@ frontend is fetched from a `soliplex/frontend` GitHub release at image-build
 time, and `haiku-rag` / `docling-serve` use upstream images.
 
 You don't run this repository directly. You generate your **own** stack from it
-with the bundled `soliplex-template` Agent Skill, then run and operate that
-generated project. The documentation is split to match:
+with the bundled `soliplex-template` Agent Skill (or the generator script), then
+run and operate that generated project.
+
+## Create a stack
+
+| Page | What's there |
+|------|--------------|
+| [Generate a project](users/getting-started/generator.md) | Scaffold a tailored stack with the skill, or by running the generator directly. |
 
 ## Using a generated stack
 
@@ -36,12 +42,3 @@ up and operate it day to day:
 | [RAG pipeline](users/operations/rag.md) | The vector store, the ingester, and adding documents. |
 | [Ingester control plane](users/operations/ingester.md) | The control-plane API and its auth token. |
 | [Custom Python package](users/custom-package.md) | The installable `src/` library wired into the backend. |
-
-## Working on the template
-
-Documentation for developing this repository — the generator skill and how the
-embedded template is produced:
-
-| Page | What's there |
-|------|--------------|
-| [Generate a custom project](contributing/generator.md) | Scaffold a tailored stack with the bundled skill. |

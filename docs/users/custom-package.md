@@ -11,7 +11,7 @@ icon: lucide/package
 <!-- endsite-only -->
 
 This project is an installable Python library: your own code lives under
-`src/soliplex/` and its tests under `tests/unit/`.
+`src/myproject/` and its tests under `tests/unit/`.
 
 ```bash
 uv sync                 # create/refresh the dev environment (installs pytest)
@@ -30,17 +30,17 @@ here is importable by **dotted name** from the Soliplex config under
 
 Two examples are referenced from the config so you can see the pattern:
 
-- a tool, `soliplex.tools.greeting`, referenced from
+- a tool, `myproject.tools.greeting`, referenced from
   `backend/environment/rooms/custom/room_config.yaml`;
-- a FastAPI router, `soliplex.views.router`, registered via
+- a FastAPI router, `myproject.views.router`, registered via
   `app_router_operations` in `backend/environment/installation.yaml`.
 
 Dotted names into this package can equally be used in the `installation.yaml`
 `meta:` section (tool/agent/skill config classes, MCP wrappers, secret sources)
-— see the commented `soliplex.*` examples there.
+— see the commented `myproject.*` examples there.
 
 ## Making it your own
 
-Add modules under `src/soliplex/`, reference them by dotted name from
+Add modules under `src/myproject/`, reference them by dotted name from
 the config, and add tests under `tests/unit/`. Delete the demonstration
 `custom` room once you have your own.
