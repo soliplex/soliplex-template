@@ -2,7 +2,13 @@
 icon: lucide/rocket
 ---
 
-# ${project_name}
+# myproject
+
+<!-- site-only -->
+!!! note "About this page"
+    This documents a stack **generated from `soliplex-template`**. A generated
+    project ships its own copy of this page without this note.
+<!-- endsite-only -->
 
 A Soliplex Docker Compose stack — nginx + Soliplex backend + Flutter frontend +
 haiku-ingester + Postgres, plus docling-serve and a TUI — scaffolded from the
@@ -12,7 +18,7 @@ This site documents *this* project. The quickest path to a running stack is the
 `README.md` at the project root; for the full walkthrough see
 [Installation](installation.md).
 
-<%text>## Services</%text>
+## Services
 
 - **nginx** — serves the Flutter web frontend and reverse-proxies the API.
 - **backend** — the Soliplex server (`soliplex-cli serve`).
@@ -20,17 +26,17 @@ This site documents *this* project. The quickest path to a running stack is the
 - **docling-serve** — stateless document converter.
 - **postgres** — thread persistence and authorization policy.
 
-<%text>## Exposed ports</%text>
+## Exposed ports
 
 | Service | Host port |
 |---------|-----------|
-| nginx (HTTP) | ${nginx_http} |
-| nginx (HTTPS) | ${nginx_https} |
-| haiku-ingester | ${ingester_port} |
-| docling-serve | ${docling_port} |
-| postgres | ${postgres_port} |
+| nginx (HTTP) | 9000 |
+| nginx (HTTPS) | 9443 |
+| haiku-ingester | 8765 |
+| docling-serve | 5001 |
+| postgres | 5432 |
 
-<%text>## Documentation map</%text>
+## Documentation map
 
 - **[Installation](installation.md)** — generate secrets,
   confirm `OLLAMA_BASE_URL`, bring the stack up.
@@ -46,4 +52,4 @@ This site documents *this* project. The quickest path to a running stack is the
 - **[Ingester control plane](operations/ingester.md)** — the control-plane API
   and its auth token.
 - **[Custom Python package](custom-package.md)** — the installable
-  `src/${package_name}` library.
+  `src/myproject` library.
