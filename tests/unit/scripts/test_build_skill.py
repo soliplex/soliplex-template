@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import importlib.util
 import pathlib
+from unittest import mock
 
 import pytest
 from soliplex_skills import build
@@ -25,6 +26,14 @@ _MODULE_PATH = (
 _spec = importlib.util.spec_from_file_location("build_skill", _MODULE_PATH)
 bs = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(bs)
+
+
+@pytest.fixture(autouse=True)
+def run(monkeypatch):
+    """Stub the refresh subprocess so unit tests never shell out to uv."""
+    run = mock.Mock()
+    monkeypatch.setattr(bs.subprocess, "run", run)
+    return run
 
 
 @pytest.fixture
@@ -48,6 +57,18 @@ def test_main_delegates_to_library(build_skill, capsys):
         ("soliplex-template", bs.SKILLS_DIR, bs.DIST, "abc1234")
     ]
     assert "built & validated" in capsys.readouterr().out
+
+
+def test_main_refreshes_template_before_build(run, build_skill):
+    rc = bs.main([])
+
+    assert rc == 0
+    # The embedded template is regenerated (via `uv run refresh`) before the
+    # library assembles the skill -- it is a gitignored build artifact (#135).
+    run.assert_called_once_with(
+        ["uv", "run", str(bs.REFRESH_SCRIPT)], check=True
+    )
+    assert build_skill  # and the build still ran
 
 
 def test_main_defaults_commit_to_none(build_skill):

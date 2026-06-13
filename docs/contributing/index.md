@@ -36,16 +36,21 @@ exemplars by `scripts/refresh_skill_template.py`:
   `README.md.mako`);
 - every generated `.mako` is render-checked with Mako.
 
-So the workflow for changing the stack is to **edit the exemplar, then
-regenerate and commit both**:
+That generated tree is a **build artifact, not source**: it is gitignored and
+**not committed**. `scripts/build_skill.py` regenerates it before assembling the
+skill, and the functional tests regenerate it before they run, so it always
+reflects the current exemplars — there is nothing to keep in sync by hand.
+
+So the workflow for changing the stack is just to **edit the exemplar** (the
+real files at the repo root). To preview the generated template, or to drive the
+generator from a checkout, regenerate it explicitly:
 
 ```bash
-uv run scripts/refresh_skill_template.py   # regenerate the embedded template
+uv run scripts/refresh_skill_template.py   # (re)generate the embedded template
 ```
 
-The regenerated `skills/soliplex-template/assets/template/` is expected to stay
-in sync with the exemplar, so commit it alongside your change. Build and
-validate the packaged skill with `uv run scripts/build_skill.py`.
+Build and validate the packaged skill (which refreshes first) with
+`uv run scripts/build_skill.py`.
 
 ## Editing the documentation
 
@@ -103,5 +108,6 @@ Pages that should **not** ship at all — the
 simply live outside `docs/users/` (under `docs/getting-started/` and
 `docs/contributing/`), so the derive step never touches them.
 
-As with the stack files, after editing a `docs/users/` page run
-`refresh_skill_template.py` and commit the regenerated `.mako`.
+As with the stack files, the generated `.mako` are not committed — just edit
+the `docs/users/` `.md`; the build and the functional tests regenerate the
+template from it.

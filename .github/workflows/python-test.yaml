@@ -15,24 +15,50 @@ on:
   push:
     branches:
       - main
+    # The functional tests regenerate the embedded template (a build artifact,
+    # not committed -- #135) from the repo exemplars and docs/users/, so they
+    # must run when any generation source changes, not just on the skill tree.
     paths:
       - 'pyproject.toml'
       - 'uv.lock'
       - 'scripts/**'
-      - 'skill/scripts/**'
-      - 'skill/assets/template/**'
+      - 'skills/soliplex-template/**'
+      - 'src/soliplex_template/**'
       - 'tests/**'
+      - 'docs/users/**'
+      - 'docker-compose.yml'
+      - 'backend/**'
+      - 'nginx/**'
+      - 'postgres/**'
+      - 'haiku.rag/**'
+      - 'docling-serve/**'
+      - 'tui/**'
+      - 'rag/**'
+      - 'CLAUDE.md'
       - '.github/workflows/python-test.yaml'
   pull_request:
     branches:
       - main
+    # The functional tests regenerate the embedded template (a build artifact,
+    # not committed -- #135) from the repo exemplars and docs/users/, so they
+    # must run when any generation source changes, not just on the skill tree.
     paths:
       - 'pyproject.toml'
       - 'uv.lock'
       - 'scripts/**'
-      - 'skill/scripts/**'
-      - 'skill/assets/template/**'
+      - 'skills/soliplex-template/**'
+      - 'src/soliplex_template/**'
       - 'tests/**'
+      - 'docs/users/**'
+      - 'docker-compose.yml'
+      - 'backend/**'
+      - 'nginx/**'
+      - 'postgres/**'
+      - 'haiku.rag/**'
+      - 'docling-serve/**'
+      - 'tui/**'
+      - 'rag/**'
+      - 'CLAUDE.md'
       - '.github/workflows/python-test.yaml'
   workflow_dispatch:
 
