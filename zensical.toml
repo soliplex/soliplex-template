@@ -32,6 +32,7 @@ nav = [
     ] },
     { "Tutorials" = [
         "getting-started/tutorials/01-first-steps.md",
+        "getting-started/tutorials/02-populate-rag.md",
     ] },
     { "Using a generated stack" = [
         "users/installation.md",

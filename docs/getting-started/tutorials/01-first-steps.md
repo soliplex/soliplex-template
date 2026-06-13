@@ -71,5 +71,5 @@ code, not just stock Soliplex.
 
 ## Where next
 
-The next tutorial in this series, *Populate RAG*, feeds a document set into the
-stack and asks questions grounded in it.
+The next tutorial, [Populate RAG](02-populate-rag.md), feeds a document set into
+the stack and asks questions grounded in it.
