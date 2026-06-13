@@ -61,8 +61,8 @@ there, labelled `new-room`, ready for an administrator to act on.
 
 An administrator reviews these requests, creates the room with the
 `soliplex-template` skill, and resolves the issue — using the
-`soliplex-concierge-admin` skill. That side is covered on a separate page
-(coming soon).
+`soliplex-concierge-admin` skill. See
+[Resolve room requests](concierge-admin.md).
 
 Back to [Additional topics](04-additional-topics.md).
 

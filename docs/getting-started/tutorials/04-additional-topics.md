@@ -17,3 +17,6 @@ independent; pick whichever fits what you're building.
   [Add a custom tool](03-add-a-custom-tool.md)).
 - [Concierge room](concierge-room.md) — add an `about-<project>` room where
   users request new rooms that land as Gitea issues (builds on Work with Gitea).
+- [Resolve room requests](concierge-admin.md) — the administrator side: review
+  the request issues, create the room, and close them (builds on Concierge
+  room).
