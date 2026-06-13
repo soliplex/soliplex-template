@@ -4,8 +4,8 @@ icon: lucide/network
 
 # Service graph
 
-The stack is defined in `docker-compose.yml`. Five services cooperate; two of
-them share the RAG vector store through a bind mount.
+The stack is defined in `docker-compose.yml`. Several services cooperate; two
+of them share the RAG vector store through a bind mount.
 
 ```mermaid
 graph LR
@@ -56,8 +56,29 @@ the backend image — to run it from the command line, see
 
 <%text>## postgres</%text>
 
-Creates two databases on first boot via `postgres/config/init.sh`:
-`${agui_db}` (thread persistence) and `${authz_db}` (authorization policy).
+Creates the stack's databases on first boot via `postgres/config/init.sh`:
+
+- `${agui_db}` (thread persistence)
+- `${authz_db}` (authorization policy)
+- `soliplex_ingester` (the haiku-ingester job queue)
+% if include_gitea:
+- `soliplex_gitea` (Gitea's backing store)
+% endif
+
 Each gets a dedicated low-privilege role whose password is a Docker secret.
+
 Init runs **only on an empty data volume**; to re-run it,
 `docker compose down -v` first.
+
+% if include_gitea:
+
+<%text>## gitea</%text>
+
+A local [Gitea](https://about.gitea.com/) instance (rootless image), backed by
+the `soliplex_gitea` Postgres database. nginx reverse-proxies it under `/gitea/`
+on the HTTPS port — open <https://${server_name}:${nginx_https}/gitea/> — and its
+built-in SSH and HTTP are published on host ports `2222` and `3000`. State lives
+in the `gitea_data` / `gitea_config` named volumes. Provision it after first
+boot with `scripts/init_gitea.py` — see
+[Provision Gitea](../getting-started/installation.md#provision-gitea).
+% endif

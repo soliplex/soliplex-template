@@ -653,8 +653,12 @@ USER_DOC_PARAMS = {
         ),
         ("http://localhost:9000>", "http://localhost:${nginx_http}>"),
         (
-            "https://soliplex.localhost:9443/tui/",
+            "https://myproject.localhost:9443/tui/",
             "https://${server_name}:${nginx_https}/tui/",
+        ),
+        (
+            "https://myproject.localhost:9443/gitea/",
+            "https://${server_name}:${nginx_https}/gitea/",
         ),
     ],
     "architecture/services.md": [
@@ -662,11 +666,15 @@ USER_DOC_PARAMS = {
         ("host port 9443 with", "host port ${nginx_https} with"),
         ("host\nport 8765.", "host\nport ${ingester_port}."),
         (
-            "https://soliplex.localhost:9443/tui/",
+            "https://myproject.localhost:9443/tui/",
             "https://${server_name}:${nginx_https}/tui/",
         ),
         ("`soliplex_agui` (thread", "`${agui_db}` (thread"),
         ("`soliplex_authz` (authorization", "`${authz_db}` (authorization"),
+        (
+            "https://myproject.localhost:9443/gitea/",
+            "https://${server_name}:${nginx_https}/gitea/",
+        ),
     ],
     "architecture/backend.md": [
         (
