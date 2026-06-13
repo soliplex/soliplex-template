@@ -86,5 +86,5 @@ uses the ingester's.
 
 ## Where next
 
-The next tutorial, [Work with Gitea](03-work-with-gitea.md), edits the stack's
-own code and ships the change through a pull request.
+The next tutorial, [Add a custom tool](03-add-a-custom-tool.md), extends the
+stack with a tool of your own, exercised in a room and covered by a test.

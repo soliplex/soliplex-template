@@ -33,7 +33,8 @@ nav = [
     { "Tutorials" = [
         "getting-started/tutorials/01-first-steps.md",
         "getting-started/tutorials/02-populate-rag.md",
-        "getting-started/tutorials/03-work-with-gitea.md",
+        "getting-started/tutorials/03-add-a-custom-tool.md",
+        "getting-started/tutorials/04-work-with-gitea.md",
     ] },
     { "Using a generated stack" = [
         "users/installation.md",
