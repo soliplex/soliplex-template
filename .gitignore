@@ -60,3 +60,9 @@ backend/uploads/threads/*
 # ignore its contents.
 backend/sandbox/workdirs/*
 !backend/sandbox/workdirs/README.md
+
+# The embedded skill template tree is a BUILD ARTIFACT, generated from the repo
+# exemplars by scripts/refresh_skill_template.py. It is regenerated at skill
+# build time (scripts/build_skill.py) and before the functional tests, so it is
+# not committed. See issue #135.
+skills/soliplex-template/assets/template/
