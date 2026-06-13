@@ -18,8 +18,22 @@ on:
     types: [published]
   push:
     branches: [main]
+    # build_skill.py regenerates the embedded template (a build artifact, not
+    # committed -- #135) from the repo exemplars and docs/users/, so republish
+    # when any generation source changes, not just on the skill tree.
     paths:
-      - 'skill/**'
+      - 'skills/soliplex-template/**'
+      - 'src/soliplex_template/**'
+      - 'docs/users/**'
+      - 'docker-compose.yml'
+      - 'backend/**'
+      - 'nginx/**'
+      - 'postgres/**'
+      - 'haiku.rag/**'
+      - 'docling-serve/**'
+      - 'tui/**'
+      - 'rag/**'
+      - 'CLAUDE.md'
       - 'scripts/build_skill.py'
       - 'scripts/refresh_skill_template.py'
       - '.github/workflows/build-skill.yaml'

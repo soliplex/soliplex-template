@@ -5,8 +5,12 @@
 # ///
 """Assemble and validate the soliplex-template skill into dist/.
 
-Thin wrapper over ``soliplex_skills.build.build_skill``:
+First regenerates the embedded template tree (a build artifact, gitignored --
+see issue #135), then is a thin wrapper over
+``soliplex_skills.build.build_skill``:
 
+- runs ``scripts/refresh_skill_template.py`` to (re)generate
+  ``skills/soliplex-template/assets/template/`` from the repo exemplars
 - copies ``skills/soliplex-template/`` to ``dist/soliplex-template/``
 - stamps ``SKILL.md`` with the source commit (``--commit``, default git HEAD)
 - validates with the ``skills-ref`` library.
@@ -20,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import pathlib
+import subprocess
 import sys
 
 from soliplex_skills import build
@@ -28,6 +33,17 @@ SKILL_NAME = "soliplex-template"
 REPO_DIR = pathlib.Path(__file__).resolve().parent.parent
 SKILLS_DIR = REPO_DIR / "skills"
 DIST = REPO_DIR / "dist"
+REFRESH_SCRIPT = REPO_DIR / "scripts" / "refresh_skill_template.py"
+
+
+def refresh_template() -> None:
+    """Regenerate the gitignored embedded template before assembling.
+
+    The template under ``skills/soliplex-template/assets/template/`` is not
+    committed (issue #135), so generate it fresh here. Run via ``uv run`` so
+    the refresh script's own PEP 723 dependency (mako) is resolved.
+    """
+    subprocess.run(["uv", "run", str(REFRESH_SCRIPT)], check=True)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -39,6 +55,8 @@ def main(argv: list[str] | None = None) -> int:
         help="Commit to stamp into SKILL.md metadata (default: git HEAD).",
     )
     args = parser.parse_args(argv)
+
+    refresh_template()
 
     try:
         out = build.build_skill(

@@ -125,7 +125,7 @@ def docker_daemon_required(docker_required):
 # Generate the project once for the module.
 # --------------------------------------------------------------------------
 @pytest.fixture(scope="module")
-def generated_project(tmp_path_factory):
+def generated_project(tmp_path_factory, refresh_embedded_template):
     """Run the real generator (subprocess) and yield ``(out, params)``."""
     missing = [t for t in _GEN_TOOLS if shutil.which(t) is None]
     if missing:
@@ -627,7 +627,9 @@ def test_docker_compose_config_valid(generated_project, docker_required):
 
 
 @pytest.mark.needs_docker
-def test_include_tui_renders_valid_compose(tmp_path, docker_required):
+def test_include_tui_renders_valid_compose(
+    tmp_path, docker_required, refresh_embedded_template
+):
     missing = [t for t in _GEN_TOOLS if shutil.which(t) is None]
     if missing:
         pytest.skip(f"generation needs {', '.join(_GEN_TOOLS)}")

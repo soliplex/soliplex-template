@@ -227,7 +227,12 @@ class GenError(Exception):
 
     @classmethod
     def template_not_found(cls, path):
-        return cls(f"embedded template not found at {path}")
+        return cls(
+            f"embedded template not found at {path}; if running from a "
+            "soliplex-template checkout, run "
+            "scripts/refresh_skill_template.py to generate it "
+            "(it is a gitignored build artifact)"
+        )
 
     @classmethod
     def out_not_empty(cls, out):
