@@ -15,5 +15,5 @@ independent; pick whichever fits what you're building.
 - [Work with Gitea](work-with-gitea.md) — ship a code change through a pull
   request hosted by the stack's own Gitea (extends
   [Add a custom tool](03-add-a-custom-tool.md)).
-- Concierge room *(coming soon)* — let users request new rooms that land as
-  Gitea issues for an administrator to fulfil (builds on Work with Gitea).
+- [Concierge room](concierge-room.md) — add an `about-<project>` room where
+  users request new rooms that land as Gitea issues (builds on Work with Gitea).

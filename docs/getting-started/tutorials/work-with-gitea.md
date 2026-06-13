@@ -70,6 +70,6 @@ stack now runs code you shipped through its own review workflow.
 
 ## Where next
 
-A *concierge room* walkthrough — letting users request new rooms that land as
-Gitea issues for an administrator to fulfil — builds on this one (coming soon).
-Meanwhile, see the other [Additional topics](04-additional-topics.md).
+The [Concierge room](concierge-room.md) walkthrough builds on this one — adding
+an `about-<project>` room where users request new rooms that land as Gitea
+issues. See also the other [Additional topics](04-additional-topics.md).

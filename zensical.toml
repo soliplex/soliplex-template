@@ -37,6 +37,7 @@ nav = [
         "getting-started/tutorials/04-additional-topics.md",
         "getting-started/tutorials/separate-rag-database.md",
         "getting-started/tutorials/work-with-gitea.md",
+        "getting-started/tutorials/concierge-room.md",
     ] },
     { "Using a generated stack" = [
         "users/installation.md",
