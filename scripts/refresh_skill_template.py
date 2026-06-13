@@ -604,6 +604,133 @@ DERIVED = {
 }
 
 # --------------------------------------------------------------------------
+# User-facing docs: derived from authoritative Markdown under docs/users/.
+#
+# The shipped docs/*.md.mako are NOT authored as string literals here; they are
+# DERIVED from plain Markdown that lives under the repo's docs/users/ tree --
+# one source of truth, the same repo->template derivation used for
+# docker-compose.yml et al. The authoritative .md reads cleanly on the repo's
+# own docs site (concrete default values; conditional blocks fenced in HTML
+# comments that render to nothing), and t_user_doc() turns it into the
+# parameterized, conditional Mako the generator consumes.
+#
+# docs/ is excluded from the verbatim copy (see EXCLUDE_PATHSPECS), so this
+# step reads docs/users/ straight from the repo. Repo-only doc trees -- the
+# getting-started page (docs/getting-started/, how to *create* a stack) and the
+# contributing docs (docs/contributing/) -- live outside docs/users/, so they
+# are never derived and never shipped.
+USER_DOCS_SRC = "docs/users"
+
+# Per-doc parameter substitutions: concrete default value -> live Mako ${...}.
+# Keyed by the doc's path relative to docs/users/ (posix). Contextual anchors,
+# asserted via repl(); a doc absent here (or with []) is parameter-free.
+USER_DOC_PARAMS = {
+    "index.md": [
+        ("# myproject", "# ${project_name}"),
+        ("| nginx (HTTP) | 9000 |", "| nginx (HTTP) | ${nginx_http} |"),
+        ("| nginx (HTTPS) | 9443 |", "| nginx (HTTPS) | ${nginx_https} |"),
+        (
+            "| haiku-ingester | 8765 |",
+            "| haiku-ingester | ${ingester_port} |",
+        ),
+        ("| docling-serve | 5001 |", "| docling-serve | ${docling_port} |"),
+        ("| postgres | 5432 |", "| postgres | ${postgres_port} |"),
+        ("`src/myproject`", "`src/${package_name}`"),
+    ],
+    "installation.md": [
+        ("| `9000` |", "| `${nginx_http}` |"),
+        ("| `9443` |", "| `${nginx_https}` |"),
+        ("| `8765` |", "| `${ingester_port}` |"),
+        ("| `5001` |", "| `${docling_port}` |"),
+        ("| `5432` |", "| `${postgres_port}` |"),
+        (
+            "http://localhost:8765/health",
+            "http://localhost:${ingester_port}/health",
+        ),
+        ("http://localhost:9000>", "http://localhost:${nginx_http}>"),
+        (
+            "https://myproject.localhost:9443/tui/",
+            "https://${server_name}:${nginx_https}/tui/",
+        ),
+        (
+            "https://myproject.localhost:9443/gitea/",
+            "https://${server_name}:${nginx_https}/gitea/",
+        ),
+    ],
+    "architecture/services.md": [
+        ("|9000/9443|", "|${nginx_http}/${nginx_https}|"),
+        ("host port 9443 with", "host port ${nginx_https} with"),
+        ("host\nport 8765.", "host\nport ${ingester_port}."),
+        (
+            "https://myproject.localhost:9443/tui/",
+            "https://${server_name}:${nginx_https}/tui/",
+        ),
+        ("`soliplex_agui` (thread", "`${agui_db}` (thread"),
+        ("`soliplex_authz` (authorization", "`${authz_db}` (authorization"),
+        (
+            "https://myproject.localhost:9443/gitea/",
+            "https://${server_name}:${nginx_https}/gitea/",
+        ),
+    ],
+    "architecture/backend.md": [
+        (
+            "soliplex >= 0.68, < 0.69",
+            "soliplex ${soliplex_backend_constraint}",
+        ),
+    ],
+    "operations/rag.md": [
+        ("`rag/docs/`", "`${docs_dir}/`"),
+        ("host port 8765 —", "host port ${ingester_port} —"),
+    ],
+    "operations/ingester.md": [
+        ("localhost:8765/stats", "localhost:${ingester_port}/stats"),
+    ],
+    "custom-package.md": [
+        ("`src/myproject/`", "`src/${package_name}/`"),
+        ("`myproject.tools.greeting`", "`${package_name}.tools.greeting`"),
+        ("`myproject.views.router`", "`${package_name}.views.router`"),
+        ("`myproject.*`", "`${package_name}.*`"),
+    ],
+}
+
+
+def t_user_doc(text, params):
+    """Derive a shipped ``docs/*.md.mako`` from an authoritative user doc.
+
+    Steps, in order:
+      0. drop ``<!-- site-only -->`` / ``<!-- endsite-only -->`` blocks --
+         content that belongs only on this repo's docs site (e.g. a banner
+         noting these pages describe a *generated* project), removed from the
+         docs that ship into a generated project;
+      1. escape any literal ``${...}`` (e.g. the docker
+         ``${INGESTER_TOKEN:-secret}`` expansion shown to the reader) so Mako
+         passes it through;
+      2. parameterize concrete default values -> live ``${...}`` via the
+         per-doc anchor list (contextual, asserted -- mirrors ``repl()``);
+      3. escape Markdown H2+ headings, since Mako reads a leading ``##`` as a
+         line comment (the H1 ``#`` is safe);
+      4. turn the HTML-comment conditional fences (``<!-- if:gitea -->`` /
+         ``<!-- endif -->``) into Mako ``% if include_gitea:`` / ``% endif``.
+    """
+    text = re.sub(
+        r"(?ms)^[ \t]*<!-- site-only -->[ \t]*\n"
+        r".*?^[ \t]*<!-- endsite-only -->[ \t]*\n\n?",
+        "",
+        text,
+    )
+    text = re.sub(
+        r"\$\{[^}]*\}", lambda m: f"<%text>{m.group(0)}</%text>", text
+    )
+    text = repl(text, params)
+    text = re.sub(r"(?m)^(#{2,} .*)$", r"<%text>\1</%text>", text)
+    text = re.sub(
+        r"(?m)^[ \t]*<!-- if:(\w+) -->[ \t]*$", r"% if include_\1:", text
+    )
+    text = re.sub(r"(?m)^[ \t]*<!-- endif -->[ \t]*$", r"% endif", text)
+    return text
+
+
+# --------------------------------------------------------------------------
 # Authored templates (no repo exemplar): written verbatim.
 # --------------------------------------------------------------------------
 AUTHORED = {
@@ -797,11 +924,10 @@ tools:
 allow_mcp: false
 """,
     # ----------------------------------------------------------------------
-    # Documentation site (Zensical). Markdown headings (## ...) are wrapped in
-    # <%text> so Mako does not treat them as comments; ${param} substitutions
-    # stay outside the wrappers. The repo's own docs/ + zensical.toml are
-    # excluded from the verbatim copy (see EXCLUDE_PATHSPECS) -- these are the
-    # project's parameterized equivalents.
+    # Documentation site config (Zensical). The repo's own zensical.toml is
+    # excluded from the verbatim copy (see EXCLUDE_PATHSPECS); this is the
+    # project's parameterized equivalent. The doc *pages* are not authored
+    # here -- they are derived from docs/users/ by t_user_doc() (see above).
     # ----------------------------------------------------------------------
     "zensical.toml.mako": '''\
 # Zensical configuration for this project's documentation site.
@@ -820,7 +946,7 @@ Copyright &copy; The ${project_name} authors
 nav = [
     { "Home" = "index.md" },
     { "Getting started" = [
-        "getting-started/installation.md",
+        "installation.md",
     ] },
     { "Architecture" = [
         "architecture/services.md",
@@ -899,505 +1025,6 @@ combine_header_slug = true
 custom_checkbox = true
 [project.markdown_extensions.pymdownx.tilde]
 ''',
-    "docs/index.md.mako": """\
----
-icon: lucide/rocket
----
-
-# ${project_name}
-
-A Soliplex Docker Compose stack — nginx + Soliplex backend + Flutter frontend +
-haiku-ingester + Postgres, plus docling-serve and a TUI — scaffolded from the
-`soliplex-template` generator.
-
-This site documents *this* project. The quickest path to a running stack is the
-`README.md` at the project root; for the full walkthrough see
-[Installation](getting-started/installation.md).
-
-<%text>## Services</%text>
-
-- **nginx** — serves the Flutter web frontend and reverse-proxies the API.
-- **backend** — the Soliplex server (`soliplex-cli serve`).
-- **haiku-ingester** — the document-pipeline writer for the RAG vector store.
-- **docling-serve** — stateless document converter.
-- **postgres** — thread persistence and authorization policy.
-
-<%text>## Exposed ports</%text>
-
-| Service | Host port |
-|---------|-----------|
-| nginx (HTTP) | ${nginx_http} |
-| nginx (HTTPS) | ${nginx_https} |
-| haiku-ingester | ${ingester_port} |
-| docling-serve | ${docling_port} |
-| postgres | ${postgres_port} |
-
-<%text>## Documentation map</%text>
-
-- **[Installation](getting-started/installation.md)** — generate secrets,
-  confirm `OLLAMA_BASE_URL`, bring the stack up.
-- **[Service graph](architecture/services.md)** — what each container does and
-  how they connect.
-- **[Backend configuration](architecture/configuration.md)** — the
-  `backend/environment/` layout and the sandbox.
-- **[Backend image & dependencies](architecture/backend.md)** — building the
-  backend image and adding dependencies.
-- **[Secrets](operations/secrets.md)** — file-based vs env-var secret modes.
-- **[RAG pipeline](operations/rag.md)** — the vector store, the ingester, and
-  adding documents.
-- **[Ingester control plane](operations/ingester.md)** — the control-plane API
-  and its auth token.
-- **[Custom Python package](custom-package.md)** — the installable
-  `src/${package_name}` library.
-""",
-    "docs/getting-started/installation.md.mako": """\
----
-icon: lucide/download
----
-
-# Installation
-
-This project was scaffolded by the `soliplex-template` generator, so most setup
-is already done. Bringing the stack up takes three steps.
-
-<%text>## Prerequisites</%text>
-
-- **Docker** with the **Compose** plugin (`docker compose version`).
-- An **Ollama** server reachable from the containers, serving the models named
-  in `backend/environment/installation.yaml`. Its URL is recorded in `.env` as
-  `OLLAMA_BASE_URL` (see step 2).
-- [`uv`](https://docs.astral.sh/uv/) to run the secrets script
-  (`scripts/generate_secrets.py`).
-
-<%text>## 1. Generate secrets</%text>
-
-The Postgres roles and the backend read their credentials from Docker secrets.
-Generate them before the first `up`:
-
-```bash
-uv run scripts/generate_secrets.py   # populates .secrets/*.gen (gitignored)
-```
-
-!!! warning "Don't hand-edit `.secrets/*.gen`"
-    Re-run the script instead. Deleting these files after the Postgres volume
-    already exists breaks the backend's auth to the database. See
-    [Secrets](../operations/secrets.md).
-
-The generated `.env` records `PUID` / `PGID` — the uid/gid the containers run
-as and that owns these secret files (defaulted to the operator who scaffolded
-the project). If you run services as a different account, set them explicitly
-and rebuild; see [Secrets](../operations/secrets.md).
-
-<%text>## 2. Confirm `OLLAMA_BASE_URL`</%text>
-
-The generator wrote `.env` with the `OLLAMA_BASE_URL` you supplied. Confirm it
-points at your Ollama server and adjust if needed. You can also set
-`INGESTER_TOKEN` there — see
-[Ingester control plane](../operations/ingester.md).
-
-<%text>## 3. Bring the stack up</%text>
-
-```bash
-docker compose up        # foreground
-docker compose up -d     # detached
-```
-
-The first run builds the `nginx` and `backend` images and initializes Postgres;
-it takes a few minutes. Subsequent runs are fast.
-
-<%text>## Exposed ports</%text>
-
-| Port | Service | Purpose |
-|------|---------|---------|
-| `${nginx_http}` | nginx | HTTP — the web frontend |
-| `${nginx_https}` | nginx | HTTPS (self-signed cert) |
-| `8000` | backend | Soliplex backend, direct |
-| `${ingester_port}` | haiku-ingester | Control plane + dashboard |
-| `${docling_port}` | docling-serve | Document converter |
-| `${postgres_port}` | postgres | Database |
-
-(Container-internal ports are fixed; these are the host-published sides.)
-
-<%text>## Verify the stack</%text>
-
-```bash
-docker compose ps
-curl -fsS http://localhost:${ingester_port}/health
-docker compose logs -f backend
-```
-
-Then open <http://localhost:${nginx_http}> for the web frontend.
-
-<%text>## Using the TUI</%text>
-
-Soliplex includes an interactive terminal client. The backend image bundles it,
-so you can run it against the running stack without installing anything on the
-host:
-
-```bash
-docker compose exec backend soliplex-tui --url http://localhost:8000
-```
-% if include_tui:
-
-This stack also serves the same client as a web app via the `tui` service;
-nginx proxies it at <https://${server_name}:${nginx_https}/tui/>.
-% endif
-
-<%text>## Everyday commands</%text>
-
-```bash
-docker compose build <service>   # rebuild one image (backend, nginx, …)
-docker compose down              # stop (keeps the postgres_data volume)
-docker compose down -v           # stop AND wipe the postgres volume
-```
-
-!!! danger "`down -v` is destructive"
-    `docker compose down -v` drops the `postgres_data` volume — chat threads,
-    authorization grants, and the ingester's job queue (now its own Postgres
-    database) all go with it. The RAG vector store and your documents live
-    under `rag/db/` (a bind mount), so they survive a `down -v`.
-""",
-    "docs/architecture/services.md.mako": """\
----
-icon: lucide/network
----
-
-# Service graph
-
-The stack is defined in `docker-compose.yml`. Five services cooperate; two of
-them share the RAG vector store through a bind mount.
-
-```mermaid
-graph LR
-  browser([Browser]) -->|${nginx_http}/${nginx_https}| nginx
-  nginx -->|/api/ /mcp/| backend
-  backend -->|reads LanceDB| ragdb[(rag/db)]
-  ingester[haiku-ingester] -->|writes LanceDB| ragdb
-  ingester -->|convert/chunk| docling[docling-serve]
-  ingester -->|job queue| postgres[(postgres)]
-  backend -->|threads + authz| postgres
-```
-
-<%text>## nginx</%text>
-
-Serves the Flutter web frontend (built from a `soliplex/frontend` release in
-`nginx/Dockerfile`) and reverse-proxies `/api/` and `/mcp/` to `backend:8000`.
-Terminates TLS on host port ${nginx_https} with a self-signed cert.
-
-<%text>## backend</%text>
-
-Runs `soliplex-cli serve /environment`, installed from the pinned `soliplex`
-package (see [Backend image & dependencies](backend.md)). The `--reload=config`
-flag means edits under `backend/environment/` take effect without a rebuild.
-
-<%text>## haiku-ingester</%text>
-
-The **writer** for the LanceDB at `rag/db/`. Runs `haiku-ingester serve` with a
-Postgres-backed job queue (its own `soliplex_ingester` database), an async
-worker pool, retries + a dead-letter queue, and an HTTP control plane on host
-port ${ingester_port}. There is a **single-writer constraint**: only one
-ingester per LanceDB. The backend reads the same store through a bind mount.
-See [RAG pipeline](../operations/rag.md).
-
-<%text>## docling-serve</%text>
-
-A stateless document converter (CPU image by default; a GPU variant is a
-commented swap in `docker-compose.yml`).
-% if include_tui:
-
-<%text>## tui</%text>
-
-Soliplex's [Textual](https://textual.textualize.io/) terminal client, served
-as a web app over textual-serve; nginx proxies it at `/tui/`, so open
-<https://${server_name}:${nginx_https}/tui/>. The same client is bundled in
-the backend image — to run it from the command line, see
-[Using the TUI](../getting-started/installation.md#using-the-tui).
-% endif
-
-<%text>## postgres</%text>
-
-Creates two databases on first boot via `postgres/config/init.sh`:
-`${agui_db}` (thread persistence) and `${authz_db}` (authorization policy).
-Each gets a dedicated low-privilege role whose password is a Docker secret.
-Init runs **only on an empty data volume**; to re-run it,
-`docker compose down -v` first.
-""",
-    "docs/architecture/configuration.md.mako": """\
----
-icon: lucide/settings
----
-
-# Backend configuration
-
-The backend's behavior is driven by the files under `backend/environment/`,
-bind-mounted into the container at `/environment`. Because the backend runs
-with `--reload=config`, edits here take effect without a rebuild.
-
-<%text>## Layout</%text>
-
-- `installation.yaml` — the top-level install config: agents, secrets, env
-  vars, room list, skills, DB URIs, paths. **Start here.**
-- `rooms/<name>/room_config.yaml` — per-room agent prompts, tools, and skills.
-- `skills/<name>/` — filesystem skills discovered via
-  `filesystem_skills_paths`.
-- `logging.yaml`, `haiku.rag.yaml` — logging and RAG configuration.
-
-`installation.yaml` is heavily commented with pointers to the
-[Soliplex config docs](https://soliplex.github.io/soliplex/config/). Those
-comments describe **defaults** — so a section being empty or absent is not the
-same as being unconfigured.
-
-!!! note "Two sources of truth to remember"
-    - `room_paths` in `installation.yaml` lists the directories rooms load
-      from. It points at `./rooms`, so every `rooms/<name>/room_config.yaml`
-      is loaded; to leave a room out, remove its directory or replace `./rooms`
-      with an explicit list.
-    - A filesystem skill must be both present under a `filesystem_skills_paths`
-      directory **and** declared in `skill_configs` to be enabled.
-
-<%text>## Sandbox (code execution for agents)</%text>
-
-- `backend/sandbox/environments/<name>/pyproject.toml` — each subdirectory is a
-  `uv` project. The backend Dockerfile runs `uv sync --frozen` on each at build
-  time, so adding or changing one requires `docker compose build backend`.
-- `backend/sandbox/workdirs/` — per-run working directories created by agents
-  at runtime (gitignored).
-
-Dependencies needed by agent-executed sandbox code belong in the relevant
-sandbox environment, **not** in the backend image's top-level dependency list
-(see [Backend image & dependencies](backend.md)).
-""",
-    "docs/architecture/backend.md.mako": """\
----
-icon: lucide/box
----
-
-# Backend image & dependencies
-
-The `backend` service image is built from `backend/Dockerfile`. It uses
-[`uv`](https://docs.astral.sh/uv/) to install the pinned `soliplex` release and
-a handful of runtime dependencies into `/app/.venv`, subject to the pins in
-`backend/constraints.txt`. Because dependencies are baked in at build time,
-adding or changing one requires a rebuild:
-
-```bash
-docker compose build backend
-docker compose up -d backend
-```
-
-<%text>## Adding a third-party dependency (from PyPI)</%text>
-
-1. Append the distribution name(s) to the `uv add` invocation in
-   `backend/Dockerfile`.
-2. (Recommended) pin the version in `backend/constraints.txt` so builds are
-   reproducible:
-
-    ```text
-    soliplex ${soliplex_backend_constraint}
-    httpx >= 0.28, < 0.29
-    ```
-
-3. Rebuild and restart the service (see above).
-
-<%text>## Adding a local Python dependency</%text>
-
-"Local" means a package whose source lives on your machine. The build context
-of the `backend` image is the `backend/` directory, so anything the Dockerfile
-`COPY`s must live **inside** `backend/`. Place the source under
-`backend/vendor/<pkgname>/` and add it as a path dependency in the `uv add`
-step (`uv add /vendor/<pkgname>`, or `--editable` for editable installs).
-
-!!! tip "Your own code does not need this"
-    For code that belongs to *this* project, use the bundled `src/` package
-    instead — it is bind-mounted onto the backend's `PYTHONPATH` with no
-    rebuild. See [Custom Python package](../custom-package.md).
-
-<%text>## Gotchas</%text>
-
-- The build cache is keyed on `constraints.txt`, `Dockerfile`, and
-  `sandbox/environments/*/pyproject.toml`. Editing `constraints.txt` or the
-  `uv add` line forces a dependency re-resolve.
-- Sandbox environments under `backend/sandbox/environments/<name>/` are
-  **separate** `uv` projects; their dependencies belong there, not in the
-  top-level `uv add` list.
-- `constraints.txt` only affects PyPI resolution; local path dependencies are
-  not version-constrained by it.
-""",
-    "docs/operations/secrets.md.mako": """\
----
-icon: lucide/key-round
----
-
-# Secrets
-
-The Postgres roles and the Soliplex backend read their credentials from
-secrets. There are two modes, both documented at the bottom of
-`docker-compose.yml`.
-
-<%text>## File-based (active by default)</%text>
-
-`scripts/generate_secrets.py` writes `.secrets/*.gen` files, which Compose
-mounts as Docker secrets at `/run/secrets/*`. `.secrets/` is gitignored, so the
-initial commit never captures secrets.
-
-```bash
-uv run scripts/generate_secrets.py
-```
-
-!!! warning "Don't hand-edit `.secrets/*.gen`"
-    Re-run the script instead. Destroying these files after the Postgres volume
-    already exists breaks the backend's auth to the database — you must also
-    `docker compose down -v` and re-init.
-
-<%text>## File ownership (`PUID` / `PGID`)</%text>
-
-The secret files are mode `0600` (owner-only). For an in-container service
-(e.g. Postgres) to read one, the file's **owner must match the uid the
-container runs as**. The stack ties both ends to `PUID` / `PGID` in `.env`:
-
-- every built image runs as `PUID:PGID` (Compose `build.args`), and
-- `scripts/generate_secrets.py` ensures the `.secrets/*.gen` files end up owned
-  by `PUID:PGID`.
-
-The generator defaults `PUID` / `PGID` to the host operator who scaffolded the
-project, so on a single-developer machine this is automatic. On a deploy host
-whose login uid differs from the runtime service account, set `PUID` / `PGID`
-explicitly (and rebuild — see below); `generate_secrets.py` then re-owns the
-secret files to that uid/gid via a throwaway container (it needs Docker for
-that step).
-
-!!! warning "Changing `PUID` / `PGID` needs a rebuild"
-    The uid is baked into the images at build time, so after editing `PUID` /
-    `PGID` in `.env` you must `docker compose build` (and re-run
-    `uv run scripts/generate_secrets.py` so the secret files are re-owned to
-    match).
-
-!!! note "Override uid: who owns the secret files"
-    When `PUID` differs from your login uid, the `.secrets/*.gen` files are
-    owned by `PUID`, so reading or deleting them from the host needs that uid
-    (or `sudo`). This is expected — it is what lets the container read them at
-    mode `0600`.
-
-<%text>## Env-var (commented alternative)</%text>
-
-Uncomment the env-var secret blocks in `docker-compose.yml` and set the
-corresponding `SOLIPLEX_*` environment variables instead of using files.
-
-<%text>## The `down -v` caveat</%text>
-
-`docker compose down -v` drops the `postgres_data` volume — chat threads,
-authorization grants, and the ingester's job queue (its own `soliplex_ingester`
-database) all go with it. The RAG vector store under `rag/db/` (a bind mount)
-is separate, so a `down -v` does not touch it.
-""",
-    "docs/operations/rag.md.mako": """\
----
-icon: lucide/database
----
-
-# RAG pipeline
-
-`rag/db/` is the single source of truth for vector data. It is mounted by
-**two** services:
-
-- **haiku-ingester** is the writer (`/data`); its job queue is a Postgres
-  database (`soliplex_ingester`), not a file under `rag/db/`.
-- **backend** reads it via the `haiku.rag.skills.rag` skill.
-
-Only one ingester may write a given LanceDB (the single-writer constraint).
-
-<%text>## Adding documents</%text>
-
-Drop files into `${docs_dir}/`. The filesystem source in
-`haiku.rag/haiku.rag.yaml` picks them up on its next poll, and docling-serve
-converts and chunks them.
-
-<%text>## Adding other sources</%text>
-
-To pull from S3, HTTP, WebDAV, and the like, append entries under
-`ingester.sources` in `haiku.rag/haiku.rag.yaml` and restart the ingester:
-
-```bash
-docker compose restart haiku-ingester
-```
-
-<%text>## A separate, static database</%text>
-
-The ingester only maintains **one** LanceDB. For a *separate*, mostly-static
-corpus, build a standalone database with the `haiku-rag` CLI via a one-off
-`docker compose run` on the `haiku-ingester` service — it already mounts
-`rag/db`, carries `OLLAMA_BASE_URL`, and ships the same `haiku.rag.yaml`. Point
-it at a **different** `--db` so it never collides with `haiku.rag.lancedb`:
-
-```bash
-docker compose run --rm --no-TTY haiku-ingester \
-    haiku-rag --config /app/haiku.rag.yaml --db /data/handbook.lancedb init
-docker compose run --rm --no-TTY haiku-ingester \
-    haiku-rag --config /app/haiku.rag.yaml --db /data/handbook.lancedb \
-    add-src /docs/handbook/
-```
-
-`add-src` also takes a URL or `s3://` URI; for a local path outside
-`${docs_dir}/`, add `-v /abs/path:/src:ro` and point `add-src` at `/src`. Use
-`rebuild` to re-index and `delete <id>` to remove a document. The database
-lands at `rag/db/handbook.lancedb`, which the backend already reads through its
-`rag/db` mount. Wire a room to it with `rag_lancedb_stem: "handbook"` in that
-room's `room_config.yaml`.
-
-<%text>## Operating the pipeline</%text>
-
-The ingester exposes a control plane on host port ${ingester_port} — `/health`,
-`/jobs`, `/sources`, `/dlq`, `/stats`, and a dashboard at `/`. It requires a
-bearer token; see [Ingester control plane](ingester.md).
-""",
-    "docs/operations/ingester.md.mako": """\
----
-icon: lucide/shield
----
-
-# Ingester control plane
-
-`haiku-ingester` binds its control plane on `0.0.0.0:8765` so the host port
-mapping works. With a non-loopback bind, haiku.rag **requires a bearer token**
-(`ingester.api.auth_token`); otherwise anyone who can reach the port could
-cancel jobs, retry from the dead-letter queue, and trigger source refreshes.
-
-<%text>## How the token gets in</%text>
-
-1. `haiku.rag/haiku.rag.yaml` ships
-   `ingester.api.auth_token: __INGESTER_TOKEN__` as a placeholder.
-2. The `haiku-ingester` service runs a small `sh -c "sed ... && exec ..."`
-   wrapper that replaces the placeholder with the value of `$INGESTER_TOKEN`
-   before haiku-ingester reads the config.
-3. `INGESTER_TOKEN` defaults to `secret` — Compose sets
-   `<%text>${INGESTER_TOKEN:-secret}</%text>`. Override it in `.env`
-   for anything that isn't a single-developer laptop.
-
-<%text>## Calling the API</%text>
-
-Clients send `Authorization: Bearer $INGESTER_TOKEN`:
-
-```bash
-curl -fsS -H "Authorization: Bearer $INGESTER_TOKEN" \\
-  http://localhost:${ingester_port}/stats
-```
-
-The browser dashboard at `/` is unauthenticated HTML; its in-page JavaScript
-attaches the bearer to its JSON fetches itself.
-
-!!! warning "Watch the startup log"
-    The startup log warns if `auth_token` is `None`. If you see that
-    warning, the substitution didn't fire and the API is **open**.
-
-<%text>## Token character restrictions</%text>
-
-The token cannot contain `|`, `\\`, or `&` — they are the `sed` delimiter and
-escape characters used by the substitution wrapper. Use alphanumerics, e.g.:
-
-```bash
-openssl rand -hex 32
-```
-""",
     "backend/README.md.mako": """\
 # Backend service
 
@@ -1411,48 +1038,6 @@ Zensical — see the project `README.md`):
   [docs/architecture/backend.md](../docs/architecture/backend.md)
 - Backend configuration —
   [docs/architecture/configuration.md](../docs/architecture/configuration.md)
-""",
-    "docs/custom-package.md.mako": """\
----
-icon: lucide/package
----
-
-# Custom Python package
-
-This project is an installable Python library: your own code lives under
-`src/${package_name}/` and its tests under `tests/unit/`.
-
-```bash
-uv sync                 # create/refresh the dev environment (installs pytest)
-uv run pytest           # run the project's tests
-uv pip install -e .     # or a plain editable install into another environment
-```
-
-<%text>## How it reaches the backend</%text>
-
-The Soliplex backend bind-mounts `./src` (read-only) into its container and
-puts it on `PYTHONPATH` (see `docker-compose.yml`), so anything you define
-here is importable by **dotted name** from the Soliplex config under
-`backend/environment/` — no image rebuild needed to edit your code.
-
-<%text>## What ships wired up</%text>
-
-Two examples are referenced from the config so you can see the pattern:
-
-- a tool, `${package_name}.tools.greeting`, referenced from
-  `backend/environment/rooms/custom/room_config.yaml`;
-- a FastAPI router, `${package_name}.views.router`, registered via
-  `app_router_operations` in `backend/environment/installation.yaml`.
-
-Dotted names into this package can equally be used in the `installation.yaml`
-`meta:` section (tool/agent/skill config classes, MCP wrappers, secret sources)
-— see the commented `${package_name}.*` examples there.
-
-<%text>## Making it your own</%text>
-
-Add modules under `src/${package_name}/`, reference them by dotted name from
-the config, and add tests under `tests/unit/`. Delete the demonstration
-`custom` room once you have your own.
 """,
 }
 
@@ -1551,6 +1136,25 @@ def _build_into(dest_root: pathlib.Path, files: list[str]) -> tuple[int, int]:
         copied.with_name(copied.name + ".mako").write_text(mako_text)
         copied.unlink()
         derived += 1
+
+    # derive shipped docs/*.md.mako from authoritative docs/users/*.md, read
+    # straight from the repo (docs/ is excluded from the verbatim copy). The
+    # users/ path segment is stripped, so a project gets docs/<...>.md.mako.
+    docs_src = REPO / USER_DOCS_SRC
+    if docs_src.is_dir():
+        for md in sorted(docs_src.rglob("*.md")):
+            rel = md.relative_to(docs_src)
+            try:
+                mako_text = t_user_doc(
+                    md.read_text(), USER_DOC_PARAMS.get(rel.as_posix(), [])
+                )
+            except RefreshError as exc:
+                raise RefreshError.wrap(f"{USER_DOCS_SRC}/{rel}", exc) from exc
+            dest = dest_root / "docs" / rel
+            dest = dest.with_name(dest.name + ".mako")
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_text(mako_text)
+            derived += 1
 
     # authored templates (paths may nest, e.g. src/__package__/tools.py.mako)
     for name, content in AUTHORED.items():

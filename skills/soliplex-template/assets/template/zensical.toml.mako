@@ -14,7 +14,7 @@ Copyright &copy; The ${project_name} authors
 nav = [
     { "Home" = "index.md" },
     { "Getting started" = [
-        "getting-started/installation.md",
+        "installation.md",
     ] },
     { "Architecture" = [
         "architecture/services.md",

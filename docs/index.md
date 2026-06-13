@@ -17,26 +17,36 @@ Soliplex backend is installed from the published `soliplex` Python package, the
 frontend is fetched from a `soliplex/frontend` GitHub release at image-build
 time, and `haiku-rag` / `docling-serve` use upstream images.
 
-## Get running
+You don't run this repository directly. You generate your **own** stack from it
+with the bundled `soliplex-template` Agent Skill (or the generator script), then
+run and operate that generated project.
 
-The fastest path is the four-step quickstart in the repository
-[`README.md`](https://github.com/soliplex/soliplex-template#quickstart). For the
-full walkthrough — prerequisites, exposed ports, and how to verify the stack —
-see **[Installation](getting-started/installation.md)**.
+## Getting started
 
-Want a customized project instead of a verbatim clone? The repository ships a
-`soliplex-template` Agent Skill that scaffolds a tailored stack; see
-**[Generate a custom project](getting-started/generator.md)**.
+| Page | What's there |
+|------|--------------|
+| [Generate a project](getting-started/generator.md) | Scaffold a tailored stack with the skill, or by running the generator directly. |
 
-## Documentation map
+## Using a generated stack
 
-| Section | What's there |
-|---------|--------------|
-| [Installation](getting-started/installation.md) | Clone, generate secrets, set `OLLAMA_BASE_URL`, bring the stack up. |
-| [Generate a custom project](getting-started/generator.md) | Scaffold a tailored stack with the bundled skill. |
-| [Service graph](architecture/services.md) | What each container does and how they connect. |
-| [Backend configuration](architecture/configuration.md) | The `backend/environment/` layout and the sandbox. |
-| [Backend image & dependencies](architecture/backend.md) | How the backend image is built and how to add dependencies. |
-| [Secrets](operations/secrets.md) | File-based vs env-var secret modes. |
-| [RAG pipeline](operations/rag.md) | The vector store, the ingester, and adding documents. |
-| [Ingester control plane](operations/ingester.md) | The control-plane API and its auth token. |
+Documentation that ships *inside* a generated project — how to bring the stack
+up and operate it day to day:
+
+| Page | What's there |
+|------|--------------|
+| [Installation](users/installation.md) | Generate secrets, set `OLLAMA_BASE_URL`, bring the stack up. |
+| [Service graph](users/architecture/services.md) | What each container does and how they connect. |
+| [Backend configuration](users/architecture/configuration.md) | The `backend/environment/` layout and the sandbox. |
+| [Backend image & dependencies](users/architecture/backend.md) | How the backend image is built and how to add dependencies. |
+| [Secrets](users/operations/secrets.md) | File-based vs env-var secret modes. |
+| [RAG pipeline](users/operations/rag.md) | The vector store, the ingester, and adding documents. |
+| [Ingester control plane](users/operations/ingester.md) | The control-plane API and its auth token. |
+| [Custom Python package](users/custom-package.md) | The installable `src/` library wired into the backend. |
+
+## Contributing
+
+Working on this repository rather than running a stack:
+
+| Page | What's there |
+|------|--------------|
+| [Developing this template](contributing/index.md) | The repo → template derivation, the refresh workflow, and the documentation conventions. |

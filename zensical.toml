@@ -21,21 +21,27 @@ Copyright &copy; Soliplex
 # Explicit navigation. Pages not listed here still build, but the sidebar
 # order/grouping below is the source of truth.
 # Reference: https://zensical.org/docs/setup/navigation/
+# `docs/users/` holds the pages that document a generated stack -- the
+# authoritative source the shipped docs/*.md.mako are derived from. The other
+# two trees are repo-only (never derived/shipped): `docs/getting-started/`
+# (how to *create* a stack) and `docs/contributing/` (developing this repo).
 nav = [
     { "Home" = "index.md" },
     { "Getting started" = [
-        "getting-started/installation.md",
         "getting-started/generator.md",
     ] },
-    { "Architecture" = [
-        "architecture/services.md",
-        "architecture/configuration.md",
-        "architecture/backend.md",
+    { "Using a generated stack" = [
+        "users/installation.md",
+        "users/architecture/services.md",
+        "users/architecture/configuration.md",
+        "users/architecture/backend.md",
+        "users/operations/secrets.md",
+        "users/operations/rag.md",
+        "users/operations/ingester.md",
+        "users/custom-package.md",
     ] },
-    { "Operations" = [
-        "operations/secrets.md",
-        "operations/rag.md",
-        "operations/ingester.md",
+    { "Contributing" = [
+        "contributing/index.md",
     ] },
 ]
 

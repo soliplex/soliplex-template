@@ -450,7 +450,7 @@ def test_default_project_omits_tui_service(generated_project):
     assert "\n  tui:\n" not in compose
     assert not (out / "tui").exists()
     # ...but the CLI client (bundled in the backend image) is still documented.
-    install_doc = _read(out, "docs/getting-started/installation.md")
+    install_doc = _read(out, "docs/installation.md")
     assert "docker compose exec backend" in install_doc
     assert "soliplex-tui --url http://localhost:8000" in install_doc
     # The web-TUI-behind-nginx note is gated on include_tui, so absent here.
@@ -491,7 +491,7 @@ def test_generated_package_is_importable(generated_project):
 # --------------------------------------------------------------------------
 _DOC_PAGES = (
     "docs/index.md",
-    "docs/getting-started/installation.md",
+    "docs/installation.md",
     "docs/architecture/services.md",
     "docs/architecture/configuration.md",
     "docs/architecture/backend.md",
@@ -532,7 +532,7 @@ def test_docs_markdown_headings_survive_rendering(generated_project):
     # both an authored doc and the README.
     out, _params = generated_project
 
-    install = _read(out, "docs/getting-started/installation.md")
+    install = _read(out, "docs/installation.md")
     readme = _read(out, "README.md")
 
     assert "## Prerequisites" in install
