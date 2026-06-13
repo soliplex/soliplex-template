@@ -21,11 +21,11 @@ You don't run this repository directly. You generate your **own** stack from it
 with the bundled `soliplex-template` Agent Skill (or the generator script), then
 run and operate that generated project.
 
-## Create a stack
+## Getting started
 
 | Page | What's there |
 |------|--------------|
-| [Generate a project](users/getting-started/generator.md) | Scaffold a tailored stack with the skill, or by running the generator directly. |
+| [Generate a project](getting-started/generator.md) | Scaffold a tailored stack with the skill, or by running the generator directly. |
 
 ## Using a generated stack
 
@@ -34,7 +34,7 @@ up and operate it day to day:
 
 | Page | What's there |
 |------|--------------|
-| [Installation](users/getting-started/installation.md) | Generate secrets, set `OLLAMA_BASE_URL`, bring the stack up. |
+| [Installation](users/installation.md) | Generate secrets, set `OLLAMA_BASE_URL`, bring the stack up. |
 | [Service graph](users/architecture/services.md) | What each container does and how they connect. |
 | [Backend configuration](users/architecture/configuration.md) | The `backend/environment/` layout and the sandbox. |
 | [Backend image & dependencies](users/architecture/backend.md) | How the backend image is built and how to add dependencies. |
@@ -42,3 +42,11 @@ up and operate it day to day:
 | [RAG pipeline](users/operations/rag.md) | The vector store, the ingester, and adding documents. |
 | [Ingester control plane](users/operations/ingester.md) | The control-plane API and its auth token. |
 | [Custom Python package](users/custom-package.md) | The installable `src/` library wired into the backend. |
+
+## Contributing
+
+Working on this repository rather than running a stack:
+
+| Page | What's there |
+|------|--------------|
+| [Developing this template](contributing/index.md) | The repo → template derivation, the refresh workflow, and the documentation conventions. |

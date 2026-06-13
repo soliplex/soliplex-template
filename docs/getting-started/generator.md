@@ -59,5 +59,5 @@ configuration.
 - **Skill instructions:**
   [`SKILL.md`](https://github.com/soliplex/soliplex-template/blob/main/skills/soliplex-template/SKILL.md)
 
-Once generated, follow [Installation](installation.md) from the secrets step
+Once generated, follow [Installation](../users/installation.md) from the secrets step
 onward to bring your new stack up.

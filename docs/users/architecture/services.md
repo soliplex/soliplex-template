@@ -57,7 +57,7 @@ Soliplex's [Textual](https://textual.textualize.io/) terminal client, served
 as a web app over textual-serve; nginx proxies it at `/tui/`, so open
 <https://myproject.localhost:9443/tui/>. The same client is bundled in
 the backend image — to run it from the command line, see
-[Using the TUI](../getting-started/installation.md#using-the-tui).
+[Using the TUI](../installation.md#using-the-tui).
 <!-- endif -->
 
 ## postgres
@@ -86,5 +86,5 @@ on the HTTPS port — open <https://myproject.localhost:9443/gitea/> — and its
 built-in SSH and HTTP are published on host ports `2222` and `3000`. State lives
 in the `gitea_data` / `gitea_config` named volumes. Provision it after first
 boot with `scripts/init_gitea.py` — see
-[Provision Gitea](../getting-started/installation.md#provision-gitea).
+[Provision Gitea](../installation.md#provision-gitea).
 <!-- endif -->

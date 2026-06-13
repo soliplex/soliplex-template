@@ -28,19 +28,19 @@ uv run scripts/generate_secrets.py   # populates .secrets/*.gen (gitignored)
 !!! warning "Don't hand-edit `.secrets/*.gen`"
     Re-run the script instead. Deleting these files after the Postgres volume
     already exists breaks the backend's auth to the database. See
-    [Secrets](../operations/secrets.md).
+    [Secrets](operations/secrets.md).
 
 The generated `.env` records `PUID` / `PGID` — the uid/gid the containers run
 as and that owns these secret files (defaulted to the operator who scaffolded
 the project). If you run services as a different account, set them explicitly
-and rebuild; see [Secrets](../operations/secrets.md).
+and rebuild; see [Secrets](operations/secrets.md).
 
 <%text>## 2. Confirm `OLLAMA_BASE_URL`</%text>
 
 The generator wrote `.env` with the `OLLAMA_BASE_URL` you supplied. Confirm it
 points at your Ollama server and adjust if needed. You can also set
 `INGESTER_TOKEN` there — see
-[Ingester control plane](../operations/ingester.md).
+[Ingester control plane](operations/ingester.md).
 
 <%text>## 3. Bring the stack up</%text>
 

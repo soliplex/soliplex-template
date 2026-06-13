@@ -615,15 +615,11 @@ DERIVED = {
 # parameterized, conditional Mako the generator consumes.
 #
 # docs/ is excluded from the verbatim copy (see EXCLUDE_PATHSPECS), so this
-# step reads docs/users/ straight from the repo. The sibling docs/contributing/
-# tree (repo-development docs) is never derived and never shipped.
+# step reads docs/users/ straight from the repo. Repo-only doc trees -- the
+# getting-started page (docs/getting-started/, how to *create* a stack) and the
+# contributing docs (docs/contributing/) -- live outside docs/users/, so they
+# are never derived and never shipped.
 USER_DOCS_SRC = "docs/users"
-
-# User-audience pages that live under docs/users/ (so the repo's own site
-# groups them with the rest of the user docs) but must NOT ship into a
-# generated project -- e.g. the "generate a project" page, which is meaningless
-# once you already HAVE a generated project. Paths relative to docs/users/.
-USER_DOCS_NOSHIP = frozenset({"getting-started/generator.md"})
 
 # Per-doc parameter substitutions: concrete default value -> live Mako ${...}.
 # Keyed by the doc's path relative to docs/users/ (posix). Contextual anchors,
@@ -641,7 +637,7 @@ USER_DOC_PARAMS = {
         ("| postgres | 5432 |", "| postgres | ${postgres_port} |"),
         ("`src/myproject`", "`src/${package_name}`"),
     ],
-    "getting-started/installation.md": [
+    "installation.md": [
         ("| `9000` |", "| `${nginx_http}` |"),
         ("| `9443` |", "| `${nginx_https}` |"),
         ("| `8765` |", "| `${ingester_port}` |"),
@@ -950,7 +946,7 @@ Copyright &copy; The ${project_name} authors
 nav = [
     { "Home" = "index.md" },
     { "Getting started" = [
-        "getting-started/installation.md",
+        "installation.md",
     ] },
     { "Architecture" = [
         "architecture/services.md",
@@ -1148,8 +1144,6 @@ def _build_into(dest_root: pathlib.Path, files: list[str]) -> tuple[int, int]:
     if docs_src.is_dir():
         for md in sorted(docs_src.rglob("*.md")):
             rel = md.relative_to(docs_src)
-            if rel.as_posix() in USER_DOCS_NOSHIP:
-                continue
             try:
                 mako_text = t_user_doc(
                     md.read_text(), USER_DOC_PARAMS.get(rel.as_posix(), [])

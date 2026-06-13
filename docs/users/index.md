@@ -16,7 +16,7 @@ haiku-ingester + Postgres, plus docling-serve and a TUI — scaffolded from the
 
 This site documents *this* project. The quickest path to a running stack is the
 `README.md` at the project root; for the full walkthrough see
-[Installation](getting-started/installation.md).
+[Installation](installation.md).
 
 ## Services
 
@@ -38,7 +38,7 @@ This site documents *this* project. The quickest path to a running stack is the
 
 ## Documentation map
 
-- **[Installation](getting-started/installation.md)** — generate secrets,
+- **[Installation](installation.md)** — generate secrets,
   confirm `OLLAMA_BASE_URL`, bring the stack up.
 - **[Service graph](architecture/services.md)** — what each container does and
   how they connect.

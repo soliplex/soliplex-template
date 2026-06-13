@@ -494,27 +494,22 @@ def test_build_into_derives_user_docs(tmp_path, monkeypatch):
     (src / "docs" / "users" / "operations" / "rag.md").write_text(
         "## RAG\n", encoding="utf-8"
     )
-    (src / "docs" / "users" / "noship.md").write_text(
-        "# repo-only\n", encoding="utf-8"
-    )
     monkeypatch.setattr(rst, "REPO", src)
     monkeypatch.setattr(rst, "VERBATIM_EDITS", {})
     monkeypatch.setattr(rst, "DERIVED", {})
     monkeypatch.setattr(rst, "AUTHORED", {})
     monkeypatch.setattr(rst, "USER_DOC_PARAMS", {})
-    monkeypatch.setattr(rst, "USER_DOCS_NOSHIP", frozenset({"noship.md"}))
     dest = tmp_path / "dest"
 
     derived, authored = rst._build_into(dest, [])
 
-    # The two shipped user docs are derived (users/ segment stripped so a
-    # project gets docs/<...>.md.mako); the no-ship page is skipped entirely.
+    # Both user docs are derived; the users/ segment is stripped so a project
+    # gets docs/<...>.md.mako.
     assert (derived, authored) == (2, 0)
     assert (dest / "docs" / "index.md.mako").read_text() == "# Home\n"
     assert (
         dest / "docs" / "operations" / "rag.md.mako"
     ).read_text() == "<%text>## RAG</%text>\n"
-    assert not (dest / "docs" / "noship.md.mako").exists()
     assert not (dest / "docs" / "users").exists()
 
 
