@@ -86,5 +86,5 @@ uses the ingester's.
 
 ## Where next
 
-The next tutorial, *Work with Gitea*, edits the stack's own code and ships the
-change through a pull request.
+The next tutorial, [Work with Gitea](03-work-with-gitea.md), edits the stack's
+own code and ships the change through a pull request.
