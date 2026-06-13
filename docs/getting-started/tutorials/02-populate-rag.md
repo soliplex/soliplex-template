@@ -4,9 +4,8 @@ icon: lucide/database
 
 # Populate RAG
 
-Feed a set of documents into a stack, ask questions grounded in them, then build
-a second, independent knowledge base and point a room at it. This continues from
-[First steps](01-first-steps.md).
+Feed a set of documents into a stack and ask questions grounded in them. This
+continues from [First steps](01-first-steps.md).
 
 ## Prerequisites
 
@@ -68,23 +67,11 @@ Open the **Custom Tool Demo** room and ask something the corpus can answer, e.g.
 The room's agent calls its `search_documents` tool, retrieves the matching
 chunks, and answers from them — with citations back to the source documents.
 
-## 5. Build a separate, static database
-
-The ingester maintains one continuously-updated database. For a separate corpus
-you build once, ask the agent to create a standalone database — say a `handbook`
-from another directory of Markdown. The skill builds `rag/db/handbook.lancedb`
-as a one-off, independent of the ingester's `haiku.rag.lancedb` (and it refuses
-to overwrite the ingester's own database while that service is running).
-
-## 6. Point a cloned room at it
-
-Ask the agent to clone the `custom` room under a new id — say `handbook` — and
-wire that copy to the new database (`rag_lancedb_stem: "handbook"`) instead of
-the ingester's. Open the new room and ask a question answerable from the
-`handbook` corpus: it answers from that database, while the `custom` room still
-uses the ingester's.
-
 ## Where next
 
 The next tutorial, [Add a custom tool](03-add-a-custom-tool.md), extends the
 stack with a tool of your own, exercised in a room and covered by a test.
+
+Related: to build a second, independent knowledge base — a one-off database you
+create and point a room at — see
+[Separate RAG database](separate-rag-database.md).

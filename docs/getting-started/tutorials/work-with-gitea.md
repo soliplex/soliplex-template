@@ -70,5 +70,6 @@ stack now runs code you shipped through its own review workflow.
 
 ## Where next
 
-The next tutorial, *concierge room*, lets users request new rooms that land as
-Gitea issues for an administrator to fulfil.
+A *concierge room* walkthrough — letting users request new rooms that land as
+Gitea issues for an administrator to fulfil — builds on this one (coming soon).
+Meanwhile, see the other [Additional topics](04-additional-topics.md).

@@ -87,5 +87,8 @@ git commit -m "Add a farewell tool (with a test) to the custom room"
 
 ## Where next
 
-The next tutorial, [Work with Gitea](04-work-with-gitea.md), ships a change like
-this one through a pull request hosted by the stack's own Gitea.
+That completes the core series: [Additional topics](04-additional-topics.md)
+collects the optional walkthroughs you can take from here.
+
+Related: [Work with Gitea](work-with-gitea.md) ships a change like the one you
+just made through a pull request hosted by the stack's own Gitea.
