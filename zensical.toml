@@ -30,6 +30,18 @@ nav = [
     { "Getting started" = [
         "getting-started/generator.md",
     ] },
+    { "Tutorials" = [
+        "getting-started/tutorials/01-first-steps.md",
+        "getting-started/tutorials/02-populate-rag.md",
+        "getting-started/tutorials/03-add-a-custom-tool.md",
+        { "Additional topics" = [
+            "getting-started/tutorials/04-next-steps.md",
+            "getting-started/tutorials/separate-rag-database.md",
+            "getting-started/tutorials/work-with-gitea.md",
+            "getting-started/tutorials/concierge-room.md",
+            "getting-started/tutorials/concierge-admin.md",
+        ] },
+    ] },
     { "Using a generated stack" = [
         "users/installation.md",
         "users/architecture/services.md",
