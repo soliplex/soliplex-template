@@ -30,6 +30,9 @@ nav = [
     { "Getting started" = [
         "getting-started/generator.md",
     ] },
+    { "Tutorials" = [
+        "getting-started/tutorials/01-first-steps.md",
+    ] },
     { "Using a generated stack" = [
         "users/installation.md",
         "users/architecture/services.md",
