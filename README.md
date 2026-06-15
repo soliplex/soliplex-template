@@ -10,6 +10,8 @@ There are two ways to use it: run this repository directly as a reference stack
 to try Soliplex now, or generate your own tailored stack from it (for a real
 deployment). Both are below.
 
+📖 **Full documentation:** <https://soliplex.github.io/soliplex-template/>
+
 ## Try it
 
 You need Docker (with the Compose plugin), [`uv`](https://docs.astral.sh/uv/),
