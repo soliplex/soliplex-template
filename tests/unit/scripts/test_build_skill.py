@@ -41,8 +41,8 @@ def build_skill(monkeypatch):
     """Record calls to the library's build_skill; return the recorder list."""
     calls = []
 
-    def fake(name, *, src, dist, commit=None):
-        calls.append((name, src, dist, commit))
+    def fake(name, *, src, dist, commit=None, version=None, generated=None):
+        calls.append((name, src, dist, commit, version, generated))
         return dist / name
 
     monkeypatch.setattr(bs.build, "build_skill", fake)
@@ -54,7 +54,7 @@ def test_main_delegates_to_library(build_skill, capsys):
 
     assert rc == 0
     assert build_skill == [
-        ("soliplex-template", bs.SKILLS_DIR, bs.DIST, "abc1234")
+        ("soliplex-template", bs.SKILLS_DIR, bs.DIST, "abc1234", None, None)
     ]
     assert "built & validated" in capsys.readouterr().out
 
@@ -80,11 +80,27 @@ def test_main_defaults_commit_to_none(build_skill):
         bs.SKILLS_DIR,
         bs.DIST,
         None,
+        None,
+        None,
+    )
+
+
+def test_main_forwards_version_and_date(build_skill):
+    rc = bs.main(["--version", "v1.2.3", "--date", "2026-06-14"])
+
+    assert rc == 0
+    assert build_skill[0] == (
+        "soliplex-template",
+        bs.SKILLS_DIR,
+        bs.DIST,
+        None,
+        "v1.2.3",
+        "2026-06-14",
     )
 
 
 def test_main_reports_skill_not_found(monkeypatch, capsys):
-    def boom(name, *, src, dist, commit=None):
+    def boom(name, *, src, dist, commit=None, version=None, generated=None):
         raise build.SkillNotFound(name, src)
 
     monkeypatch.setattr(bs.build, "build_skill", boom)
@@ -96,7 +112,7 @@ def test_main_reports_skill_not_found(monkeypatch, capsys):
 
 
 def test_main_reports_validation_failure(monkeypatch, capsys):
-    def boom(name, *, src, dist, commit=None):
+    def boom(name, *, src, dist, commit=None, version=None, generated=None):
         raise build.ValidationFailed(name, ["bad frontmatter"])
 
     monkeypatch.setattr(bs.build, "build_skill", boom)
