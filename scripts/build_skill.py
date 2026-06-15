@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["soliplex-skills>=0.2.2"]
+# dependencies = ["soliplex-skills>=0.5"]
 # ///
 """Assemble and validate the soliplex-template skill into dist/.
 
@@ -54,13 +54,28 @@ def main(argv: list[str] | None = None) -> int:
         "--commit",
         help="Commit to stamp into SKILL.md metadata (default: git HEAD).",
     )
+    parser.add_argument(
+        "--version",
+        help="Published version to stamp into SKILL.md (omit for rolling "
+        "builds).",
+    )
+    parser.add_argument(
+        "--date",
+        help="Build date (ISO YYYY-MM-DD) to stamp as 'generated' (default: "
+        "today).",
+    )
     args = parser.parse_args(argv)
 
     refresh_template()
 
     try:
         out = build.build_skill(
-            SKILL_NAME, src=SKILLS_DIR, dist=DIST, commit=args.commit
+            SKILL_NAME,
+            src=SKILLS_DIR,
+            dist=DIST,
+            commit=args.commit,
+            version=args.version,
+            generated=args.date,
         )
     except (build.SkillNotFound, build.ValidationFailed) as exc:
         print(f"build_skill: error: {exc}", file=sys.stderr)
