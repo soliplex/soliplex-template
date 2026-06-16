@@ -27,6 +27,22 @@ run and operate that generated project.
 |------|--------------|
 | [Generate a project](getting-started/generator.md) | Scaffold a tailored stack with the skill, or by running the generator directly. |
 
+## Tutorials
+
+Hands-on walkthroughs that take a freshly generated stack from first launch
+through populating RAG and extending it:
+
+| Page | What's there |
+|------|--------------|
+| [First steps](getting-started/tutorials/01-first-steps.md) | Install the skill, generate a stack, bring it up, and try a demo room. |
+| [Populate RAG](getting-started/tutorials/02-populate-rag.md) | Drop documents into the ingester and query them from a room. |
+| [Add a custom tool](getting-started/tutorials/03-add-a-custom-tool.md) | Wire a Python tool into the backend and call it from an agent. |
+| [Next steps](getting-started/tutorials/04-next-steps.md) | Where to go after the core walkthroughs. |
+| [Separate RAG database](getting-started/tutorials/separate-rag-database.md) | Create and wire in an additional RAG database. |
+| [Work with Gitea](getting-started/tutorials/work-with-gitea.md) | Back the stack with a Gitea repo and push the initial commit. |
+| [Concierge room](getting-started/tutorials/concierge-room.md) | Add and use the concierge room. |
+| [Resolve room requests](getting-started/tutorials/concierge-admin.md) | Administer concierge room requests. |
+
 ## Using a generated stack
 
 Documentation that ships *inside* a generated project — how to bring the stack
