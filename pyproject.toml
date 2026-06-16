@@ -8,8 +8,9 @@ version = "0.13dev0"
 description = "Docker Compose template for a Soliplex stack, plus the soliplex-template Agent Skill and its build tooling."
 readme = "README.md"
 requires-python = ">=3.12"
-# The 'soliplex_template' package (src/) is stdlib-only; the bundled skill's
-# add_room.py imports 'soliplex_template.rooms' from it.
+# The 'soliplex_template' package (src/) is stdlib-only; its modules
+# ('secrets', 'gitea') back the repo's provisioning scripts. (The bundled
+# skill's add_room.py gets its room-wiring core from 'soliplex-plumber'.)
 dependencies = []
 
 # Tooling for the soliplex-template skill. The scripts also carry PEP 723
@@ -38,13 +39,18 @@ dev = [
     # pinned to match that script's PEP 723 header.
     "skills-ref==0.1.1",
     "soliplex-skills >= 0.5",
+    # The bundled add_room.py imports 'soliplex_plumber.rooms'; the unit suite
+    # loads that script by path, so the test env must provide it. Pinned to
+    # match add_room.py's PEP 723 header.
+    "soliplex-plumber >= 0.1",
     "zensical",
 ]
 
 # The repo is configuration + Dockerfiles + skill source, but it also ships the
-# importable 'soliplex_template' package (src/), so it builds as a wheel. PEP 420
-# namespace package (no __init__.py); clients import the module directly, e.g.
-# 'from soliplex_template.rooms import ...'.
+# importable 'soliplex_template' package (src/), so it builds as a wheel.
+# PEP 420 # namespace package (no __init__.py);
+# clients import the module directly, e.g.
+# 'from soliplex_template import secrets'.
 [tool.setuptools.packages.find]
 where = ["src"]
 namespaces = true
