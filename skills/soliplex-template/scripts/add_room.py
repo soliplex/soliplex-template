@@ -1,35 +1,33 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["soliplex-template>=0.11", "mako"]
+# dependencies = ["soliplex-plumber>=0.1", "mako"]
 # ///
 """Add a new room to an existing Soliplex stack from a bundled template.
 
 This is the skill's CLI front end. It owns the bundled room templates (under
-``assets/rooms/<name>/``) and renders the chosen one with Mako, then delegates
-the stack-level work -- writing the room, wiring ``room_paths`` -- to
-``soliplex_template.rooms`` (provisioned by ``uv run`` from the PEP 723
-dependency above). Templates stay in the skill; the generic, template-agnostic
-logic lives in the published ``soliplex-template`` package.
+``assets/rooms/<name>/``) and renders the chosen one with Mako. The
+stack-level work -- writing the room and wiring ``room_paths`` -- is left to
+``soliplex_plumber.rooms``.
 
-Run it from the skill directory, pointing ``--project-dir`` at the stack::
+Run it with ``uv run``, which provisions the PEP 723 dependencies above::
 
     # list the bundled room templates
-    python3 add_room.py list
+    uv run add_room.py list
 
     # add a conversational-RAG room called 'handbook'
-    python3 add_room.py add --project-dir /path/to/stack \\
+    uv run add_room.py add --project-dir /path/to/stack \\
         --template chat --room-id handbook \\
         --name "Handbook" --description "Q&A over the staff handbook"
 
     # preview without writing
-    python3 add_room.py add --template chat --room-id handbook --dry-run
+    uv run add_room.py add --template chat --room-id handbook --dry-run
 
-The room template is rendered with Mako, so its comments -- including the
-commented-out examples for custom tools and skills -- carry through to the
-generated file for the operator to edit. ``room_paths`` is left untouched when
-it already points at ``./rooms`` (the new room is auto-discovered); installs
-that enumerate rooms get ``- "./rooms/<room-id>"`` spliced in line-based.
+Mako renders the template's comments through to the generated config -- the
+commented-out tool and skill examples included -- for the operator to edit.
+``room_paths`` is left alone when it already points at ``./rooms`` (which
+auto-discovers the new room); installs that enumerate rooms instead get
+``- "./rooms/<room-id>"`` spliced in.
 """
 
 from __future__ import annotations
@@ -38,16 +36,8 @@ import argparse
 import pathlib
 import sys
 
-from mako.template import Template
-
-from soliplex_template.rooms import DEFAULT_PACKAGE_NAME
-from soliplex_template.rooms import INSTALLATION_FILE
-from soliplex_template.rooms import PROMPT_FILE_NAME
-from soliplex_template.rooms import AddRoomError
-from soliplex_template.rooms import install_room
-from soliplex_template.rooms import resolve_package_name
-from soliplex_template.rooms import resolve_project
-from soliplex_template.rooms import validate_room_id
+from mako import template as mako_template
+from soliplex_plumber import rooms
 
 # Bundled room templates live beside this script under '<skill>/assets/rooms/'
 # (this file is '<skill>/scripts/add_room.py'); resolve them relative to
@@ -110,11 +100,24 @@ def available_templates() -> dict[str, str]:
     return found
 
 
+# Two ``AddRoomError`` messages the template-agnostic core deliberately omits:
+# templates and prompt files are skill concerns, so the wording lives here.
+# They return the core's ``AddRoomError`` so ``main``'s top-level handler (and
+# ``install_room``'s own errors) catch them uniformly.
+def _unknown_template_error(name: str, available) -> rooms.AddRoomError:
+    avail = ", ".join(sorted(available)) or "(none found)"
+    return rooms.AddRoomError(f"unknown template {name!r}; available: {avail}")
+
+
+def _prompt_file_missing_error(path) -> rooms.AddRoomError:
+    return rooms.AddRoomError(f"prompt file {path} does not exist")
+
+
 def resolve_template(name: str) -> pathlib.Path:
     """Return the path to template ``name``'s mako file, or raise."""
     path = TEMPLATES_DIR / name / TEMPLATE_FILE
     if not path.is_file():
-        raise AddRoomError.unknown_template(name, available_templates())
+        raise _unknown_template_error(name, available_templates())
     return path
 
 
@@ -146,18 +149,21 @@ def format_system_prompt(
 
 def render_room_config(template_path: pathlib.Path, ctx: dict) -> str:
     """Render a bundled room template with ``ctx`` (strict undefined)."""
-    template = Template(filename=str(template_path), strict_undefined=True)
+    template = mako_template.Template(
+        filename=str(template_path),
+        strict_undefined=True,
+    )
     return template.render(**ctx)
 
 
 def build_context(
     args: argparse.Namespace,
     template: str,
-    package_name: str = DEFAULT_PACKAGE_NAME,
+    package_name: str = rooms.DEFAULT_PACKAGE_NAME,
 ) -> dict:
     """Assemble the Mako context for a room from the parsed args."""
     if args.prompt_file is not None:
-        system_prompt = format_system_prompt(None, PROMPT_FILE_NAME)
+        system_prompt = format_system_prompt(None, rooms.PROMPT_FILE_NAME)
     else:
         inline = args.system_prompt
         if inline is None:
@@ -190,22 +196,22 @@ def do_list(args: argparse.Namespace) -> int:
 
 
 def do_add(args: argparse.Namespace) -> int:
-    project = resolve_project(args.project_dir)
-    validate_room_id(args.room_id)
+    project = rooms.resolve_project(args.project_dir)
+    rooms.validate_room_id(args.room_id)
     template_path = resolve_template(args.template)
 
     prompt_text = None
     if args.prompt_file is not None:
         prompt_src = pathlib.Path(args.prompt_file)
         if not prompt_src.is_file():
-            raise AddRoomError.prompt_file_missing(prompt_src)
+            raise _prompt_file_missing_error(prompt_src)
         prompt_text = prompt_src.read_text()
 
-    package_name = resolve_package_name(project, args.package_name)
+    package_name = rooms.resolve_package_name(project, args.package_name)
     ctx = build_context(args, args.template, package_name)
     config_text = render_room_config(template_path, ctx)
 
-    result = install_room(
+    result = rooms.install_room(
         project,
         args.room_id,
         config_text=config_text,
@@ -244,7 +250,7 @@ def _print_summary(
 ) -> None:
     print(f"✓ Added room {room_id!r}:")
     print(f"  - {config_path}: added")
-    print(f"  - {INSTALLATION_FILE} room_paths: {path_action}")
+    print(f"  - {rooms.INSTALLATION_FILE} room_paths: {path_action}")
     print()
     print("Next steps:")
     print(f"  - review/edit {config_path}")
@@ -353,6 +359,6 @@ def main(argv: list[str]) -> int:
 if __name__ == "__main__":  # pragma: no cover
     try:
         sys.exit(main(sys.argv[1:]))
-    except AddRoomError as exc:
+    except rooms.AddRoomError as exc:
         print(f"error: {exc}", file=sys.stderr)
         sys.exit(2)

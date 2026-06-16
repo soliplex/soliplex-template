@@ -2,10 +2,10 @@
 
 The script ships inside the ``soliplex-template`` skill and is not part of an
 importable package, so it is loaded here by file path via ``importlib.util``
-(it imports the generic core from the installed ``soliplex_template.rooms``).
+(it imports the generic core from the installed ``soliplex_plumber.rooms``).
 Tests cover the skill-owned bits -- the template catalog, Mako rendering, and
 the CLI -- and exercise ``add`` end-to-end through the real package. The
-generic core is unit-tested separately in ``tests/unit/test_rooms.py``.
+generic core is unit-tested separately in the ``soliplex-plumber`` project.
 
 Hermetic: everything routed through ``tmp_path`` and the bundled templates --
 no Docker, no network. AAA layout, single act per test.
@@ -109,7 +109,7 @@ def test_resolve_template_ok():
 
 
 def test_resolve_template_unknown():
-    with pytest.raises(add_room.AddRoomError, match="unknown template"):
+    with pytest.raises(add_room.rooms.AddRoomError, match="unknown template"):
         add_room.resolve_template("does-not-exist")
 
 
@@ -235,7 +235,7 @@ def test_list(capsys):
 
 
 # --------------------------------------------------------------------------
-# CLI: add (end-to-end through the real soliplex_template.rooms)
+# CLI: add (end-to-end through the real soliplex_plumber.rooms)
 # --------------------------------------------------------------------------
 def test_add_writes_room_and_updates_paths(tmp_path):
     project = _make_stack(tmp_path)
@@ -288,7 +288,7 @@ def test_add_with_prompt_file(tmp_path):
 def test_add_prompt_file_missing(tmp_path):
     project = _make_stack(tmp_path)
 
-    with pytest.raises(add_room.AddRoomError, match="prompt file"):
+    with pytest.raises(add_room.rooms.AddRoomError, match="prompt file"):
         add_room.main(
             [
                 "add",
