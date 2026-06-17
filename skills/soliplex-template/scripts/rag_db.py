@@ -82,74 +82,94 @@ _TOP_SKILLS_RE = re.compile(r"^skills:\s*$")
 
 
 class RagDbError(Exception):
-    """A user-facing error (printed without a traceback).
+    """A user-facing error (printed without a traceback)."""
 
-    Message construction lives in these classmethod factories so call sites
-    read ``raise RagDbError.<reason>(...)`` with no inline message string.
-    """
 
-    @classmethod
-    def docker_missing(cls):
-        return cls("docker not found on PATH (the Docker CLI is required)")
+class DockerMissing(RagDbError):
+    def __init__(self):
+        super().__init__(
+            "docker not found on PATH (the Docker CLI is required)"
+        )
 
-    @classmethod
-    def compose_not_found(cls, path):
-        return cls(
+
+class ComposeNotFound(RagDbError):
+    def __init__(self, path):
+        self.path = path
+        super().__init__(
             f"no docker-compose.yml at {path} "
             "(run from the stack directory or pass --project-dir)"
         )
 
-    @classmethod
-    def ragdb_dir_missing(cls, path):
-        return cls(f"RAG db directory not found at {path}")
 
-    @classmethod
-    def bad_db_name(cls, name):
-        return cls(
+class DatabaseDirectoryMissing(RagDbError):
+    def __init__(self, path):
+        self.path = path
+        super().__init__(f"RAG db directory not found at {path}")
+
+
+class BadDatabaseName(RagDbError):
+    def __init__(self, name):
+        self.name = name
+        super().__init__(
             f"--db-name {name!r} must match {DB_NAME_RE.pattern} "
             "(letters, digits, '.', '_', '-'; no leading dot)"
         )
 
-    @classmethod
-    def reserved_db_name(cls, name):
-        return cls(
+
+class ReservedDatabaseName(RagDbError):
+    def __init__(self, name):
+        self.name = name
+        super().__init__(
             f"--db-name {name!r} is the continuous ingester's database and "
             f"the {DEFAULT_SERVICE} service is running; stop it first "
             "(concurrent writers corrupt LanceDB) or pick a different stem"
         )
 
-    @classmethod
-    def db_exists(cls, path):
-        return cls(f"{path} already exists (use --force to add into it)")
 
-    @classmethod
-    def db_missing(cls, path):
-        return cls(f"{path} does not exist (create it first)")
+class DatabaseExists(RagDbError):
+    def __init__(self, path):
+        self.path = path
+        super().__init__(f"{path} already exists (use --force to add into it)")
 
-    @classmethod
-    def source_missing(cls, path):
-        return cls(f"--source {path} does not exist")
 
-    @classmethod
-    def no_update_op(cls):
-        return cls(
+class DatabaseMissing(RagDbError):
+    def __init__(self, path):
+        self.path = path
+        super().__init__(f"{path} does not exist (create it first)")
+
+
+class SourceMissing(RagDbError):
+    def __init__(self, path):
+        self.path = path
+        super().__init__(f"--source {path} does not exist")
+
+
+class NoUpdateOperation(RagDbError):
+    def __init__(self):
+        super().__init__(
             "update needs at least one of --source, --rebuild, or --delete"
         )
 
-    @classmethod
-    def modifier_without_rebuild(cls):
-        return cls(
+
+class ModifierWithotRebuild(RagDbError):
+    def __init__(self):
+        super().__init__(
             "--rechunk/--embed-only/--title-only are only valid with --rebuild"
         )
 
-    @classmethod
-    def room_not_found(cls, room_id, available):
-        avail = ", ".join(sorted(available)) or "(none found)"
-        return cls(f"room id {room_id!r} not found; available: {avail}")
 
-    @classmethod
-    def room_skills_present_no_rag(cls, room_id):
-        return cls(
+class RoomNotFound(RagDbError):
+    def __init__(self, room_id, available):
+        self.room_id = room_id
+        self.available = available
+        avail = ", ".join(sorted(available)) or "(none found)"
+        super().__init__(f"room id {room_id!r} not found; available: {avail}")
+
+
+class RoomSkillsPresentWithoutRAG(RagDbError):
+    def __init__(self, room_id):
+        self.room_id = room_id
+        super().__init__(
             f"room {room_id!r} has a 'skills:' block but no "
             f"{RAG_SKILL_KIND!r} skill config; add that skill config and its "
             f"{_STEM_KEY} by hand"
@@ -161,7 +181,7 @@ class RagDbError(Exception):
 # --------------------------------------------------------------------------
 def validate_db_name(name: str) -> None:
     if not DB_NAME_RE.match(name):
-        raise RagDbError.bad_db_name(name)
+        raise BadDatabaseName(name)
 
 
 def ingester_running(project: pathlib.Path) -> bool:
@@ -197,7 +217,7 @@ def guard_reserved_stem(project: pathlib.Path, db_name: str) -> None:
     if db_name != INGESTER_STEM:
         return
     if ingester_running(project):
-        raise RagDbError.reserved_db_name(db_name)
+        raise ReservedDatabaseName(db_name)
     print(
         f"warning: writing the ingester's database {db_name!r}; safe only "
         f"because the {DEFAULT_SERVICE} service is not running."
@@ -208,10 +228,10 @@ def resolve_project(project_dir: str) -> pathlib.Path:
     project = pathlib.Path(project_dir).resolve()
     compose = project / "docker-compose.yml"
     if not compose.is_file():
-        raise RagDbError.compose_not_found(compose)
+        raise ComposeNotFound(compose)
     ragdb = project / "rag" / "db"
     if not ragdb.is_dir():
-        raise RagDbError.ragdb_dir_missing(ragdb)
+        raise DatabaseDirectoryMissing(ragdb)
     return project
 
 
@@ -233,7 +253,7 @@ def resolve_source(
 
     path = pathlib.Path(source).resolve()
     if not path.exists():
-        raise RagDbError.source_missing(path)
+        raise SourceMissing(path)
 
     docs_root = (project / "rag" / "docs").resolve()
     if path == docs_root or docs_root in path.parents:
@@ -342,7 +362,7 @@ def wire_room_stem(text: str, db_name: str, room_id: str) -> tuple[str, str]:
         return _join(lines, text), "inserted"
 
     if any(_TOP_SKILLS_RE.match(ln) for ln in lines):
-        raise RagDbError.room_skills_present_no_rag(room_id)
+        raise RoomSkillsPresentWithoutRAG(room_id)
 
     block = [
         "skills:",
@@ -359,14 +379,14 @@ def wire_room_stem(text: str, db_name: str, room_id: str) -> tuple[str, str]:
 # --------------------------------------------------------------------------
 def do_create(args: argparse.Namespace) -> int:
     if shutil.which("docker") is None:
-        raise RagDbError.docker_missing()
+        raise DockerMissing()
     project = resolve_project(args.project_dir)
     validate_db_name(args.db_name)
     guard_reserved_stem(project, args.db_name)
 
     db_path = db_lancedb_path(project, args.db_name)
     if db_path.exists() and not args.force:
-        raise RagDbError.db_exists(db_path)
+        raise DatabaseExists(db_path)
 
     # Resolve (and validate) the source before creating anything.
     mounts, container_src = resolve_source(project, args.source)
@@ -388,19 +408,19 @@ def do_create(args: argparse.Namespace) -> int:
 
 def do_update(args: argparse.Namespace) -> int:
     if shutil.which("docker") is None:
-        raise RagDbError.docker_missing()
+        raise DockerMissing()
     project = resolve_project(args.project_dir)
     validate_db_name(args.db_name)
 
     if rebuild_modifier(args) and not args.rebuild:
-        raise RagDbError.modifier_without_rebuild()
+        raise ModifierWithotRebuild()
     if not (args.source or args.rebuild or args.delete):
-        raise RagDbError.no_update_op()
+        raise NoUpdateOperation()
     guard_reserved_stem(project, args.db_name)
 
     db_path = db_lancedb_path(project, args.db_name)
     if not db_path.exists():
-        raise RagDbError.db_missing(db_path)
+        raise DatabaseMissing(db_path)
 
     # Resolve the source up front so a bad path fails before any mutation.
     mounts: list[str] = []
@@ -457,7 +477,7 @@ def do_update(args: argparse.Namespace) -> int:
 
 def do_add_to_room(args: argparse.Namespace) -> int:
     if shutil.which("docker") is None:
-        raise RagDbError.docker_missing()
+        raise DockerMissing()
     project = resolve_project(args.project_dir)
     validate_db_name(args.db_name)
 
@@ -481,7 +501,7 @@ def do_add_to_room(args: argparse.Namespace) -> int:
     # Validate every requested room up front, before touching any file.
     missing = [room_id for room_id in args.room if room_id not in rooms]
     if missing:
-        raise RagDbError.room_not_found(missing[0], rooms.keys())
+        raise RoomNotFound(missing[0], rooms.keys())
 
     # A typo'd or not-yet-built database is wireable, but worth flagging.
     db_path = db_lancedb_path(project, args.db_name)

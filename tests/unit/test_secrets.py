@@ -166,7 +166,7 @@ def test_maybe_reown_chowns_via_docker(tmp_path, monkeypatch):
 def test_generate_secrets_missing_compose_raises(tmp_path):
     project = _make_stack(tmp_path, compose=False)
 
-    with pytest.raises(st_secrets.SecretsError, match="cannot find compose"):
+    with pytest.raises(st_secrets.ComposeNotFound):
         st_secrets.generate_secrets(project)
 
 

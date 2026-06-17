@@ -81,34 +81,44 @@ _ROOM_FIELDS = (
 class SoliplexConfigError(Exception):
     """A user-facing error (printed without a traceback)."""
 
-    @classmethod
-    def docker_missing(cls):
-        return cls("docker not found on PATH (the Docker CLI is required)")
 
-    @classmethod
-    def compose_not_found(cls, path):
-        return cls(
+class DockerMissing(SoliplexConfigError):
+    def __init__(self):
+        super().__init__(
+            "docker not found on PATH (the Docker CLI is required)"
+        )
+
+
+class ComposeNotFound(SoliplexConfigError):
+    def __init__(self, path):
+        self.path = path
+        super().__init__(
             f"no docker-compose.yml at {path} "
             "(run from the stack directory or pass --project-dir)"
         )
 
-    @classmethod
-    def no_room_paths(cls):
-        return cls(
+
+class NoRoomPaths(SoliplexConfigError):
+    def __init__(self):
+        super().__init__(
             "soliplex-cli config output has no 'room_paths' "
             "(unexpected config shape -- is the backend service healthy?)"
         )
 
-    @classmethod
-    def key_not_found(cls, key):
-        return cls(
+
+class KeyNotFound(SoliplexConfigError):
+    def __init__(self, key):
+        self.key = key
+        super().__init__(
             f"no key {key!r} in the resolved installation config "
             "(use 'show' to inspect the available keys)"
         )
 
-    @classmethod
-    def room_not_found(cls, room_id):
-        return cls(
+
+class RoomNotFound(SoliplexConfigError):
+    def __init__(self, room_id):
+        self.room_id = room_id
+        super().__init__(
             f"no room with id {room_id!r} among the loaded rooms "
             "(use 'rooms' to list them)"
         )
@@ -116,14 +126,14 @@ class SoliplexConfigError(Exception):
 
 def _require_docker() -> None:
     if shutil.which("docker") is None:
-        raise SoliplexConfigError.docker_missing()
+        raise DockerMissing()
 
 
 def resolve_project(project_dir: str) -> pathlib.Path:
     project = pathlib.Path(project_dir).resolve()
     compose = project / "docker-compose.yml"
     if not compose.is_file():
-        raise SoliplexConfigError.compose_not_found(compose)
+        raise ComposeNotFound(compose)
     return project
 
 
@@ -161,7 +171,7 @@ def parse_config(stdout: str) -> dict:
 
 
 def navigate(config: dict, key: str):
-    """Resolve a dotted ``key`` into ``config``, or raise ``key_not_found``.
+    """Resolve a dotted ``key`` into ``config``, or raise ``KeyNotFound``.
 
     Each ``.``-separated segment indexes a mapping by name or a sequence by
     integer position. Descending past a scalar, an unknown mapping key, a
@@ -171,15 +181,15 @@ def navigate(config: dict, key: str):
     for part in key.split("."):
         if isinstance(current, dict):
             if part not in current:
-                raise SoliplexConfigError.key_not_found(key)
+                raise KeyNotFound(key)
             current = current[part]
         elif isinstance(current, list):
             try:
                 current = current[int(part)]
             except (ValueError, IndexError):
-                raise SoliplexConfigError.key_not_found(key) from None
+                raise KeyNotFound(key) from None
         else:
-            raise SoliplexConfigError.key_not_found(key)
+            raise KeyNotFound(key)
     return current
 
 
@@ -282,7 +292,7 @@ def _resolve_room_configs(
     """
     config = parse_config(run_config(project, service, cli, installation))
     if "room_paths" not in config:
-        raise SoliplexConfigError.no_room_paths()
+        raise NoRoomPaths()
 
     host_env = (project / host_environment).resolve()
     entries: list[tuple[dict, pathlib.Path]] = []
@@ -380,7 +390,7 @@ def do_room(args: argparse.Namespace) -> int:
         if meta["room_id"] == args.room_id:
             print(cfg.read_text(), end="")
             return 0
-    raise SoliplexConfigError.room_not_found(args.room_id)
+    raise RoomNotFound(args.room_id)
 
 
 def _add_config_args(parser: argparse.ArgumentParser) -> None:

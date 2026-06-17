@@ -175,7 +175,7 @@ def test_validate_db_name_ok():
     "name", ["", "bad/name", "../escape", ".hidden", "has space", "-lead"]
 )
 def test_validate_db_name_bad(name):
-    with pytest.raises(rag_db.RagDbError, match="must match"):
+    with pytest.raises(rag_db.BadDatabaseName):
         rag_db.validate_db_name(name)
 
 
@@ -201,14 +201,14 @@ def test_resolve_project_ok(tmp_path):
 def test_resolve_project_no_compose(tmp_path):
     project = _make_project(tmp_path, compose=False)
 
-    with pytest.raises(rag_db.RagDbError, match="no docker-compose.yml"):
+    with pytest.raises(rag_db.ComposeNotFound):
         rag_db.resolve_project(str(project))
 
 
 def test_resolve_project_no_ragdb(tmp_path):
     project = _make_project(tmp_path, ragdb=False)
 
-    with pytest.raises(rag_db.RagDbError, match="RAG db directory"):
+    with pytest.raises(rag_db.DatabaseDirectoryMissing):
         rag_db.resolve_project(str(project))
 
 
@@ -276,7 +276,7 @@ def test_resolve_source_automount_file(tmp_path):
 def test_resolve_source_missing(tmp_path):
     project = _make_project(tmp_path)
 
-    with pytest.raises(rag_db.RagDbError, match="does not exist"):
+    with pytest.raises(rag_db.SourceMissing):
         rag_db.resolve_source(project, str(tmp_path / "nope"))
 
 
@@ -351,7 +351,7 @@ def test_create_docker_missing(tmp_path, which, run):
     which.return_value = None
     project = _make_project(tmp_path)
 
-    with pytest.raises(rag_db.RagDbError, match="docker not found"):
+    with pytest.raises(rag_db.DockerMissing):
         rag_db.main(
             [
                 "create",
@@ -371,7 +371,7 @@ def test_create_db_exists_no_force(tmp_path, which, run):
     project = _make_project(tmp_path)
     _make_db(project)
 
-    with pytest.raises(rag_db.RagDbError, match="already exists"):
+    with pytest.raises(rag_db.DatabaseExists):
         rag_db.main(
             [
                 "create",
@@ -418,7 +418,7 @@ def test_update_docker_missing(tmp_path, which, run):
     which.return_value = None
     project = _make_project(tmp_path)
 
-    with pytest.raises(rag_db.RagDbError, match="docker not found"):
+    with pytest.raises(rag_db.DockerMissing):
         rag_db.main(
             ["update", "--db-name", "handbook", "--project-dir", str(project)]
         )
@@ -430,7 +430,7 @@ def test_update_modifier_without_rebuild(tmp_path, which, run):
     project = _make_project(tmp_path)
     _make_db(project)
 
-    with pytest.raises(rag_db.RagDbError, match="only valid with --rebuild"):
+    with pytest.raises(rag_db.ModifierWithotRebuild):
         rag_db.main(
             [
                 "update",
@@ -449,7 +449,7 @@ def test_update_no_op(tmp_path, which, run):
     project = _make_project(tmp_path)
     _make_db(project)
 
-    with pytest.raises(rag_db.RagDbError, match="at least one of"):
+    with pytest.raises(rag_db.NoUpdateOperation):
         rag_db.main(
             ["update", "--db-name", "handbook", "--project-dir", str(project)]
         )
@@ -460,7 +460,7 @@ def test_update_no_op(tmp_path, which, run):
 def test_update_db_missing(tmp_path, which, run):
     project = _make_project(tmp_path)
 
-    with pytest.raises(rag_db.RagDbError, match="does not exist"):
+    with pytest.raises(rag_db.DatabaseMissing):
         rag_db.main(
             [
                 "update",
@@ -606,7 +606,7 @@ def test_update_ingester_stem_refused_when_running(tmp_path, which, run):
     project = _make_project(tmp_path)
     run.return_value.stdout = "container-id\n"  # ingester is up
 
-    with pytest.raises(rag_db.RagDbError, match="ingester's database"):
+    with pytest.raises(rag_db.ReservedDatabaseName):
         rag_db.main(
             [
                 "update",
@@ -776,7 +776,7 @@ def test_wire_room_stem_skills_without_rag_refused():
         '    - kind: "soliplex.skills.other"\n'
     )
 
-    with pytest.raises(rag_db.RagDbError, match="add that skill config"):
+    with pytest.raises(rag_db.RoomSkillsPresentWithoutRAG):
         rag_db.wire_room_stem(text, "handbook", "q")
 
 
@@ -788,7 +788,7 @@ def test_add_room_docker_missing(tmp_path, which, run, monkeypatch):
     project = _make_project(tmp_path)
     _fake_soliplex_config(monkeypatch, {})
 
-    with pytest.raises(rag_db.RagDbError, match="docker not found"):
+    with pytest.raises(rag_db.DockerMissing):
         rag_db.main(
             [
                 "add-rag-to-room",
@@ -839,7 +839,7 @@ def test_add_room_unknown_room_errors(tmp_path, which, monkeypatch):
     _fake_soliplex_config(monkeypatch, {"chat": chat})
     before = chat.read_text()
 
-    with pytest.raises(rag_db.RagDbError, match="not found; available: chat"):
+    with pytest.raises(rag_db.RoomNotFound):
         rag_db.main(
             [
                 "add-rag-to-room",
