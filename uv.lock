@@ -398,11 +398,11 @@ wheels = [
 
 [[package]]
 name = "soliplex-plumber"
-version = "0.1"
+version = "0.2.1"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/95/fc/0a4f6690c046e00e6abb48363d353b4416404dbc5f78ea5750671e8d2f6b/soliplex_plumber-0.1.tar.gz", hash = "sha256:a0bc6483dce19f3643597490c4e1b2f22518dd94082b39dd98c822d612411ce0", size = 59226, upload-time = "2026-06-16T15:52:27.467Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e7/3a/c6ec53c6ed71403dee5b047a1f8f7dbcd1fd9fe72c7437b1e95035d82ebb/soliplex_plumber-0.2.1.tar.gz", hash = "sha256:6f23c3be0ef891fb66d9db88000c7d2055604d4bfeee6fc724a85ad668bfed6e", size = 61477, upload-time = "2026-06-17T03:14:48.903Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/91/50/5443d079db486fc20d037c717fd3076e430e6bb09e9b77a62a3b47c046ad/soliplex_plumber-0.1-py3-none-any.whl", hash = "sha256:020c9af68fb1781c96e7546cba298ee5a1d1c3dd1996e5422a3b5d0464d42186", size = 5619, upload-time = "2026-06-16T15:52:26.327Z" },
+    { url = "https://files.pythonhosted.org/packages/70/e2/a47170df6821a059aca4b9c60eed86cdb0396bea5d905afb9be168b50d79/soliplex_plumber-0.2.1-py3-none-any.whl", hash = "sha256:2b505ac7d91b67162775d4a98434e541eb6d178b9376bcdf74d646fc4f312631", size = 12184, upload-time = "2026-06-17T03:14:48.087Z" },
 ]
 
 [[package]]
@@ -447,7 +447,7 @@ dev = [
     { name = "pyyaml" },
     { name = "ruff" },
     { name = "skills-ref", specifier = "==0.1.1" },
-    { name = "soliplex-plumber", specifier = ">=0.1" },
+    { name = "soliplex-plumber", specifier = ">=0.2.1" },
     { name = "soliplex-skills", specifier = ">=0.5" },
     { name = "zensical" },
 ]
