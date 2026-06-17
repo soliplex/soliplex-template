@@ -101,7 +101,7 @@ def test_load_params_reads_overrides(tmp_path):
 
 
 def test_load_params_unreadable_file(tmp_path):
-    with pytest.raises(gen.GenError, match="cannot read --params"):
+    with pytest.raises(gen.ParamsUnreadable):
         gen.load_params(_args(params=str(tmp_path / "missing.json")))
 
 
@@ -109,7 +109,7 @@ def test_load_params_invalid_json(tmp_path):
     params_file = tmp_path / "p.json"
     params_file.write_text("not json", encoding="utf-8")
 
-    with pytest.raises(gen.GenError, match="not valid JSON"):
+    with pytest.raises(gen.ParamsNotJSON):
         gen.load_params(_args(params=str(params_file)))
 
 
@@ -117,7 +117,7 @@ def test_load_params_not_an_object(tmp_path):
     params_file = tmp_path / "p.json"
     params_file.write_text("[1, 2]", encoding="utf-8")
 
-    with pytest.raises(gen.GenError, match="must be an object/dict"):
+    with pytest.raises(gen.ParamsNotObject):
         gen.load_params(_args(params=str(params_file)))
 
 
@@ -125,7 +125,7 @@ def test_load_params_unknown_key(tmp_path):
     params_file = tmp_path / "p.json"
     params_file.write_text('{"bogus": 1}', encoding="utf-8")
 
-    with pytest.raises(gen.GenError, match="unknown parameter"):
+    with pytest.raises(gen.UnknownParams):
         gen.load_params(_args(params=str(params_file)))
 
 
@@ -194,7 +194,7 @@ def test_coerce_int_error():
     params = dict(gen.DEFAULTS)
     params["chunk_size"] = "not-an-int"
 
-    with pytest.raises(gen.GenError, match="chunk_size must be an integer"):
+    with pytest.raises(gen.NotAnInteger):
         gen.coerce_and_derive(params)
 
 
@@ -290,7 +290,7 @@ def test_coerce_uid_not_int(monkeypatch):
     params["ollama_base_url"] = "http://x"
     params["puid"] = "not-an-int"
 
-    with pytest.raises(gen.GenError, match="puid must be an integer"):
+    with pytest.raises(gen.NotAnInteger):
         gen.coerce_and_derive(params)
 
 
@@ -305,7 +305,7 @@ def test_validate_requires_ollama():
     params = _valid_params()
     params["ollama_base_url"] = "  "
 
-    with pytest.raises(gen.GenError, match="ollama_base_url is required"):
+    with pytest.raises(gen.OllamaRequired):
         gen.validate(params)
 
 
@@ -313,7 +313,7 @@ def test_validate_port_out_of_range():
     params = _valid_params()
     params["nginx_http"] = 0
 
-    with pytest.raises(gen.GenError, match="out of range"):
+    with pytest.raises(gen.PortOutOfRange):
         gen.validate(params)
 
 
@@ -321,7 +321,7 @@ def test_validate_duplicate_port():
     params = _valid_params()
     params["nginx_http"] = params["nginx_https"]
 
-    with pytest.raises(gen.GenError, match="used by both"):
+    with pytest.raises(gen.PortCollision):
         gen.validate(params)
 
 
@@ -329,7 +329,7 @@ def test_validate_bad_sql_identifier():
     params = _valid_params()
     params["agui_db"] = "1bad"
 
-    with pytest.raises(gen.GenError, match="valid SQL identifier"):
+    with pytest.raises(gen.BadIdentifier):
         gen.validate(params)
 
 
@@ -340,7 +340,7 @@ def test_validate_bad_package_name(package_name):
     params = _valid_params()
     params["package_name"] = package_name
 
-    with pytest.raises(gen.GenError, match="not a valid Python identifier"):
+    with pytest.raises(gen.BadPackageName):
         gen.validate(params)
 
 
@@ -349,7 +349,7 @@ def test_validate_bad_frontend_version(frontend_version):
     params = _valid_params()
     params["frontend_version"] = frontend_version
 
-    with pytest.raises(gen.GenError, match="must be 'latest' or"):
+    with pytest.raises(gen.BadFrontendVersion):
         gen.validate(params)
 
 
@@ -369,7 +369,7 @@ def test_validate_dbs_must_differ():
     params = _valid_params()
     params["authz_db"] = params["agui_db"]
 
-    with pytest.raises(gen.GenError, match="must differ"):
+    with pytest.raises(gen.DatabasesMusDiffer):
         gen.validate(params)
 
 
@@ -387,7 +387,7 @@ def test_validate_bad_uid(key, value):
     params = _valid_params()
     params[key] = value
 
-    with pytest.raises(gen.GenError, match="must be a positive integer"):
+    with pytest.raises(gen.BadUID):
         gen.validate(params)
 
 
@@ -395,7 +395,7 @@ def test_validate_bad_auth_mode():
     params = _valid_params()
     params["auth_mode"] = "maybe"
 
-    with pytest.raises(gen.GenError, match="auth_mode must be"):
+    with pytest.raises(gen.BadAuthMode):
         gen.validate(params)
 
 
@@ -403,7 +403,7 @@ def test_validate_empty_constraint():
     params = _valid_params()
     params["soliplex_backend_constraint"] = "   "
 
-    with pytest.raises(gen.GenError, match="must not be empty"):
+    with pytest.raises(gen.EmptyConstraint):
         gen.validate(params)
 
 
@@ -412,7 +412,7 @@ def test_validate_bad_docs_dir(docs_dir):
     params = _valid_params()
     params["docs_dir"] = docs_dir
 
-    with pytest.raises(gen.GenError, match="relative path inside the project"):
+    with pytest.raises(gen.BadDocsDir):
         gen.validate(params)
 
 
@@ -449,7 +449,7 @@ def test_render_tree_bad_template_raises(tmp_path):
     )
     out = tmp_path / "out"
 
-    with pytest.raises(gen.GenError, match="failed to render"):
+    with pytest.raises(gen.RenderFailed):
         gen.render_tree(template, out, {"project_name": "demo"})
 
 
@@ -502,7 +502,7 @@ def test_coerce_and_derive_w_invalid_include_gitea_raises():
     params = dict(gen.DEFAULTS)
     params["include_gitea"] = "maybe"
 
-    with pytest.raises(gen.GenError, match="include_gitea must be a boolean"):
+    with pytest.raises(gen.BadBoolean):
         gen.coerce_and_derive(params)
 
 
@@ -570,7 +570,7 @@ def test_coerce_and_derive_w_invalid_include_tui_raises():
     params = dict(gen.DEFAULTS)
     params["include_tui"] = "maybe"
 
-    with pytest.raises(gen.GenError, match="include_tui must be a boolean"):
+    with pytest.raises(gen.BadBoolean):
         gen.coerce_and_derive(params)
 
 
@@ -808,7 +808,7 @@ def test_main_print_defaults(capsys):
 
 
 def test_main_requires_out():
-    with pytest.raises(gen.GenError, match="--out is required"):
+    with pytest.raises(gen.OutIsRequired):
         gen.main([])
 
 
@@ -819,7 +819,7 @@ def test_main_missing_template(monkeypatch, tmp_path):
         str(tmp_path / "skill" / "scripts" / "generate_soliplex_project.py"),
     )
 
-    with pytest.raises(gen.GenError, match="embedded template not found"):
+    with pytest.raises(gen.TemplateNotFound):
         gen.main(["--out", str(tmp_path / "proj")])
 
 
@@ -834,7 +834,7 @@ def test_main_out_not_empty(monkeypatch, tmp_path):
     out.mkdir()
     (out / "stale").write_text("x", encoding="utf-8")
 
-    with pytest.raises(gen.GenError, match="not empty"):
+    with pytest.raises(gen.OutNotEmpty):
         gen.main(["--out", str(out)])
 
 

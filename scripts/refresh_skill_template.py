@@ -64,13 +64,20 @@ EXCLUDE_PATHSPECS = [
 
 
 class RefreshError(Exception):
-    @classmethod
-    def wrap(cls, rel, exc):
-        return cls(f"{rel}: {exc}")
+    """Error refreshing template"""
 
-    @classmethod
-    def render_failures(cls, count):
-        return cls(f"{count} template(s) failed the render check")
+
+class Wrap(RefreshError):
+    def __init__(self, rel, exc):
+        self.rel = rel
+        self.exc = exc
+        super().__init__(f"{rel}: {exc}")
+
+
+class RenderFailures(RefreshError):
+    def __init__(self, count):
+        self.count = count
+        super().__init__(f"{count} template(s) failed the render check")
 
 
 def require(cond: bool, msg: str) -> None:
@@ -1119,7 +1126,7 @@ def _build_into(dest_root: pathlib.Path, files: list[str]) -> tuple[int, int]:
         try:
             copied.write_text(fn(copied.read_text()))
         except RefreshError as exc:
-            raise RefreshError.wrap(rel, exc) from exc
+            raise Wrap(rel, exc) from exc
 
     # rewrite parameterized files as .mako
     derived = 0
@@ -1132,7 +1139,7 @@ def _build_into(dest_root: pathlib.Path, files: list[str]) -> tuple[int, int]:
         try:
             mako_text = fn(copied.read_text())
         except RefreshError as exc:
-            raise RefreshError.wrap(rel, exc) from exc
+            raise Wrap(rel, exc) from exc
         copied.with_name(copied.name + ".mako").write_text(mako_text)
         copied.unlink()
         derived += 1
@@ -1149,7 +1156,7 @@ def _build_into(dest_root: pathlib.Path, files: list[str]) -> tuple[int, int]:
                     md.read_text(), USER_DOC_PARAMS.get(rel.as_posix(), [])
                 )
             except RefreshError as exc:
-                raise RefreshError.wrap(f"{USER_DOCS_SRC}/{rel}", exc) from exc
+                raise Wrap(f"{USER_DOCS_SRC}/{rel}", exc) from exc
             dest = dest_root / "docs" / rel
             dest = dest.with_name(dest.name + ".mako")
             dest.parent.mkdir(parents=True, exist_ok=True)
@@ -1170,7 +1177,7 @@ def _assemble(staging: pathlib.Path, files: list[str]) -> tuple[int, int]:
     derived, authored = _build_into(staging, files)
     bad = render_check(staging)
     if bad:
-        raise RefreshError.render_failures(bad)
+        raise RenderFailures(bad)
     return derived, authored
 
 

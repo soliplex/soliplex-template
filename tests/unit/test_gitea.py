@@ -114,7 +114,7 @@ def test_parse_token_returns_sha1():
 
 @pytest.mark.parametrize("body", ['{"name": "x"}', "not json"])
 def test_parse_token_missing_or_invalid_raises(body):
-    with pytest.raises(st_gitea.GiteaError, match="could not parse token"):
+    with pytest.raises(st_gitea.NoToken):
         st_gitea.parse_token(body)
 
 
@@ -207,7 +207,9 @@ def test_mint_token_http_error_raises_with_status_and_body(monkeypatch):
         mock.Mock(side_effect=_http_error(403, b'{"message": "forbidden"}')),
     )
 
-    with pytest.raises(st_gitea.GiteaError, match="HTTP 403.*forbidden"):
+    with pytest.raises(
+        st_gitea.TokenRequestFailed, match="HTTP 403.*forbidden"
+    ):
         st_gitea.mint_token("pw", token_name="t")
 
 
@@ -218,7 +220,7 @@ def test_mint_token_no_token_raises(monkeypatch):
         lambda req: _urlopen_returning(read=b"{}"),
     )
 
-    with pytest.raises(st_gitea.GiteaError, match="could not parse token"):
+    with pytest.raises(st_gitea.NoToken):
         st_gitea.mint_token("pw", token_name="t")
 
 
@@ -256,7 +258,7 @@ def test_create_repo_failure_raises(monkeypatch):
         mock.Mock(side_effect=_http_error(500)),
     )
 
-    with pytest.raises(st_gitea.GiteaError, match="HTTP 500"):
+    with pytest.raises(st_gitea.RepoCreationFailed):
         st_gitea.create_repo("pw")
 
 
@@ -295,7 +297,7 @@ def test_set_env_var_creates_file(tmp_path):
 def test_provision_gitea_not_ready_raises(tmp_path, monkeypatch):
     monkeypatch.setattr(st_gitea, "wait_for_gitea", lambda **kw: False)
 
-    with pytest.raises(st_gitea.GiteaError, match="did not become ready"):
+    with pytest.raises(st_gitea.GiteaNotReady):
         st_gitea.provision_gitea(tmp_path)
 
 
@@ -337,7 +339,7 @@ def test_provision_gitea_creates_distinct_webui_admin(tmp_path, monkeypatch):
 
 
 def test_provision_gitea_rejects_service_account_as_webui(tmp_path):
-    with pytest.raises(st_gitea.GiteaError, match="rotating service account"):
+    with pytest.raises(st_gitea.ReservedUser):
         st_gitea.provision_gitea(
             tmp_path, webui_user=st_gitea.ADMIN_USER, webui_password="pw"
         )
@@ -495,7 +497,7 @@ def test_upload_ssh_key_other_error_raises(monkeypatch):
         mock.Mock(side_effect=_http_error(500, b'{"message": "boom"}')),
     )
 
-    with pytest.raises(st_gitea.GiteaError, match="HTTP 500.*boom"):
+    with pytest.raises(st_gitea.KeyUploadFailed):
         st_gitea.upload_ssh_key("k", password="pw", title="t")
 
 
@@ -585,7 +587,7 @@ def test_push_initial_failure_raises(monkeypatch):
     git = mock.Mock(return_value=mock.Mock(returncode=1, stderr="denied\n"))
     monkeypatch.setattr(st_gitea, "_git", git)
 
-    with pytest.raises(st_gitea.GiteaError, match="denied"):
+    with pytest.raises(st_gitea.PushFailed):
         st_gitea.push_initial("/stack", "main")
 
 
@@ -593,7 +595,7 @@ def test_push_initial_failure_raises(monkeypatch):
 # push_stack_to_gitea
 # --------------------------------------------------------------------------
 def test_push_stack_to_gitea_rejects_non_git_dir(tmp_path):
-    with pytest.raises(st_gitea.GiteaError, match="not a git repository"):
+    with pytest.raises(st_gitea.NotAGitRepo):
         st_gitea.push_stack_to_gitea(tmp_path, "pw", repo_name="r")
 
 
@@ -601,7 +603,7 @@ def test_push_stack_to_gitea_requires_an_ssh_key(tmp_path, monkeypatch):
     (tmp_path / ".git").mkdir()
     monkeypatch.setattr(st_gitea, "discover_ssh_keys", lambda **kw: [])
 
-    with pytest.raises(st_gitea.GiteaError, match="no SSH public key"):
+    with pytest.raises(st_gitea.No_SSH_hKeys):
         st_gitea.push_stack_to_gitea(tmp_path, "pw", repo_name="r")
 
 

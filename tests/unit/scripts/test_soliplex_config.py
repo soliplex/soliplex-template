@@ -121,9 +121,7 @@ def test_resolve_project_ok(tmp_path):
 def test_resolve_project_no_compose(tmp_path):
     project = _make_project(tmp_path, compose=False)
 
-    with pytest.raises(
-        soliplex_config.SoliplexConfigError, match="no docker-compose.yml"
-    ):
+    with pytest.raises(soliplex_config.ComposeNotFound):
         soliplex_config.resolve_project(str(project))
 
 
@@ -196,7 +194,7 @@ def test_navigate_resolves(key, expected):
     ],
 )
 def test_navigate_not_found(key):
-    with pytest.raises(soliplex_config.SoliplexConfigError, match="no key"):
+    with pytest.raises(soliplex_config.KeyNotFound):
         soliplex_config.navigate(_NAV_CONFIG, key)
 
 
@@ -344,9 +342,7 @@ def test_resolve_rooms_no_room_paths_key(tmp_path, run):
     project = _make_project(tmp_path)
     run.return_value.stdout = "id: inst\n"  # no room_paths
 
-    with pytest.raises(
-        soliplex_config.SoliplexConfigError, match="no 'room_paths'"
-    ):
+    with pytest.raises(soliplex_config.NoRoomPaths):
         soliplex_config.resolve_rooms(
             project,
             "backend",
@@ -461,7 +457,7 @@ def test_get_missing_key_errors(tmp_path, which, run):
     project = _make_project(tmp_path)
     run.return_value.stdout = _config_yaml("/environment/rooms/chat")
 
-    with pytest.raises(soliplex_config.SoliplexConfigError, match="no key"):
+    with pytest.raises(soliplex_config.KeyNotFound):
         soliplex_config.main(["get", "nope", "--project-dir", str(project)])
 
 
@@ -472,9 +468,7 @@ def test_rooms_docker_missing(tmp_path, which, run):
     which.return_value = None
     project = _make_project(tmp_path)
 
-    with pytest.raises(
-        soliplex_config.SoliplexConfigError, match="docker not found"
-    ):
+    with pytest.raises(soliplex_config.DockerMissing):
         soliplex_config.main(["rooms", "--project-dir", str(project)])
 
     assert run.call_args_list == []
@@ -528,9 +522,7 @@ def test_room_not_found_errors(tmp_path, which, run):
     _make_room(project, "chat", "chat")
     run.return_value.stdout = _config_yaml("/environment/rooms/chat")
 
-    with pytest.raises(
-        soliplex_config.SoliplexConfigError, match="no room with id"
-    ):
+    with pytest.raises(soliplex_config.RoomNotFound):
         soliplex_config.main(["room", "ghost", "--project-dir", str(project)])
 
 

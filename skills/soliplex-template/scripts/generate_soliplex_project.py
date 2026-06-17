@@ -127,116 +127,164 @@ FRONTEND_VERSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
 
 
 class GenError(Exception):
-    """A user-facing generation error (printed without a traceback).
+    """A user-facing generation error (printed without a traceback)."""
 
-    Message construction lives in these classmethod factories so call sites
-    read ``raise GenError.<reason>(...)`` with no inline message string.
-    """
 
-    @classmethod
-    def params_unreadable(cls, path, exc):
-        return cls(f"cannot read --params file {path}: {exc}")
+class ParamsUnreadable(GenError):
+    def __init__(self, path, exc):
+        self.path = path
+        self.exc = exc
+        super().__init__(f"cannot read --params file {path}: {exc}")
 
-    @classmethod
-    def params_not_json(cls, exc):
-        return cls(f"--params is not valid JSON: {exc}")
 
-    @classmethod
-    def params_not_object(cls):
-        return cls("--params JSON must be an object/dict")
+class ParamsNotJSON(GenError):
+    def __init__(self, exc):
+        self.exc = exc
+        super().__init__(f"--params is not valid JSON: {exc}")
 
-    @classmethod
-    def unknown_params(cls, names):
+
+class ParamsNotObject(GenError):
+    def __init__(self):
+        super().__init__("--params JSON must be an object/dict")
+
+
+class UnknownParams(GenError):
+    def __init__(self, names):
+        self.names = names
         joined = ", ".join(sorted(names))
-        return cls(f"unknown parameter(s) in --params: {joined}")
+        super().__init__(f"unknown parameter(s) in --params: {joined}")
 
-    @classmethod
-    def not_int(cls, key, value):
-        return cls(f"{key} must be an integer, got {value!r}")
 
-    @classmethod
-    def ollama_required(cls):
-        return cls("ollama_base_url is required (e.g. http://host:11434)")
+class NotAnInteger(GenError):
+    def __init__(self, key, value):
+        self.key = key
+        self.value = value
+        super().__init__(f"{key} must be an integer, got {value!r}")
 
-    @classmethod
-    def port_out_of_range(cls, key, port):
-        return cls(f"{key}={port} is out of range 1..65535")
 
-    @classmethod
-    def port_collision(cls, port, first, second):
-        return cls(f"port {port} used by both {first} and {second}")
+class OllamaRequired(GenError):
+    def __init__(self):
+        super().__init__(
+            "ollama_base_url is required (e.g. http://host:11434)"
+        )
 
-    @classmethod
-    def bad_identifier(cls, key, value):
-        return cls(f"{key}={value!r} must be a valid SQL identifier")
 
-    @classmethod
-    def bad_uid(cls, key, value):
-        return cls(
+class PortOutOfRange(GenError):
+    def __init__(self, key, port):
+        self.key = key
+        self.port = port
+        super().__init__(f"{key}={port} is out of range 1..65535")
+
+
+class PortCollision(GenError):
+    def __init__(self, port, first, second):
+        self.port = port
+        self.first = first
+        self.second = second
+        super().__init__(f"port {port} used by both {first} and {second}")
+
+
+class BadIdentifier(GenError):
+    def __init__(self, key, value):
+        self.key = key
+        self.value = value
+        super().__init__(f"{key}={value!r} must be a valid SQL identifier")
+
+
+class BadUID(GenError):
+    def __init__(self, key, value):
+        self.key = key
+        self.value = value
+        super().__init__(
             f"{key}={value!r} must be a positive integer below 2**31 "
             "(0 is rejected: containers must not run as root)"
         )
 
-    @classmethod
-    def bad_frontend_version(cls, value):
-        return cls(
+
+class BadFrontendVersion(GenError):
+    def __init__(self, value):
+        self.value = value
+        super().__init__(
             f"frontend_version={value!r} must be 'latest' or a "
             "soliplex/frontend release tag (letters, digits, '.', '_', "
             "'-', '+')"
         )
 
-    @classmethod
-    def bad_package_name(cls, project_name, package_name):
-        return cls(
+
+class BadPackageName(GenError):
+    def __init__(self, project_name, package_name):
+        self.project_name = project_name
+        self.package_name = package_name
+        super().__init__(
             f"project_name={project_name!r} yields package name "
             f"{package_name!r}, which is not a valid Python identifier "
             "(use letters, digits, '-'/'_'; must not start with a digit "
             "or be a Python keyword)"
         )
 
-    @classmethod
-    def dbs_must_differ(cls):
-        return cls("agui_db and authz_db must differ")
 
-    @classmethod
-    def bad_auth_mode(cls, value):
-        return cls(f"auth_mode must be 'no-auth' or 'auth', got {value!r}")
+class DatabasesMusDiffer(GenError):
+    def __init__(self):
+        super().__init__("agui_db and authz_db must differ")
 
-    @classmethod
-    def bad_bool(cls, key, value):
-        return cls(f"{key} must be a boolean, got {value!r}")
 
-    @classmethod
-    def empty_constraint(cls, key):
-        return cls(f"{key} must not be empty")
+class BadAuthMode(GenError):
+    def __init__(self, value):
+        self.value = value
+        super().__init__(
+            f"auth_mode must be 'no-auth' or 'auth', got {value!r}"
+        )
 
-    @classmethod
-    def bad_docs_dir(cls, value):
-        return cls(
+
+class BadBoolean(GenError):
+    def __init__(self, key, value):
+        self.key = key
+        self.value = value
+        super().__init__(f"{key} must be a boolean, got {value!r}")
+
+
+class EmptyConstraint(GenError):
+    def __init__(self, key):
+        self.key = key
+        super().__init__(f"{key} must not be empty")
+
+
+class BadDocsDir(GenError):
+    def __init__(self, value):
+        self.value = value
+        super().__init__(
             "docs_dir must be a relative path inside the project, "
             f"got {value!r}"
         )
 
-    @classmethod
-    def render_failed(cls, rel, detail):
-        return cls(f"failed to render {rel}:\n{detail}")
 
-    @classmethod
-    def out_required(cls):
-        return cls("--out is required")
+class RenderFailed(GenError):
+    def __init__(self, rel, detail):
+        self.rel = rel
+        self.detail = detail
+        super().__init__(f"failed to render {rel}:\n{detail}")
 
-    @classmethod
-    def template_not_found(cls, path):
-        return cls(
+
+class OutIsRequired(GenError):
+    def __init__(self):
+        super().__init__("--out is required")
+
+
+class TemplateNotFound(GenError):
+    def __init__(self, path):
+        self.path = path
+        super().__init__(
             f"embedded template not found at {path}; if running from a "
             "soliplex-template checkout, run "
             "scripts/refresh_skill_template.py to generate it "
             "(it is a gitignored build artifact)"
         )
 
-    @classmethod
-    def out_not_empty(cls, out):
-        return cls(
+
+class OutNotEmpty(GenError):
+    def __init__(self, out):
+        self.out = out
+        super().__init__(
             f"--out {out} exists and is not empty (use --force to override)"
         )
 
@@ -252,16 +300,16 @@ def load_params(args: argparse.Namespace) -> dict[str, object]:
         try:
             raw = path.read_text()
         except OSError as exc:
-            raise GenError.params_unreadable(path, exc) from exc
+            raise ParamsUnreadable(path, exc) from exc
         try:
             supplied = json.loads(raw)
         except json.JSONDecodeError as exc:
-            raise GenError.params_not_json(exc) from exc
+            raise ParamsNotJSON(exc) from exc
         if not isinstance(supplied, dict):
-            raise GenError.params_not_object()
+            raise ParamsNotObject()
         unknown = set(supplied) - set(DEFAULTS)
         if unknown:
-            raise GenError.unknown_params(unknown)
+            raise UnknownParams(unknown)
         params.update(supplied)
 
     if args.interactive:
@@ -297,7 +345,7 @@ def _as_bool(value: object, key: str) -> bool:
         return True
     if text in _FALSE_STRINGS:
         return False
-    raise GenError.bad_bool(key, value)
+    raise BadBoolean(key, value)
 
 
 def coerce_and_derive(params: dict[str, object]) -> dict[str, object]:
@@ -306,7 +354,7 @@ def coerce_and_derive(params: dict[str, object]) -> dict[str, object]:
         try:
             params[key] = int(params[key])
         except (TypeError, ValueError) as exc:
-            raise GenError.not_int(key, params[key]) from exc
+            raise NotAnInteger(key, params[key]) from exc
 
     # Import name for the synthesized src/ package: lower-case the project
     # name and turn hyphens into underscores. ``project_name`` itself (which
@@ -377,54 +425,54 @@ def coerce_and_derive(params: dict[str, object]) -> dict[str, object]:
             try:
                 params[key] = int(value)
             except (TypeError, ValueError) as exc:
-                raise GenError.not_int(key, value) from exc
+                raise NotAnInteger(key, value) from exc
 
     return params
 
 
 def validate(params: dict[str, object]) -> None:
     if not str(params.get("ollama_base_url") or "").strip():
-        raise GenError.ollama_required()
+        raise OllamaRequired()
 
     package = str(params["package_name"])
     if not package.isidentifier() or keyword.iskeyword(package):
-        raise GenError.bad_package_name(params["project_name"], package)
+        raise BadPackageName(params["project_name"], package)
 
     seen: dict[int, str] = {}
     for key in PORT_KEYS:
         port = params[key]
         if not (1 <= port <= 65535):
-            raise GenError.port_out_of_range(key, port)
+            raise PortOutOfRange(key, port)
         if port in seen:
-            raise GenError.port_collision(port, seen[port], key)
+            raise PortCollision(port, seen[port], key)
         seen[port] = key
 
     for key in ("agui_db", "authz_db"):
         val = str(params[key])
         if not IDENT_RE.match(val):
-            raise GenError.bad_identifier(key, val)
+            raise BadIdentifier(key, val)
     if params["agui_db"] == params["authz_db"]:
-        raise GenError.dbs_must_differ()
+        raise DatabasesMusDiffer()
 
     for key in ("puid", "pgid"):
         val = params[key]
         if not isinstance(val, int) or not (0 < val < 2**31):
-            raise GenError.bad_uid(key, val)
+            raise BadUID(key, val)
 
     if params["auth_mode"] not in ("no-auth", "auth"):
-        raise GenError.bad_auth_mode(params["auth_mode"])
+        raise BadAuthMode(params["auth_mode"])
 
     for key in ("soliplex_backend_constraint", "soliplex_tui_constraint"):
         if not str(params[key]).strip():
-            raise GenError.empty_constraint(key)
+            raise EmptyConstraint(key)
 
     frontend_version = str(params["frontend_version"])
     if not FRONTEND_VERSION_RE.match(frontend_version):
-        raise GenError.bad_frontend_version(frontend_version)
+        raise BadFrontendVersion(frontend_version)
 
     docs = str(params["docs_dir"])
     if docs.startswith("/") or ".." in pathlib.Path(docs).parts:
-        raise GenError.bad_docs_dir(docs)
+        raise BadDocsDir(docs)
 
 
 # --------------------------------------------------------------------------
@@ -534,7 +582,7 @@ def render_tree(
                 ).render(**ctx)
             except Exception as exc:
                 detail = mako_exceptions.text_error_template().render()
-                raise GenError.render_failed(rel, detail) from exc
+                raise RenderFailed(rel, detail) from exc
             dest.write_text(text)
             # Rendered shell scripts need the executable bit.
             mode = 0o755 if dest.suffix == ".sh" else 0o644
@@ -668,17 +716,17 @@ def main(argv: list[str]) -> int:
         return 0
 
     if not args.out:
-        raise GenError.out_required()
+        raise OutIsRequired()
 
     template_root = (
         pathlib.Path(__file__).resolve().parent.parent / "assets" / "template"
     )
     if not template_root.is_dir():
-        raise GenError.template_not_found(template_root)
+        raise TemplateNotFound(template_root)
 
     out = pathlib.Path(args.out).resolve()
     if out.exists() and any(out.iterdir()) and not args.force:
-        raise GenError.out_not_empty(out)
+        raise OutNotEmpty(out)
 
     params = load_params(args)
     params = coerce_and_derive(params)

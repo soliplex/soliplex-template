@@ -49,9 +49,11 @@ GEN_SUFFIX = ".gen"
 class SecretsError(Exception):
     """A user-facing error (printed without a traceback)."""
 
-    @classmethod
-    def compose_not_found(cls, path):
-        return cls(
+
+class ComposeNotFound(SecretsError):
+    def __init__(self, path):
+        self.path = path
+        super().__init__(
             f"cannot find compose file at: {path} "
             "(run with --project-dir pointing at the stack directory)"
         )
@@ -161,7 +163,7 @@ def generate_secrets(project_dir) -> None:
     project = pathlib.Path(project_dir).resolve()
     compose = project / COMPOSE_FILE
     if not compose.is_file():
-        raise SecretsError.compose_not_found(compose)
+        raise ComposeNotFound(compose)
 
     secrets_dir = project / SECRETS_DIR
     secrets_dir.mkdir(parents=True, exist_ok=True)

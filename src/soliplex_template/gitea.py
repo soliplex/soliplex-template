@@ -63,58 +63,78 @@ READY_DELAY = 2
 class GiteaError(Exception):
     """A user-facing error (printed without a traceback)."""
 
-    @classmethod
-    def not_ready(cls, url):
-        return cls(
+
+class GiteaNotReady(GiteaError):
+    def __init__(self, url):
+        self.url = url
+        super().__init__(
             f"Gitea did not become ready at {url} "
             "(is the stack up? 'docker compose up -d gitea')"
         )
 
-    @classmethod
-    def reserved_user(cls, name):
-        return cls(
+
+class ReservedUser(GiteaError):
+    def __init__(self, name):
+        self.name = name
+        super().__init__(
             f"web-UI admin user may not be {name!r}: it is the rotating "
             "service account"
         )
 
-    @classmethod
-    def password_mismatch(cls):
-        return cls("passwords did not match")
 
-    @classmethod
-    def token_request_failed(cls, code, body):
-        return cls(f"token request failed: HTTP {code}: {body}")
+class PasswordMismatch(GiteaError):
+    def __init__(self):
+        super().__init__("passwords did not match")
 
-    @classmethod
-    def no_token(cls, body):
-        return cls(f"could not parse token from response: {body}")
 
-    @classmethod
-    def repo_failed(cls, code):
-        return cls(f"repo creation failed (HTTP {code})")
+class TokenRequestFailed(GiteaError):
+    def __init__(self, code, body):
+        self.code = code
+        self.body = body
+        super().__init__(f"token request failed: HTTP {code}: {body}")
 
-    @classmethod
-    def not_a_git_repo(cls, path):
-        return cls(
+
+class NoToken(GiteaError):
+    def __init__(self, body):
+        self.body = body
+        super().__init__(f"could not parse token from response: {body}")
+
+
+class RepoCreationFailed(GiteaError):
+    def __init__(self, code):
+        self.code = code
+        super().__init__(f"repo creation failed (HTTP {code})")
+
+
+class NotAGitRepo(GiteaError):
+    def __init__(self, path):
+        self.path = path
+        super().__init__(
             f"{path} is not a git repository "
             "(was the stack scaffolded with --no-git?)"
         )
 
-    @classmethod
-    def no_ssh_keys(cls):
-        return cls(
+
+class No_SSH_hKeys(GiteaError):
+    def __init__(self):
+        super().__init__(
             "no SSH public key found to register with Gitea: load one into "
             "your agent (ssh-add), pass --ssh-key PATH, or create one "
             "(ssh-keygen)"
         )
 
-    @classmethod
-    def key_upload_failed(cls, code, body):
-        return cls(f"SSH key upload failed: HTTP {code}: {body}")
 
-    @classmethod
-    def push_failed(cls, stderr):
-        return cls(f"git push to Gitea failed: {stderr}")
+class KeyUploadFailed(GiteaError):
+    def __init__(self, code, body):
+        self.code = code
+        self.body = body
+        super().__init__(f"SSH key upload failed: HTTP {code}: {body}")
+
+
+class PushFailed(GiteaError):
+    def __init__(self, stderr):
+        self.stderr = stderr
+        super().__init__(f"git push to Gitea failed: {stderr}")
 
 
 def generate_admin_password(length: int = 32) -> str:
@@ -169,10 +189,10 @@ def parse_token(body: str) -> str:
     try:
         data = json.loads(body)
     except json.JSONDecodeError as exc:
-        raise GiteaError.no_token(body) from exc
+        raise NoToken(body) from exc
     token = data.get("sha1")
     if not token:
-        raise GiteaError.no_token(body)
+        raise NoToken(body)
     return token
 
 
@@ -231,7 +251,7 @@ def mint_token(password: str, *, token_name: str) -> str:
             body = resp.read().decode()
     except urllib.error.HTTPError as exc:
         body = exc.read().decode()
-        raise GiteaError.token_request_failed(exc.code, body) from exc
+        raise TokenRequestFailed(exc.code, body) from exc
     return parse_token(body)
 
 
@@ -253,7 +273,7 @@ def create_repo(
     except urllib.error.HTTPError as exc:
         code = exc.code
     if code not in (201, 409):
-        raise GiteaError.repo_failed(code)
+        raise RepoCreationFailed(code)
     return code
 
 
@@ -314,7 +334,7 @@ def upload_ssh_key(public_key: str, *, password: str, title: str) -> None:
         if exc.code == 422:
             return
         body = exc.read().decode()
-        raise GiteaError.key_upload_failed(exc.code, body) from exc
+        raise KeyUploadFailed(exc.code, body) from exc
 
 
 def _git(*args, project_dir, env=None):
@@ -375,7 +395,7 @@ def push_initial(project_dir, branch: str) -> None:
         "push", "-u", "origin", branch, project_dir=project_dir, env=env
     )
     if result.returncode != 0:
-        raise GiteaError.push_failed(result.stderr.strip())
+        raise PushFailed(result.stderr.strip())
 
 
 def push_stack_to_gitea(
@@ -392,10 +412,10 @@ def push_stack_to_gitea(
     """
     project = pathlib.Path(project_dir)
     if not (project / ".git").is_dir():
-        raise GiteaError.not_a_git_repo(project)
+        raise NotAGitRepo(project)
     keys = discover_ssh_keys(ssh_key=ssh_key)
     if not keys:
-        raise GiteaError.no_ssh_keys()
+        raise No_SSH_hKeys()
     print(f"Registering {len(keys)} SSH key(s) with '{ADMIN_USER}' ...")
     for key in keys:
         upload_ssh_key(key, password=password, title=_key_title(key))
@@ -482,12 +502,12 @@ def provision_gitea(
     accounts) are the result.
     """
     if webui_user == ADMIN_USER:
-        raise GiteaError.reserved_user(webui_user)
+        raise ReservedUser(webui_user)
     project = pathlib.Path(project_dir).resolve()
     print("=== Gitea provisioning ===")
     print(f"Waiting for Gitea at {GITEA_HTTP} ...")
     if not wait_for_gitea():
-        raise GiteaError.not_ready(GITEA_HTTP)
+        raise GiteaNotReady(GITEA_HTTP)
 
     password = generate_admin_password()
     print(f"Ensuring service account '{ADMIN_USER}' ...")

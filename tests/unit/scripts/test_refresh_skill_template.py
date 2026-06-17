@@ -525,9 +525,7 @@ def test_build_into_user_doc_error_is_wrapped(tmp_path, monkeypatch):
         rst, "USER_DOC_PARAMS", {"bad.md": [("absent", "${x}")]}
     )
 
-    with pytest.raises(
-        rst.RefreshError, match="docs/users/bad.md: expected to find"
-    ):
+    with pytest.raises(rst.Wrap, match="docs/users/bad.md: expected to find"):
         rst._build_into(tmp_path / "dest", [])
 
 
@@ -556,7 +554,7 @@ def test_build_into_verbatim_transform_error_is_wrapped(tmp_path, monkeypatch):
     monkeypatch.setattr(rst, "DERIVED", {})
     monkeypatch.setattr(rst, "AUTHORED", {})
 
-    with pytest.raises(rst.RefreshError, match="v.txt: inner"):
+    with pytest.raises(rst.Wrap, match="v.txt: inner"):
         rst._build_into(tmp_path / "dest", ["v.txt"])
 
 
@@ -583,7 +581,7 @@ def test_build_into_derived_transform_error_is_wrapped(tmp_path, monkeypatch):
     monkeypatch.setattr(rst, "DERIVED", {"d.txt": boom})
     monkeypatch.setattr(rst, "AUTHORED", {})
 
-    with pytest.raises(rst.RefreshError, match="d.txt: inner"):
+    with pytest.raises(rst.Wrap, match="d.txt: inner"):
         rst._build_into(tmp_path / "dest", ["d.txt"])
 
 
@@ -661,7 +659,7 @@ def test_main_render_check_failure_leaves_template_intact(
     build_into.return_value = (3, 2)
     render_check.return_value = 2
 
-    with pytest.raises(rst.RefreshError, match="failed the render check"):
+    with pytest.raises(rst.RenderFailures, match="failed the render check"):
         rst.main()
 
     assert (template / "keep").read_text() == "intact\n"

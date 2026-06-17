@@ -38,9 +38,7 @@ import getpass
 import pathlib
 import sys
 
-from soliplex_template.gitea import ADMIN_USER
-from soliplex_template.gitea import GiteaError
-from soliplex_template.gitea import provision_gitea
+from soliplex_template import gitea
 
 
 def default_project() -> pathlib.Path:
@@ -98,7 +96,7 @@ def _prompt_admin_password(username: str) -> str:
     prompt = f"Password for Gitea web-UI user {username!r}: "
     password = getpass.getpass(prompt)
     if password != getpass.getpass("Confirm password: "):
-        raise GiteaError.password_mismatch()
+        raise gitea.PasswordMismatch()
     return password
 
 
@@ -106,10 +104,10 @@ def main(argv: list[str]) -> int:
     args = parse_args(argv)
     webui_password = None
     if args.admin_user is not None:
-        if args.admin_user == ADMIN_USER:
-            raise GiteaError.reserved_user(args.admin_user)
+        if args.admin_user == gitea.ADMIN_USER:
+            raise gitea.ReservedUser(args.admin_user)
         webui_password = _prompt_admin_password(args.admin_user)
-    provision_gitea(
+    gitea.provision_gitea(
         args.project_dir or default_project(),
         webui_user=args.admin_user,
         webui_password=webui_password,
@@ -123,6 +121,6 @@ def main(argv: list[str]) -> int:
 if __name__ == "__main__":  # pragma: no cover
     try:
         sys.exit(main(sys.argv[1:]))
-    except GiteaError as exc:
+    except gitea.GiteaError as exc:
         print(f"error: {exc}", file=sys.stderr)
         sys.exit(2)
