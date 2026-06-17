@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["soliplex-plumber>=0.1", "mako"]
+# dependencies = ["soliplex-plumber>=0.2.1", "mako"]
 # ///
 """Add a new room to an existing Soliplex stack from a bundled template.
 
@@ -216,6 +216,7 @@ def do_add(args: argparse.Namespace) -> int:
         args.room_id,
         config_text=config_text,
         prompt_text=prompt_text,
+        parent_path="./rooms",
         force=args.force,
         dry_run=args.dry_run,
     )

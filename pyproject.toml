@@ -42,7 +42,7 @@ dev = [
     # The bundled add_room.py imports 'soliplex_plumber.rooms'; the unit suite
     # loads that script by path, so the test env must provide it. Pinned to
     # match add_room.py's PEP 723 header.
-    "soliplex-plumber >= 0.1",
+    "soliplex-plumber >= 0.2.1",
     "zensical",
 ]
 
