@@ -16,6 +16,8 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import pathlib
+import subprocess
+from unittest import mock
 
 import pytest
 import yaml
@@ -73,9 +75,17 @@ def _add_args(**over):
         "prompt_file": None,
         "force": False,
         "dry_run": False,
+        "verify": False,
     }
     base.update(over)
     return argparse.Namespace(**base)
+
+
+def _completed(returncode=0, stdout="", stderr=""):
+    """A fake ``audit rooms`` result for the mocked ``stack.run_cli``."""
+    return subprocess.CompletedProcess(
+        args=["docker"], returncode=returncode, stdout=stdout, stderr=stderr
+    )
 
 
 def _room_dir(project, room_id="handbook"):
@@ -325,3 +335,147 @@ def test_add_dry_run_writes_nothing(tmp_path, capsys):
     assert "would write" in capsys.readouterr().out
     assert not _room_dir(project).exists()
     assert _installation(project).read_text() == before
+
+
+# --------------------------------------------------------------------------
+# CLI: add --verify (audit in a one-off container; stack seams mocked)
+# --------------------------------------------------------------------------
+@pytest.fixture
+def stack_seams(monkeypatch):
+    """No-op ``require_docker`` + a recording ``run_cli`` (no real Docker)."""
+    monkeypatch.setattr(add_room.stack, "require_docker", mock.Mock())
+    run_cli = mock.Mock(return_value=_completed(stdout="rooms: OK\n"))
+    monkeypatch.setattr(add_room.stack, "run_cli", run_cli)
+    return run_cli
+
+
+def test_add_verify_writes_real_and_audits_in_place(
+    tmp_path, stack_seams, capsys
+):
+    project = _make_stack(tmp_path)
+
+    rc = add_room.main(
+        [
+            "add",
+            "--project-dir",
+            str(project),
+            "--template",
+            "chat",
+            "--room-id",
+            "handbook",
+            "--verify",
+        ]
+    )
+
+    assert rc == 0
+    assert (_room_dir(project) / "room_config.yaml").is_file()
+    call = stack_seams.call_args
+    assert call.args[1] == ["audit", "rooms"]
+    real_env = str((project / "backend" / "environment").resolve())
+    assert call.kwargs["host_environment"] == real_env  # the real env tree
+    out = capsys.readouterr().out
+    assert "backend audit (advisory)" in out
+    assert "rooms: OK" in out
+    assert "audit: OK" in out
+
+
+def test_add_verify_audit_issues_still_succeeds(tmp_path, stack_seams, capsys):
+    project = _make_stack(tmp_path)
+    stack_seams.return_value = _completed(
+        returncode=1, stdout="", stderr="ERROR: bad room\n"
+    )
+
+    rc = add_room.main(
+        [
+            "add",
+            "--project-dir",
+            str(project),
+            "--template",
+            "chat",
+            "--room-id",
+            "handbook",
+            "--verify",
+        ]
+    )
+
+    assert rc == 0  # advisory: issues never change the exit code
+    assert (_room_dir(project) / "room_config.yaml").is_file()
+    captured = capsys.readouterr()
+    assert "ERROR: bad room" in captured.err
+    assert "the room was added" in captured.out
+
+
+def test_add_verify_dry_run_audits_scratch_and_writes_nothing(
+    tmp_path, stack_seams, capsys
+):
+    project = _make_stack(tmp_path)
+    before = _installation(project).read_text()
+    stack_seams.return_value = _completed(returncode=1, stdout="ERROR\n")
+
+    rc = add_room.main(
+        [
+            "add",
+            "--project-dir",
+            str(project),
+            "--template",
+            "chat",
+            "--room-id",
+            "handbook",
+            "--verify",
+            "--dry-run",
+        ]
+    )
+
+    assert rc == 0
+    # real env untouched, scratch cleaned up
+    assert not _room_dir(project).exists()
+    assert _installation(project).read_text() == before
+    assert {p.name for p in project.iterdir()} == {
+        "backend",
+        "docker-compose.yml",
+    }
+    # audited a scratch env tree, not the real one
+    host_env = pathlib.Path(stack_seams.call_args.kwargs["host_environment"])
+    assert host_env.parts[-2:] == ("backend", "environment")
+    assert host_env != (project / "backend" / "environment").resolve()
+    out = capsys.readouterr().out
+    assert "would write" in out
+    # the preview reports the real target path, not the scratch temp copy
+    real_config = (
+        project.resolve()
+        / "backend"
+        / "environment"
+        / "rooms"
+        / "handbook"
+        / "room_config.yaml"
+    )
+    assert str(real_config) in out
+    assert "dry run, nothing written" in out
+
+
+def test_add_verify_requires_docker(tmp_path, monkeypatch):
+    project = _make_stack(tmp_path)
+    monkeypatch.setattr(
+        add_room.stack,
+        "require_docker",
+        mock.Mock(side_effect=add_room.stack.DockerMissing()),
+    )
+    run_cli = mock.Mock()
+    monkeypatch.setattr(add_room.stack, "run_cli", run_cli)
+
+    with pytest.raises(add_room.stack.DockerMissing):
+        add_room.main(
+            [
+                "add",
+                "--project-dir",
+                str(project),
+                "--template",
+                "chat",
+                "--room-id",
+                "handbook",
+                "--verify",
+            ]
+        )
+
+    assert run_cli.call_args_list == []
+    assert not _room_dir(project).exists()
