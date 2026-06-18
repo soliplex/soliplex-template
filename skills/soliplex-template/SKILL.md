@@ -235,11 +235,11 @@ reflects defaults, secret/env substitution, and `room_paths` resolution exactly
 as the backend sees them.
 
 ```bash
-python3 scripts/soliplex_config.py show                 # whole resolved config
-python3 scripts/soliplex_config.py get room_paths        # one value (dotted path)
-python3 scripts/soliplex_config.py get room_paths.0      # list index
-python3 scripts/soliplex_config.py rooms                 # {room_id, name, description} per loaded room
-python3 scripts/soliplex_config.py room chat             # full room_config.yaml of one room by id
+uv run scripts/soliplex_config.py show                 # whole resolved config
+uv run scripts/soliplex_config.py get room_paths        # one value (dotted path)
+uv run scripts/soliplex_config.py get room_paths.0      # list index
+uv run scripts/soliplex_config.py rooms                 # {room_id, name, description} per loaded room
+uv run scripts/soliplex_config.py room chat             # full room_config.yaml of one room by id
 ```
 
 `get` prints scalars bare and lists of scalars one per line (shell-friendly);
@@ -254,8 +254,10 @@ outside the installation is skipped with a warning on stderr. Pass
 `--project-dir` if you are not already in the stack directory;
 `--service`/`--cli`/`--installation` override the backend defaults.
 
-The script needs PyYAML; `uv run scripts/soliplex_config.py …` supplies it from
-the script's inline metadata, or `pip install pyyaml` first.
+The implementation lives in the `soliplex-plumber` package (the script is a thin
+wrapper); `uv run scripts/soliplex_config.py …` installs it from the script's
+inline metadata, so run it that way (a bare `python3` needs `soliplex-plumber`
+already installed).
 
 ### Checking and repairing Ollama models
 
@@ -315,7 +317,7 @@ after `create`. Either way:
 1. **List the candidate rooms** with the `soliplex_config` helper:
 
    ```bash
-   python3 scripts/soliplex_config.py rooms
+   uv run scripts/soliplex_config.py rooms
    ```
 
    It emits a YAML list with one `{room_id, name, description}` mapping per
@@ -396,7 +398,7 @@ up without an image rebuild or restart.
    needs no rebuild):
 
    ```bash
-   python3 scripts/soliplex_config.py rooms --project-dir /path/to/stack
+   uv run scripts/soliplex_config.py rooms --project-dir /path/to/stack
    ```
 
    Then point the user at the generated `room_config.yaml` to uncomment the
