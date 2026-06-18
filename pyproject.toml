@@ -8,9 +8,6 @@ version = "0.14dev0"
 description = "Docker Compose template for a Soliplex stack, plus the soliplex-template Agent Skill and its build tooling."
 readme = "README.md"
 requires-python = ">=3.12"
-# The 'soliplex_template' package (src/) is stdlib-only; its modules
-# ('secrets', 'gitea') back the repo's provisioning scripts. (The bundled
-# skill's add_room.py gets its room-wiring core from 'soliplex-plumber'.)
 dependencies = []
 
 # Tooling for the soliplex-template skill. The scripts also carry PEP 723
@@ -35,37 +32,32 @@ dev = [
     "pytest",
     "pytest-cov",
     "ruff",
-    # Direct runtime dep of generate_soliplex_project.py (read_properties);
-    # pinned to match that script's PEP 723 header.
-    "skills-ref==0.1.1",
+    "skills-ref==0.1.1",  # 'generate_soliplex_project.py'
     "soliplex-skills >= 0.5",
-    # The bundled add_room.py imports 'soliplex_plumber.rooms'; the unit suite
-    # loads that script by path, so the test env must provide it. Pinned to
-    # match add_room.py's PEP 723 header.
-    "soliplex-plumber >= 0.2.1",
+    "soliplex-plumber >= 0.3", # skill's 'add_room.py'/'soliplex_config.py'
     "zensical",
 ]
 
-# The repo is configuration + Dockerfiles + skill source, but it also ships the
-# importable 'soliplex_template' package (src/), so it builds as a wheel.
-# PEP 420 # namespace package (no __init__.py);
-# clients import the module directly, e.g.
-# 'from soliplex_template import secrets'.
+# The repo is configuration + Dockerfiles + skill source, but it also ships
+# the importable 'soliplex_template' package (src/), so it builds as a wheel.
 [tool.setuptools.packages.find]
 where = ["src"]
 namespaces = true
 
-# Hermetic unit tests for the repo's Python scripts. The suite holds 100% branch
-# coverage; --cov=scripts measures the repo-level build tooling, --cov=skill/scripts
-# the bundled generator/version helpers, and --cov=tests/unit keeps the test
-# files themselves dead-code-free.
+# Required 100% unit test statement/branch coverage:
+#
+# --cov=scripts measures the repo-level build tooling;
+# --cov=skill/scripts the bundled generator/version helpers;
+# --cov=tests/unit keeps the test files themselves dead-code-free.
+#
+# Functional tests live under tests/functional/ and are opt-in: they generate
+# a real project and shell out to git/openssl/docker).  Run them explicitly
+# with: # 'uv run --group dev pytest tests/functional --no-cov'
+#
+# (--no-cov because the generator runs in a child process, so it isn't
+# measured and would otherwise trip --cov-fail-under).
 [tool.pytest.ini_options]
 python_files = "test_*.py"
-# Functional tests live under tests/functional/ and are opt-in (they generate a
-# real project and shell out to git/openssl/docker). Run them explicitly with
-#   uv run --group dev pytest tests/functional --no-cov
-# (--no-cov because the generator runs in a child process, so it isn't measured
-# and would otherwise trip --cov-fail-under). They are not collected by default.
 testpaths = ["tests/unit"]
 addopts = "--cov=scripts --cov=skills/soliplex-template/scripts --cov=src/soliplex_template --cov=tests/unit --cov-branch --cov-fail-under=100"
 markers = [
@@ -75,9 +67,9 @@ markers = [
 [tool.coverage.report]
 show_missing = true
 
-# Lint/format config mirrors soliplex/soliplex (same rule selection, line length,
-# single-line imports, and pytest-style tweaks). ruff-format is enforced by the
-# pre-commit hook; `ruff check` uses these rules on demand.
+# Mirror soliplex/soliplex linting (same rule selection, line length,
+# single-line imports, and pytest-style tweaks). ruff-format is enforced by
+# the pre-commit hook; `ruff check` uses these rules on demand.
 [tool.ruff]
 line-length = 79
 exclude = [
