@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["soliplex-plumber>=0.2.1", "mako"]
+# dependencies = ["soliplex-plumber>=0.3", "mako"]
 # ///
 """Add a new room to an existing Soliplex stack from a bundled template.
 
@@ -33,11 +33,17 @@ auto-discovers the new room); installs that enumerate rooms instead get
 from __future__ import annotations
 
 import argparse
+import contextlib
+import functools
 import pathlib
+import shutil
+import subprocess
 import sys
+import tempfile
 
 from mako import template as mako_template
 from soliplex_plumber import rooms
+from soliplex_plumber import stack
 
 # Bundled room templates live beside this script under '<skill>/assets/rooms/'
 # (this file is '<skill>/scripts/add_room.py'); resolve them relative to
@@ -211,6 +217,9 @@ def do_add(args: argparse.Namespace) -> int:
     ctx = build_context(args, args.template, package_name)
     config_text = render_room_config(template_path, ctx)
 
+    if args.verify:
+        return _do_add_verify(args, project, config_text, prompt_text)
+
     result = rooms.install_room(
         project,
         args.room_id,
@@ -223,7 +232,7 @@ def do_add(args: argparse.Namespace) -> int:
 
     if args.dry_run:
         _print_dry_run(
-            result.config_path, config_text, result.path_action, args.room_id
+            result.config_path, result.path_action, config_text, args.room_id
         )
     else:
         _print_summary(
@@ -232,10 +241,134 @@ def do_add(args: argparse.Namespace) -> int:
     return 0
 
 
+def _install_to_env(
+    env: pathlib.Path,
+    args: argparse.Namespace,
+    config_text: str,
+    prompt_text: str | None,
+) -> rooms.RoomInstalled:
+    """Install the rendered room into the installation tree at ``env``.
+
+    ``rooms.install_room`` takes the stack *root* and appends
+    ``ENVIRONMENT_DIR`` itself, so recover the root that places the room inside
+    ``env``. (That root-vs-environment mismatch is noted for a future
+    ``soliplex_plumber`` refactor.)
+    """
+    root = env
+    for _ in rooms.ENVIRONMENT_DIR.parts:
+        root = root.parent
+    return rooms.install_room(
+        root,
+        args.room_id,
+        config_text=config_text,
+        prompt_text=prompt_text,
+        parent_path="./rooms",
+        force=args.force,
+        dry_run=False,
+    )
+
+
+@contextlib.contextmanager
+def _live_environment(project: pathlib.Path):
+    """Yield the stack's real installation tree (audited in place, no copy)."""
+    yield (project / rooms.ENVIRONMENT_DIR).resolve()
+
+
+@contextlib.contextmanager
+def _scratch_environment(project: pathlib.Path):
+    """Yield a throw-away copy of the installation tree (config only).
+
+    Copies ``<project>/<ENVIRONMENT_DIR>`` into a temp root laid out the same
+    way, beside the project so the bind path is reachable by the docker daemon.
+    LanceDBs live outside the environment (a separate ``rag/db`` mount); any
+    ``*.lancedb`` that does sneak in is skipped, so the copy stays cheap. The
+    temp root is removed on exit.
+    """
+    scratch_root = pathlib.Path(tempfile.mkdtemp(dir=project))
+    try:
+        scratch_env = scratch_root / rooms.ENVIRONMENT_DIR
+        shutil.copytree(
+            project / rooms.ENVIRONMENT_DIR,
+            scratch_env,
+            ignore=shutil.ignore_patterns("*.lancedb"),
+        )
+        yield scratch_env.resolve()
+    finally:
+        shutil.rmtree(scratch_root, ignore_errors=True)
+
+
+def _do_add_verify(
+    args: argparse.Namespace,
+    project: pathlib.Path,
+    config_text: str,
+    prompt_text: str | None,
+) -> int:
+    """``--verify``: install the room, then audit it in a one-off container.
+
+    ``--dry-run`` installs into a throw-away copy of the installation tree and
+    audits that copy (the real stack stays untouched); otherwise the room is
+    written to the real tree and that tree is audited in place. Either way the
+    audit is advisory -- its output is printed but never changes the exit code.
+    """
+    stack.require_docker()
+
+    if args.dry_run:
+        environment = _scratch_environment
+        report = functools.partial(
+            _print_dry_run, config_text=config_text, room_id=args.room_id
+        )
+    else:
+        environment = _live_environment
+        report = functools.partial(
+            _print_summary, room_id=args.room_id, project=project
+        )
+
+    with environment(project) as env:
+        result = _install_to_env(env, args, config_text, prompt_text)
+        audit = stack.run_cli(
+            project,
+            ["audit", "rooms"],
+            host_environment=str(env),
+            capture=True,
+            check=False,
+        )
+        # Report the room's path in the real stack, even for a scratch env.
+        config_path = (
+            project
+            / rooms.ENVIRONMENT_DIR
+            / result.config_path.relative_to(env)
+        )
+
+    report(config_path, result.path_action)
+    _print_audit(audit, wrote=not args.dry_run)
+    return 0
+
+
+def _print_audit(audit: subprocess.CompletedProcess, *, wrote: bool) -> None:
+    """Print the (advisory) ``audit rooms`` output and a one-line verdict."""
+    print()
+    print("# backend audit (advisory):")
+    if audit.stdout:
+        print(audit.stdout, end="")
+    if audit.stderr:
+        print(audit.stderr, end="", file=sys.stderr)
+    if audit.returncode == 0:
+        print("# audit: OK")
+    elif wrote:
+        print(
+            "# audit: reported issues (advisory) -- the room was added; "
+            "resolve them above"
+        )
+    else:
+        print(
+            "# audit: reported issues (advisory) -- dry run, nothing written"
+        )
+
+
 def _print_dry_run(
     config_path: pathlib.Path,
-    config_text: str,
     path_action: str,
+    config_text: str,
     room_id: str,
 ) -> None:
     print(f"# would write {config_path}:")
@@ -260,7 +393,7 @@ def _print_summary(
         "verify with:"
     )
     print(
-        "      python3 scripts/soliplex_config.py rooms "
+        "      uv run scripts/soliplex_config.py rooms "
         f"--project-dir {project}"
     )
 
@@ -343,6 +476,16 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="print the rendered room and room_paths change; write nothing",
     )
+    add.add_argument(
+        "--verify",
+        action="store_true",
+        help=(
+            "after installing, run 'soliplex-cli audit rooms' in a one-off "
+            "container and print the result (advisory; needs Docker + a built "
+            "backend image). With --dry-run, audits a scratch copy and writes "
+            "nothing to the real stack."
+        ),
+    )
     add.set_defaults(func=do_add)
 
     return parser
@@ -360,6 +503,6 @@ def main(argv: list[str]) -> int:
 if __name__ == "__main__":  # pragma: no cover
     try:
         sys.exit(main(sys.argv[1:]))
-    except rooms.AddRoomError as exc:
+    except (rooms.AddRoomError, stack.StackError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         sys.exit(2)
