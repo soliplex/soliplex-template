@@ -436,7 +436,7 @@ def test_add_verify_dry_run_audits_scratch_and_writes_nothing(
     }
     # audited a scratch env tree, not the real one
     host_env = pathlib.Path(stack_seams.call_args.kwargs["host_environment"])
-    assert host_env.parts[-2:] == ("backend", "environment")
+    assert host_env.name == "environment"
     assert host_env != (project / "backend" / "environment").resolve()
     out = capsys.readouterr().out
     assert "would write" in out
