@@ -34,7 +34,7 @@ dev = [
     "ruff",
     "skills-ref==0.1.1",  # 'generate_soliplex_project.py'
     "soliplex-skills >= 0.5",
-    "soliplex-plumber >= 0.3", # skill's 'add_room.py'/'soliplex_config.py'
+    "soliplex-plumber >= 0.4", # skill's 'add_room.py'/'soliplex_config.py'
     "zensical",
 ]
 
