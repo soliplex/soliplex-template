@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["soliplex-plumber>=0.3", "mako"]
+# dependencies = ["soliplex-plumber>=0.4", "mako"]
 # ///
 """Add a new room to an existing Soliplex stack from a bundled template.
 
@@ -33,13 +33,10 @@ auto-discovers the new room); installs that enumerate rooms instead get
 from __future__ import annotations
 
 import argparse
-import contextlib
 import functools
 import pathlib
-import shutil
 import subprocess
 import sys
-import tempfile
 
 from mako import template as mako_template
 from soliplex_plumber import rooms
@@ -241,62 +238,6 @@ def do_add(args: argparse.Namespace) -> int:
     return 0
 
 
-def _install_to_env(
-    env: pathlib.Path,
-    args: argparse.Namespace,
-    config_text: str,
-    prompt_text: str | None,
-) -> rooms.RoomInstalled:
-    """Install the rendered room into the installation tree at ``env``.
-
-    ``rooms.install_room`` takes the stack *root* and appends
-    ``ENVIRONMENT_DIR`` itself, so recover the root that places the room inside
-    ``env``. (That root-vs-environment mismatch is noted for a future
-    ``soliplex_plumber`` refactor.)
-    """
-    root = env
-    for _ in rooms.ENVIRONMENT_DIR.parts:
-        root = root.parent
-    return rooms.install_room(
-        root,
-        args.room_id,
-        config_text=config_text,
-        prompt_text=prompt_text,
-        parent_path="./rooms",
-        force=args.force,
-        dry_run=False,
-    )
-
-
-@contextlib.contextmanager
-def _live_environment(project: pathlib.Path):
-    """Yield the stack's real installation tree (audited in place, no copy)."""
-    yield (project / rooms.ENVIRONMENT_DIR).resolve()
-
-
-@contextlib.contextmanager
-def _scratch_environment(project: pathlib.Path):
-    """Yield a throw-away copy of the installation tree (config only).
-
-    Copies ``<project>/<ENVIRONMENT_DIR>`` into a temp root laid out the same
-    way, beside the project so the bind path is reachable by the docker daemon.
-    LanceDBs live outside the environment (a separate ``rag/db`` mount); any
-    ``*.lancedb`` that does sneak in is skipped, so the copy stays cheap. The
-    temp root is removed on exit.
-    """
-    scratch_root = pathlib.Path(tempfile.mkdtemp(dir=project))
-    try:
-        scratch_env = scratch_root / rooms.ENVIRONMENT_DIR
-        shutil.copytree(
-            project / rooms.ENVIRONMENT_DIR,
-            scratch_env,
-            ignore=shutil.ignore_patterns("*.lancedb"),
-        )
-        yield scratch_env.resolve()
-    finally:
-        shutil.rmtree(scratch_root, ignore_errors=True)
-
-
 def _do_add_verify(
     args: argparse.Namespace,
     project: pathlib.Path,
@@ -313,30 +254,32 @@ def _do_add_verify(
     stack.require_docker()
 
     if args.dry_run:
-        environment = _scratch_environment
+        select = stack.scratch_environment
         report = functools.partial(
             _print_dry_run, config_text=config_text, room_id=args.room_id
         )
     else:
-        environment = _live_environment
+        select = stack.live_environment
         report = functools.partial(
             _print_summary, room_id=args.room_id, project=project
         )
 
-    with environment(project) as env:
-        result = _install_to_env(env, args, config_text, prompt_text)
-        audit = stack.run_cli(
-            project,
-            ["audit", "rooms"],
-            host_environment=str(env),
-            capture=True,
-            check=False,
+    with select(project) as env:
+        result = rooms.install_room(
+            environment=env.path,
+            room_id=args.room_id,
+            config_text=config_text,
+            prompt_text=prompt_text,
+            parent_path="./rooms",
+            force=args.force,
+            dry_run=False,
         )
+        audit = env.run_cli(["audit", "rooms"], capture=True, check=False)
         # Report the room's path in the real stack, even for a scratch env.
         config_path = (
             project
             / rooms.ENVIRONMENT_DIR
-            / result.config_path.relative_to(env)
+            / result.config_path.relative_to(env.path)
         )
 
     report(config_path, result.path_action)
