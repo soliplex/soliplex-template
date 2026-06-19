@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "soliplex-template"
-version = "0.14dev0"
+version = "0.15dev0"
 description = "Docker Compose template for a Soliplex stack, plus the soliplex-template Agent Skill and its build tooling."
 readme = "README.md"
 requires-python = ">=3.12"
