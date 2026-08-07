@@ -10,11 +10,13 @@ name: Notify Slack on CI failure
 # notification lives here instead. It links to the failing run; the run's
 # own step summary carries the details.
 #
-# This repository has no gitleaks / trufflehog workflows, so unlike
-# soliplex/soliplex only the two Python workflows are listed.
+# The two secret scans were added later than the Python workflows (#164);
+# keep this list in step with the workflows that have no inline Slack step.
 on:
   workflow_run:
     workflows:
+      - "Gitleaks Secret Scan"
+      - "TruffleHog Secrets Scan"
       - "Python tests/coverage"
       - "Python linting"
     types: [completed]
