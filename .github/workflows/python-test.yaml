@@ -94,26 +94,38 @@ jobs:
       # matrix.cov-args is "--no-cov" on 3.12 and empty (coverage enforced)
       # on 3.13 / 3.14.
       - name: Run unit tests with coverage
-        run: uv run pytest ${{ matrix.cov-args }}
+        run: |
+          set -o pipefail
+          uv run pytest ${{ matrix.cov-args }} 2>&1 | tee unit-tests.log
 
       # Hermetic functional cases only; the docker-gated ones (needs_docker)
       # bring up a real stack and are excluded from CI.
       - name: Run functional tests (no docker)
-        run: uv run pytest --no-cov -m "not needs_docker" tests/functional/
+        run: |
+          set -o pipefail
+          uv run pytest --no-cov -m "not needs_docker" tests/functional/ 2>&1 \
+            | tee functional-tests.log
 
-      - name: Notify Slack on failure
+      # Slack notification lives in 'ci-failure-notify.yaml', which only
+      # links to this run (see #162), so record what failed here.
+      - name: Summarize failures
         if: failure()
-        uses: slackapi/slack-github-action@v3
-        with:
-          webhook: ${{ secrets.SLACK_NOTIFY_URL }}
-          webhook-type: incoming-webhook
-          payload: |
-            {
-              "channel": "#soliplex",
-              "username": "soliplex-template",
-              "text": ":x: ${{ github.workflow }} failed on ${{ github.head_ref }}:\n${{ github.event.head_commit.message }}\nhttps://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}",
-              "icon_emoji": ":ghost:"
-            }
+        run: |
+          {
+            echo "## Python ${{ matrix.python-version }} failed"
+            echo
+            for log in unit-tests.log functional-tests.log; do
+              [ -f "$log" ] || continue
+              echo "<details><summary>$log (last 50 lines)</summary>"
+              echo
+              echo '```'
+              tail -n 50 "$log"
+              echo '```'
+              echo
+              echo "</details>"
+              echo
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # The docker-gated functional tier (needs_docker): generate a project from the
   # embedded template, then `docker compose up -d postgres` and assert the service
@@ -144,18 +156,28 @@ jobs:
         run: docker compose version
 
       - name: Run docker functional tests
-        run: uv run pytest --no-cov -m needs_docker tests/functional/
+        run: |
+          set -o pipefail
+          uv run pytest --no-cov -m needs_docker tests/functional/ 2>&1 \
+            | tee docker-functional-tests.log
 
-      - name: Notify Slack on failure
+      # Slack notification lives in 'ci-failure-notify.yaml', which only
+      # links to this run (see #162), so record what failed here.
+      - name: Summarize failures
         if: failure()
-        uses: slackapi/slack-github-action@v3
-        with:
-          webhook: ${{ secrets.SLACK_NOTIFY_URL }}
-          webhook-type: incoming-webhook
-          payload: |
-            {
-              "channel": "#soliplex",
-              "username": "soliplex-template",
-              "text": ":x: ${{ github.workflow }} (docker functest) failed on ${{ github.head_ref }}:\n${{ github.event.head_commit.message }}\nhttps://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}",
-              "icon_emoji": ":ghost:"
-            }
+        run: |
+          {
+            echo "## Docker functional tests failed"
+            echo
+            for log in docker-functional-tests.log; do
+              [ -f "$log" ] || continue
+              echo "<details><summary>$log (last 50 lines)</summary>"
+              echo
+              echo '```'
+              tail -n 50 "$log"
+              echo '```'
+              echo
+              echo "</details>"
+              echo
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
