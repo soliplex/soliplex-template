@@ -18,13 +18,14 @@ cancel jobs, retry from the dead-letter queue, and trigger source refreshes.
 ## How the token gets in
 
 1. `haiku.rag/haiku.rag.yaml` ships
-   `ingester.api.auth_token: __INGESTER_TOKEN__` as a placeholder.
-2. The `haiku-ingester` service runs a small `sh -c "sed ... && exec ..."`
-   wrapper that replaces the placeholder with the value of `$INGESTER_TOKEN`
-   before haiku-ingester reads the config.
-3. `INGESTER_TOKEN` defaults to `secret` — Compose sets
+   `ingester.api.auth_token: ${INGESTER_TOKEN}`. haiku.rag expands `${VAR}`
+   references when it loads the file, so the ingester reads the
+   bind-mounted config directly.
+2. `INGESTER_TOKEN` defaults to `secret` — Compose sets
    `${INGESTER_TOKEN:-secret}`. Override it in `.env`
    for anything that isn't a single-developer laptop.
+3. An unset or empty value is a load error, so a missing token stops the
+   ingester at startup instead of leaving the control plane unauthenticated.
 
 ## Calling the API
 
@@ -38,14 +39,11 @@ curl -fsS -H "Authorization: Bearer $INGESTER_TOKEN" \
 The browser dashboard at `/` is unauthenticated HTML; its in-page JavaScript
 attaches the bearer to its JSON fetches itself.
 
-!!! warning "Watch the startup log"
-    The startup log warns if `auth_token` is `None`. If you see that
-    warning, the substitution didn't fire and the API is **open**.
+## Choosing a token
 
-## Token character restrictions
-
-The token cannot contain `|`, `\`, or `&` — they are the `sed` delimiter and
-escape characters used by the substitution wrapper. Use alphanumerics, e.g.:
+haiku.rag expands the reference itself, so the token no longer has to dodge
+`sed` metacharacters. Prefer alphanumerics anyway, which keeps a literal `$`
+out of `.env` where Compose would try to interpolate it:
 
 ```bash
 openssl rand -hex 32

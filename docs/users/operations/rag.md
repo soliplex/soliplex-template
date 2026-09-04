@@ -25,6 +25,10 @@ Drop files into `rag/docs/`. The filesystem source in
 `haiku.rag/haiku.rag.yaml` picks them up on its next poll, and docling-serve
 converts and chunks them.
 
+To ingest only part of what lands there, set `ignore_patterns` /
+`include_patterns` (gitignore-style) on that source. Note that a non-empty
+`include_patterns` is exclusive — anything it does not match is skipped.
+
 ## Adding other sources
 
 To pull from S3, HTTP, WebDAV, and the like, append entries under
@@ -56,6 +60,24 @@ docker compose run --rm --no-TTY haiku-ingester \
 lands at `rag/db/handbook.lancedb`, which the backend already reads through its
 `rag/db` mount. Wire a room to it with `rag_lancedb_stem: "handbook"` in that
 room's `room_config.yaml`.
+
+## Searching several databases at once
+
+A room's RAG skill or `search_documents` tool can name more than one database
+under `rag_databases`, and a search then covers them as one set:
+
+```yaml
+rag_databases:
+  - rag_lancedb_stem: "haiku.rag"
+  - rag_lancedb_stem: "handbook"
+```
+
+Each entry carries exactly one of `rag_lancedb_stem` or
+`rag_lancedb_override_path`, plus an optional `name` — the identity reported in
+search results, documents and citations, defaulting to the stem that placed it.
+Names must be unique, and every database in the list must have been written
+with the **same embedding model**, since one query is embedded once for all of
+them. A bare `rag_lancedb_stem` on the skill is shorthand for a one-entry list.
 
 ## Operating the pipeline
 

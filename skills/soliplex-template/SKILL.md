@@ -79,7 +79,7 @@ from the user and invoke it.
    default Ollama provider at `ollama_base_url` — the template pins no other
    provider — so each chosen model must exist *and load* on that server. The
    chat-style model parameters are `chat_model`, `chat_model_alt`,
-   `title_model`, `rag_qa_model`, and `rag_research_model`; the embedding model
+   `title_model`, and `rag_qa_model`; the embedding model
    is `rag_embed_model`. (`rag_embed_dim` and `chunk_size` ride in the same
    `models` shortcut group but are **not** model names — `rag_embed_dim` must
    match the embedding model's vector dimension.)
@@ -103,7 +103,7 @@ from the user and invoke it.
    (a non-2xx / curl failure means it isn't usable):
 
    ```bash
-   # each chat-style model (chat_model, chat_model_alt, title_model, rag_qa_model, rag_research_model)
+   # each chat-style model (chat_model, chat_model_alt, title_model, rag_qa_model)
    curl -sf "$OLLAMA_BASE_URL/v1/chat/completions" \
      -d '{"model":"<name>","messages":[{"role":"user","content":"ping"}],"max_tokens":1}'
 
@@ -156,8 +156,8 @@ from the user and invoke it.
      | jq -r '.releases | keys[]' | sort -V | tail
    ```
 
-   From the user's pick, set `soliplex_backend_constraint` — e.g. `== 0.68.3`
-   to pin a single release, or a range such as `>= 0.68, < 0.69`. Fall back to
+   From the user's pick, set `soliplex_backend_constraint` — e.g. `== 0.79.1`
+   to pin a single release, or a range such as `>= 0.79, < 0.80`. Fall back to
    the default constraint if PyPI is unreachable.
 
 2. **Write the answers to a JSON file** (omit keys to accept defaults), e.g.

@@ -1,12 +1,13 @@
 name: Python tests/coverage
 
 # Parallel to soliplex/soliplex's python-test.yaml, including its Python version
-# matrix (3.12 / 3.13 / 3.14 -- the versions soliplex itself supports). The unit
-# step runs the tests/unit suite under the pyproject addopts, which include
-# `--cov-fail-under=100` -- so this job is the CI enforcement of the 100% unit
-# coverage gate. Coverage is only enforced on Python >= 3.13 (3.12 runs the same
-# suite with `--no-cov`, matching soliplex); 3.12 is a "the tooling still imports
-# and runs" smoke check, not a second coverage gate. The functional step runs the
+# matrix (3.13 / 3.14 -- the versions soliplex itself supports; soliplex 0.79
+# dropped 3.12). The unit step runs the tests/unit suite under the pyproject
+# addopts, which include `--cov-fail-under=100` -- so this job is the CI
+# enforcement of the 100% unit coverage gate, on every version in the matrix.
+# Note that the skill's own PEP 723 scripts deliberately keep a `>=3.12` floor:
+# they only generate and inspect a stack, whose containers run 3.13 regardless,
+# so an operator on 3.12 can still use them. The functional step runs the
 # hermetic part of tests/functional and skips the docker-gated cases
 # (`-m "not needs_docker"`, the analogue of soliplex's `not needs_llm`); they
 # bring up a real stack and are meant to be run locally / on demand.
@@ -69,11 +70,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.12", "3.13", "3.14"]
-        # Only enforce the coverage gate on >= 3.13; 3.12 runs with --no-cov.
-        include:
-          - python-version: "3.12"
-            cov-args: "--no-cov"
+        python-version: ["3.13", "3.14"]
     steps:
       - uses: actions/checkout@v6
 
@@ -91,12 +88,10 @@ jobs:
       # tests/unit only (per testpaths); the pyproject addopts add
       # --cov=scripts --cov=skill/scripts --cov=tests/unit --cov-branch
       # --cov-fail-under=100, so this fails the build below 100% coverage.
-      # matrix.cov-args is "--no-cov" on 3.12 and empty (coverage enforced)
-      # on 3.13 / 3.14.
       - name: Run unit tests with coverage
         run: |
           set -o pipefail
-          uv run pytest ${{ matrix.cov-args }} 2>&1 | tee unit-tests.log
+          uv run pytest 2>&1 | tee unit-tests.log
 
       # Hermetic functional cases only; the docker-gated ones (needs_docker)
       # bring up a real stack and are excluded from CI.

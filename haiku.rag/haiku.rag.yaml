@@ -12,23 +12,32 @@ storage:
 # and shares the stack's Postgres instance. (The LanceDB vector store still
 # lives on the /data bind mount; only the queue moved off SQLite.)
 #
-# The literal strings '__INGESTER_TOKEN__' and '__INGESTER_DB_PASSWORD__'
-# are replaced at container start (see the 'haiku-ingester' command in
-# docker-compose.yml) with the INGESTER_TOKEN env var and the
-# ingester_db_password Docker secret, respectively. haiku.rag's YAML loader
-# has no env-var interpolation of its own.
+# The two environment references below are expanded by haiku.rag's own
+# loader (0.57+), which interpolates them when it reads this file (an
+# earlier release had no interpolation, hence the sed wrapper this
+# replaced). INGESTER_TOKEN comes from the container
+# environment; INGESTER_DB_PASSWORD is exported from the
+# ingester_db_password Docker secret by the 'haiku-ingester' command in
+# docker-compose.yml, because interpolation reads the environment, not files.
+# An unset or empty value is an error, so a missing token fails at startup
+# instead of quietly serving an unauthenticated control plane.
 ingester:
   queue:
     # SQLAlchemy async URL; overrides the default SQLite path. asyncpg ships
     # in the slim image's 'ingester' extra.
-    dburi: postgresql+asyncpg://soliplex_ingester:__INGESTER_DB_PASSWORD__@postgres/soliplex_ingester
+    dburi: postgresql+asyncpg://soliplex_ingester:${INGESTER_DB_PASSWORD}@postgres/soliplex_ingester
   api:
     host: 0.0.0.0
-    auth_token: __INGESTER_TOKEN__
+    auth_token: ${INGESTER_TOKEN}
   sources:
     - type: fs
       id: local-docs
       root: /docs
+      # Gitignore-style filters over 'root'; empty lists ingest everything.
+      # An 'include_patterns' entry makes the filter exclusive, so leave it
+      # empty unless the corpus really is one file type.
+      ignore_patterns: []   # e.g. ["*.png"]
+      include_patterns: []  # e.g. ["*.md"]
       delete_orphans: true
 
 # Remote document processing with docling-serve

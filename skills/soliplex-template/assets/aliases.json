@@ -23,7 +23,6 @@
       "rag_embed_model",
       "rag_embed_dim",
       "rag_qa_model",
-      "rag_research_model",
       "chunk_size"
     ]
   }

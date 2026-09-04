@@ -276,8 +276,16 @@ title_agent_config_id: "title"
 
 #==========================================================================
 # Upload directory configuration
+#
+# The two kinds are independent and have no default: uploads of a kind are
+# disabled unless its directory is set.  Room uploads land in
+# '<rooms_upload_path>/<room_id>', thread uploads in
+# '<threads_upload_path>/<thread_uuid>'.  Both sit under the '/uploads' bind
+# mount (see 'docker-compose.yml'); the generator creates the two
+# subdirectories.
 #==========================================================================
-upload_path: /uploads
+rooms_upload_path: /uploads/rooms
+threads_upload_path: /uploads/threads
 
 #==========================================================================
 # Sandbox configuration

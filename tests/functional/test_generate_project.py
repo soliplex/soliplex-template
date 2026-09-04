@@ -254,13 +254,14 @@ def test_escaped_literals_survived(generated_project):
     # <%text>-escaped runtime interpolations must reach the output verbatim.
     assert "${OLLAMA_BASE_URL}" in compose
     assert "${INGESTER_TOKEN:-secret}" in compose
-    assert "__INGESTER_TOKEN__" in haiku
+    assert "${INGESTER_TOKEN}" in haiku
 
 
 def test_ingester_wired_to_postgres_queue(generated_project):
     # #68: the ingester job queue is a dedicated Postgres database
     # (soliplex_ingester), created by init.sh and addressed by a dburi whose
-    # password is sed-substituted from the ingester_db_password secret.
+    # password haiku.rag interpolates from INGESTER_DB_PASSWORD, exported
+    # from the ingester_db_password secret by the compose command.
     out, _params = generated_project
 
     compose = _read(out, "docker-compose.yml")
@@ -269,7 +270,7 @@ def test_ingester_wired_to_postgres_queue(generated_project):
 
     assert (
         "dburi: postgresql+asyncpg://soliplex_ingester:"
-        "__INGESTER_DB_PASSWORD__@postgres/soliplex_ingester" in haiku
+        "${INGESTER_DB_PASSWORD}@postgres/soliplex_ingester" in haiku
     )
     assert "CREATE DATABASE soliplex_ingester;" in init_sh
     assert "ingester_db_password:\n      file: ./.secrets/" in compose

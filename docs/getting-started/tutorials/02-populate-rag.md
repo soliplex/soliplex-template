@@ -51,7 +51,7 @@ skill has a helper for exactly this). It adds a RAG skill to the room's
 ```yaml
 skills:
   skill_configs:
-    - kind: "haiku.rag.skill.rag"
+    - kind: "haiku.rag.skills.rag"
       rag_lancedb_stem: "haiku.rag"
 ```
 
@@ -65,7 +65,15 @@ Open the **Custom Tool Demo** room and ask something the corpus can answer, e.g.
 > What secret sources does Soliplex support?
 
 The room's agent calls its `search_documents` tool, retrieves the matching
-chunks, and answers from them — with citations back to the source documents.
+chunks, and answers from them, citing the source documents.
+
+To *require* citing rather than leave it to the model, add the
+`haiku.rag.skills.citation_policy` skill alongside the RAG skill: it makes an
+answer register the evidence grounding it, or declare that nothing does. Its
+companion, `haiku.rag.skills.evidence_compaction`, must not be configured on
+its own — compaction builds its capsule only from what was cited, so without
+the policy the evidence for any uncited question is dropped. Configure both,
+or neither.
 
 ## Where next
 
