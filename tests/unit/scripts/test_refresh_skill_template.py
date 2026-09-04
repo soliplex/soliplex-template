@@ -135,6 +135,7 @@ def test_t_compose():
         '      - "9443:9443"\n'
         "      command: --public-url https://localhost:9443/tui\n"
         "      command: soliplex-cli serve --no-auth-mode --reload=config\n"
+        "    image: ghcr.io/ggozad/haiku.rag-slim:0.82.1\n"
         '      - "8765:8765"\n'
         '      - "5001:5001"\n'
         '      - "5432:5432"\n'
@@ -157,6 +158,7 @@ def test_t_compose():
     assert "https://${server_name}:${nginx_https}/tui" in out
     assert "soliplex-cli serve ${backend_auth_flag}--reload=config" in out
     assert '- "${ingester_port}:8765"' in out
+    assert "image: ghcr.io/ggozad/haiku.rag-slim:${haiku_rag_version}" in out
     assert '- "${docling_port}:5001"' in out
     assert '- "${postgres_port}:5432"' in out
     assert "- ./${docs_dir}:/docs" in out
@@ -201,7 +203,6 @@ def test_t_backend_haiku():
         "name: qwen3-embedding:4b\n"
         "vector_dim: 2560\n"
         "qa:\n  model:\n    name: gpt-oss:latest\n"
-        "research:\n  model:\n    name: gpt-oss:latest\n"
         "chunk_size: 256\n"
     )
 
@@ -210,19 +211,43 @@ def test_t_backend_haiku():
     assert "name: ${rag_embed_model}" in out
     assert "vector_dim: ${rag_embed_dim}" in out
     assert "name: ${rag_qa_model}" in out
-    assert "name: ${rag_research_model}" in out
     assert "chunk_size: ${chunk_size}" in out
 
 
 def test_t_ingester_haiku():
-    assert (
-        rst.t_ingester_haiku("chunk_size: 256\n")
-        == "chunk_size: ${chunk_size}\n"
+    text = (
+        "      auth_token: ${INGESTER_TOKEN}\n"
+        "      dburi: postgresql://u:${INGESTER_DB_PASSWORD}@postgres/db\n"
+        "  chunk_size: 256\n"
+    )
+
+    out = rst.t_ingester_haiku(text)
+
+    # The two runtime references are haiku.rag's own interpolation and must
+    # survive Mako untouched; only chunk_size is a generator parameter.
+    assert out == (
+        "      auth_token: <%text>${INGESTER_TOKEN}</%text>\n"
+        "      dburi: postgresql://u:"
+        "<%text>${INGESTER_DB_PASSWORD}</%text>@postgres/db\n"
+        "  chunk_size: ${chunk_size}\n"
     )
 
 
+def test_t_ingester_dockerfile():
+    text = "FROM ghcr.io/ggozad/haiku.rag-slim:0.82.1\n"
+
+    out = rst.t_ingester_dockerfile(text)
+
+    assert out == "FROM ghcr.io/ggozad/haiku.rag-slim:${haiku_rag_version}\n"
+
+
+def test_t_ingester_dockerfile_no_match_raises():
+    with pytest.raises(rst.RefreshError, match="ingester Dockerfile"):
+        rst.t_ingester_dockerfile("FROM python:3.13\n")
+
+
 def test_t_backend_constraints():
-    out = rst.t_backend_constraints("soliplex >= 0.68, < 0.69\nother==1\n")
+    out = rst.t_backend_constraints("soliplex >= 0.79, < 0.80\nother==1\n")
 
     assert out == "soliplex ${soliplex_backend_constraint}\nother==1\n"
 
@@ -233,7 +258,7 @@ def test_t_backend_constraints_no_match_raises():
 
 
 def test_t_tui_constraints():
-    out = rst.t_tui_constraints("soliplex >= 0.60.6, < 0.61\n")
+    out = rst.t_tui_constraints("soliplex >= 0.79, < 0.80\n")
 
     assert out == "soliplex ${soliplex_tui_constraint}\n"
 

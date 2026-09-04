@@ -51,6 +51,13 @@ agent:
 #      rag_lancedb_stem: "haiku.rag"
 #      rag_lancedb_override_path: "../other.lancedb"
 #      #
+#    # Compaction replaces earlier questions' evidence on the request with
+#    # what was cited; the citation policy is what makes citations happen.
+#    # Configuring compaction alone drops the evidence of any question the
+#    # model did not cite for.
+#    - kind: "haiku.rag.skills.evidence_compaction"
+#    - kind: "haiku.rag.skills.citation_policy"
+
 #      # Per-room haiku.rag overrides: drop a 'haiku.rag.yaml' beside this
 #      # config (merged over the installation's); not an inline field.
 #      #

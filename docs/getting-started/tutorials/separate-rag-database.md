@@ -26,6 +26,10 @@ the ingester's. Open the new room and ask a question answerable from the
 `handbook` corpus: it answers from that database, while the `custom` room still
 uses the ingester's.
 
+A room is not limited to one: list both under `rag_databases` and a single
+search covers them together. See
+[Searching several databases at once](../../users/operations/rag.md#searching-several-databases-at-once).
+
 ## Where next
 
 Back to [Next steps](04-next-steps.md) for the other optional

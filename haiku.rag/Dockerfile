@@ -1,1 +1,1 @@
-FROM ghcr.io/ggozad/haiku.rag-slim:0.56.0
+FROM ghcr.io/ggozad/haiku.rag-slim:0.82.1

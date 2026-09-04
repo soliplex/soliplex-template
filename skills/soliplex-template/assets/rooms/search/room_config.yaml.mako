@@ -20,9 +20,13 @@ agent:
 tools:
   - tool_name: "soliplex.tools.rag.search_documents"
     #
-    # Exactly one of 'rag_lancedb_stem' / 'rag_lancedb_override_path'):
+    # Exactly one of 'rag_lancedb_stem' / 'rag_lancedb_override_path':
     #
     rag_lancedb_stem: "${rag_stem}"
+    #
+    # ... or 'rag_databases' to search several as one set: this tool takes
+    # the same spelling as the RAG skill (see the commented block below).
+    #
 
     search_documents_limit: 7
 
@@ -48,13 +52,43 @@ tools:
 #  skill_configs:
 #    - kind: "haiku.rag.skills.rag"
 #      #
-#      # Exactly one of 'rag_lancedb_stem' / 'rag_lancedb_override_path':
+#      # Searched as one set. A name is what search results, documents and
+#      # citations report, so it must be unique within the list; the
+#      # location stays here in the config. Every database in the list must
+#      # have been written with the same embedding model, since one query is
+#      # embedded once for all of them.
 #      #
-#      rag_lancedb_stem: "${rag_stem}"
-#      rag_lancedb_override_path: "../other.lancedb"
+#      rag_databases:
+#        -
+#          # optional, defaults to the stem
+#          name: "${room_id}"
+#          #
+#          # Exactly one of 'rag_lancedb_stem' / 'rag_lancedb_override_path':
+#          #
+#          rag_lancedb_stem: "${rag_stem}"
+#          rag_lancedb_override_path: "../other.lancedb"
+#        -
+#          name: "other_db"
+#          #
+#          # Exactly one of 'rag_lancedb_stem' / 'rag_lancedb_override_path':
+#          #
+#          rag_lancedb_stem: "another_db"
+#          rag_lancedb_override_path: "../another.lancedb"
+#    #
+#    # Compaction replaces earlier questions' evidence on the request with
+#    # what was cited; the citation policy is what makes citations happen.
+#    # Configuring compaction alone drops the evidence of any question the
+#    # model did not cite for.
+#    - kind: "haiku.rag.skills.evidence_compaction"
+#    - kind: "haiku.rag.skills.citation_policy"
+
+#
 #      #
 #      # Per-room haiku.rag overrides: drop a 'haiku.rag.yaml' beside this
 #      # config (merged over the installation's); not an inline field.
+#      # Don't also place a database in that file's 'lancedb.databases':
+#      # naming one here as well is two placements for one room, and the
+#      # room fails when it is used.
 #      #
 
 allow_mcp: false

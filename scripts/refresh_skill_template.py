@@ -162,6 +162,12 @@ def t_compose(text: str) -> str:
                 "soliplex-cli serve --no-auth-mode --reload=config",
                 "soliplex-cli serve ${backend_auth_flag}--reload=config",
             ),
+            # Same parameter as the ingester Dockerfile's FROM: compose tags
+            # the locally built image with this name, so the two must agree.
+            (
+                "image: ghcr.io/ggozad/haiku.rag-slim:0.82.1",
+                "image: ghcr.io/ggozad/haiku.rag-slim:${haiku_rag_version}",
+            ),
             ('- "8765:8765"', '- "${ingester_port}:8765"'),
             ('- "5001:5001"', '- "${docling_port}:5001"'),
             ('- "5432:5432"', '- "${postgres_port}:5432"'),
@@ -305,17 +311,35 @@ def t_backend_haiku(text: str) -> str:
                 "qa:\n  model:\n    name: gpt-oss:latest",
                 "qa:\n  model:\n    name: ${rag_qa_model}",
             ),
-            (
-                "research:\n  model:\n    name: gpt-oss:latest",
-                "research:\n  model:\n    name: ${rag_research_model}",
-            ),
             ("chunk_size: 256", "chunk_size: ${chunk_size}"),
         ],
     )
 
 
 def t_ingester_haiku(text: str) -> str:
+    # haiku.rag expands these itself when it loads the config, so they must
+    # reach the rendered file verbatim rather than being substituted by Mako
+    # at generation time.
+    text = esc(text, "${INGESTER_TOKEN}", "${INGESTER_DB_PASSWORD}")
     return repl(text, [("chunk_size: 256", "chunk_size: ${chunk_size}")])
+
+
+def t_ingester_dockerfile(text: str) -> str:
+    # The ingester image tag is a parameter because it is not free to choose:
+    # the pinned soliplex release constrains 'haiku.rag-slim' as a dependency,
+    # and the ingester writes the LanceDB the backend reads, so the image has
+    # to satisfy the range 'soliplex_backend_constraint' implies.
+    new, n = re.subn(
+        r"(?m)^FROM ghcr\.io/ggozad/haiku\.rag-slim:.*$",
+        "FROM ghcr.io/ggozad/haiku.rag-slim:${haiku_rag_version}",
+        text,
+    )
+    require(
+        n == 1,
+        "expected one haiku.rag-slim FROM line in ingester "
+        f"Dockerfile, got {n}",
+    )
+    return new
 
 
 def t_backend_constraints(text: str) -> str:
@@ -559,7 +583,13 @@ def t_claude(text: str) -> str:
     # stays intact when gitea is off; the standalone service bullet is wrapped
     # with '% if'. The literal compose ${...} expansion in the secrets notes
     # must be escaped so Mako passes it through.
-    text = esc(text, "${INGESTER_TOKEN:-secret}")
+    text = esc(
+        text,
+        "${INGESTER_TOKEN:-secret}",
+        "${INGESTER_TOKEN}",
+        "${VAR}",
+        "${VAR:-default}",
+    )
     text = repl(
         text,
         [
@@ -572,6 +602,24 @@ def t_claude(text: str) -> str:
                 ", `soliplex_gitea` (Gitea backing store)",
                 '${", `soliplex_gitea` (Gitea backing store)"'
                 ' if include_gitea else ""}',
+            ),
+            # Version pins: the gotchas quote them, so they have to follow the
+            # parameters or the generated CLAUDE.md goes stale the moment a
+            # project picks different ones.
+            (
+                "`soliplex >= 0.79, < 0.80`",
+                "`soliplex ${soliplex_backend_constraint}`",
+            ),
+            (
+                "haiku.rag-slim:0.82.1",
+                "haiku.rag-slim:${haiku_rag_version}",
+            ),
+            # tui/constraints.txt only exists in a project that took the TUI.
+            (
+                " (The opt-in TUI pins the same package separately, in"
+                " `tui/constraints.txt`.)",
+                '${" (The opt-in TUI pins the same package separately, in'
+                ' `tui/constraints.txt`.)" if include_tui else ""}',
             ),
         ],
     )
@@ -602,6 +650,7 @@ DERIVED = {
     "backend/environment/installation.yaml": t_installation,
     "backend/environment/haiku.rag.yaml": t_backend_haiku,
     "haiku.rag/haiku.rag.yaml": t_ingester_haiku,
+    "haiku.rag/Dockerfile": t_ingester_dockerfile,
     "backend/constraints.txt": t_backend_constraints,
     "tui/constraints.txt": t_tui_constraints,
     "nginx/nginx.conf": t_nginx_conf,
@@ -681,7 +730,7 @@ USER_DOC_PARAMS = {
     ],
     "architecture/backend.md": [
         (
-            "soliplex >= 0.68, < 0.69",
+            "soliplex >= 0.79, < 0.80",
             "soliplex ${soliplex_backend_constraint}",
         ),
     ],
@@ -1067,12 +1116,12 @@ PROBE = dict(
     rag_embed_model="m",
     rag_embed_dim=1,
     rag_qa_model="m",
-    rag_research_model="m",
     chunk_size=1,
     agui_db="db",
     authz_db="db2",
     soliplex_backend_constraint="c",
     soliplex_tui_constraint="c",
+    haiku_rag_version="v",
     frontend_release_path="latest",
     docs_dir="d",
     include_gitea=True,

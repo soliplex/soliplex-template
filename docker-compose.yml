@@ -110,25 +110,23 @@ services:
 
   haiku-ingester:
 
-    image: ghcr.io/ggozad/haiku.rag-slim:0.56.0
+    image: ghcr.io/ggozad/haiku.rag-slim:0.82.1
 
     build:
       context: haiku.rag
       dockerfile: Dockerfile
 
-    # Render the bind-mounted yaml into /tmp with INGESTER_TOKEN and the
-    # Postgres queue password substituted, then exec the ingester against the
-    # rendered copy. haiku.rag's yaml loader has no env-var interpolation so we
-    # do the substitution before haiku-ingester reads the config. The DB
-    # password is read from its Docker secret (the generated value is
-    # alphanumeric, so it is safe as a sed replacement and inside the DBURI).
+    # haiku.rag interpolates environment references in its own config
+    # (0.57+), so the ingester reads the bind-mounted yaml directly -- no
+    # rendered copy. The queue password lives in a Docker secret rather than
+    # the environment, and interpolation reads the environment, so export it
+    # first.
     command:
       - sh
       - -c
       - |
-        INGESTER_DB_PASSWORD="$$(cat /run/secrets/ingester_db_password)"
-        sed -e "s|__INGESTER_TOKEN__|$$INGESTER_TOKEN|" -e "s|__INGESTER_DB_PASSWORD__|$$INGESTER_DB_PASSWORD|" /app/haiku.rag.yaml > /tmp/haiku.rag.yaml
-        exec haiku-ingester --config /tmp/haiku.rag.yaml serve
+        export INGESTER_DB_PASSWORD="$$(cat /run/secrets/ingester_db_password)"
+        exec haiku-ingester --config /app/haiku.rag.yaml serve
 
     ports:
       - "8765:8765"  # control plane: /health, /jobs, /sources, /dlq, /stats

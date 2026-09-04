@@ -73,7 +73,8 @@ To add documents, drop files into `rag/docs/` — the FS source under `ingester.
 
 ## Gotchas
 
-- `constraints.txt` pins `soliplex >= 0.60.0.1, < 0.61`. Bumping this is a backend rebuild.
+- `backend/constraints.txt` pins `soliplex >= 0.79, < 0.80`. Bumping it is a backend rebuild. (The opt-in TUI pins the same package separately, in `tui/constraints.txt`.)
+- The `haiku-ingester` image tag `ghcr.io/ggozad/haiku.rag-slim:0.82.1` appears in both `docker-compose.yml` and `haiku.rag/Dockerfile`, and the two must agree. It is not a free choice: the pinned `soliplex` release constrains `haiku.rag-slim` as a dependency, and the ingester writes the LanceDB the backend reads — check that constraint before changing the tag.
 - The frontend is pulled from **the latest** `soliplex/frontend` GitHub release inside `nginx/Dockerfile` — rebuilds are not reproducible across time unless you pin the tarball URL. Cache-bust hash is captured from the release tag and written to `/tmp/soliplex-frontend-release-hash` during build.
 - Backend `--no-auth-mode` is explicitly labeled temporary in `docker-compose.yml`. Don't assume auth is enforced end-to-end in this template.
 - `docker compose down -v` drops the `postgres_data` volume — all chat threads, authz grants, and the ingester's job queue (its own `soliplex_ingester` database) go with it. The RAG vector store under `rag/db/` (bind mount, not the postgres volume) is separate, so a `down -v` doesn't touch it.
@@ -84,10 +85,10 @@ To add documents, drop files into `rag/docs/` — the FS source under `ingester.
 
 How the token gets in:
 
-- `haiku.rag/haiku.rag.yaml` has `ingester.api.auth_token: __INGESTER_TOKEN__` as a placeholder.
-- The `haiku-ingester` service runs a small `sh -c "sed ... && exec haiku-ingester ..."` wrapper that replaces the placeholder with the value of `$INGESTER_TOKEN` before haiku-ingester reads the config. haiku.rag's YAML loader has no native env-var interpolation, hence the wrapper.
+- `haiku.rag/haiku.rag.yaml` has `ingester.api.auth_token: ${INGESTER_TOKEN}`. haiku.rag's YAML loader expands `${VAR}` / `${VAR:-default}` itself (since 0.57), so the ingester reads the bind-mounted config directly.
+- The `haiku-ingester` command is still a one-line `sh -c` wrapper, but only to `export INGESTER_DB_PASSWORD` from its Docker secret: interpolation reads the environment, not files.
 - `INGESTER_TOKEN` defaults to `secret` (compose sets `${INGESTER_TOKEN:-secret}`). Override it in `.env` for any deployment that isn't a single-developer laptop.
 
-Clients call the control plane with `Authorization: Bearer $INGESTER_TOKEN`. The browser dashboard at `/` is unauthenticated HTML; its in-page JS attaches the bearer to JSON fetches itself (paste the token into the dashboard's prompt). The startup log warns if `auth_token` is `None` — if you ever see that warning, the substitution didn't fire and the API is open.
+Clients call the control plane with `Authorization: Bearer $INGESTER_TOKEN`. The browser dashboard at `/` is unauthenticated HTML; its in-page JS attaches the bearer to JSON fetches itself (paste the token into the dashboard's prompt). An unset or empty `${INGESTER_TOKEN}` is a load error, so the ingester fails to start rather than quietly serving an unauthenticated control plane.
 
-The token cannot contain `|`, `\`, or `&` (the `sed` delimiter and escape characters). Use alphanumerics, e.g. `openssl rand -hex 32`.
+The token no longer has to avoid `sed` metacharacters, but a literal `$` must be written `$$`. Alphanumerics stay the easy choice, e.g. `openssl rand -hex 32`.
