@@ -576,8 +576,9 @@ def t_gitignore(text: str) -> str:
     return new
 
 
-def t_claude(text: str) -> str:
-    # CLAUDE.md is rendered into generated projects; gitea is opt-in, so its
+def t_agents(text: str) -> str:
+    # AGENTS.md is rendered into generated projects (alongside the CLAUDE.md
+    # shim, which is copied verbatim); gitea is opt-in, so its
     # mentions become Mako conditionals. The woven port / database references
     # use inline '${... if include_gitea else ""}' so the surrounding prose
     # stays intact when gitea is off; the standalone service bullet is wrapped
@@ -604,7 +605,7 @@ def t_claude(text: str) -> str:
                 ' if include_gitea else ""}',
             ),
             # Version pins: the gotchas quote them, so they have to follow the
-            # parameters or the generated CLAUDE.md goes stale the moment a
+            # parameters or the generated AGENTS.md goes stale the moment a
             # project picks different ones.
             (
                 "`soliplex >= 0.79, < 0.80`",
@@ -656,7 +657,7 @@ DERIVED = {
     "nginx/nginx.conf": t_nginx_conf,
     "nginx/Dockerfile": t_nginx_dockerfile,
     "postgres/config/init.sh": t_init_sh,
-    "CLAUDE.md": t_claude,
+    "AGENTS.md": t_agents,
 }
 
 # --------------------------------------------------------------------------
