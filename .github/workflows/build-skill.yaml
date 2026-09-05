@@ -33,6 +33,7 @@ on:
       - 'docling-serve/**'
       - 'tui/**'
       - 'rag/**'
+      - 'AGENTS.md'
       - 'CLAUDE.md'
       - 'scripts/build_skill.py'
       - 'scripts/refresh_skill_template.py'

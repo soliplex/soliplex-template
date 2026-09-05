@@ -379,10 +379,10 @@ def test_t_nginx_conf_wraps_gitea_on_real_exemplar():
     assert "% if include_gitea:\n        # Gitea under /gitea/" in mako
 
 
-def test_t_claude_wraps_gitea_on_real_exemplar():
-    exemplar = (rst.REPO / "CLAUDE.md").read_text()
+def test_t_agents_wraps_gitea_on_real_exemplar():
+    exemplar = (rst.REPO / "AGENTS.md").read_text()
 
-    mako = rst.t_claude(exemplar)
+    mako = rst.t_agents(exemplar)
 
     assert (
         '${", `3000` (gitea HTTP), `2222` (gitea SSH)"'
