@@ -812,6 +812,11 @@ def test_main_requires_out():
         gen.main([])
 
 
+def test_main_rejects_out_with_parent(tmp_path):
+    with pytest.raises(gen.OutAndParentConflict):
+        gen.main(["--out", str(tmp_path / "proj"), "--parent", str(tmp_path)])
+
+
 def test_main_missing_template(monkeypatch, tmp_path):
     monkeypatch.setattr(
         gen,
@@ -836,6 +841,22 @@ def test_main_out_not_empty(monkeypatch, tmp_path):
 
     with pytest.raises(gen.OutNotEmpty):
         gen.main(["--out", str(out)])
+
+
+def test_main_parent_target_not_empty(
+    generate_script_path,
+    template_root_path,
+    load_params,
+    coerce_and_derive,
+    validate,
+    tmp_path,
+):
+    stale = tmp_path / "stacks" / "demo"
+    stale.mkdir(parents=True)
+    (stale / "leftover").write_text("x", encoding="utf-8")
+
+    with pytest.raises(gen.OutNotEmpty):
+        gen.main(["--parent", str(tmp_path / "stacks")])
 
 
 # The parameter dict main() threads through its (mocked) helpers. load_params
@@ -985,6 +1006,40 @@ def test_main_happy_no_secrets_no_git(
     write_env.assert_called_once_with(out_path.resolve(), PARAMS)
     maybe_run_secrets.assert_called_once_with(out_path.resolve(), False)
     maybe_git_init.assert_called_once_with(out_path.resolve(), True, False)
+
+
+def test_main_parent_creates_project_dir_beside_existing_stacks(
+    generate_script_path,
+    template_root_path,
+    load_params,
+    coerce_and_derive,
+    validate,
+    render_tree,
+    ensure_runtime_dirs,
+    write_env,
+    maybe_run_secrets,
+    maybe_git_init,
+    tmp_path,
+    capsys,
+):
+    parent = tmp_path / "stacks"
+    (parent / "another-stack").mkdir(parents=True)
+    (parent / ".env").write_text(
+        "OLLAMA_BASE_URL=http://o\n", encoding="utf-8"
+    )
+    expected = (parent / "demo").resolve()
+
+    rc = gen.main(["--parent", str(parent), "--no-generate-secrets"])
+
+    # A non-empty parent is the point: the guard covers the project directory.
+    assert rc == 0
+    assert f"at {expected}" in capsys.readouterr().out
+    ensure_runtime_dirs.assert_called_once_with(expected, "rag/docs")
+    write_env.assert_called_once_with(expected, PARAMS)
+    maybe_git_init.assert_called_once_with(expected, True, False)
+    assert (parent / ".env").read_text(encoding="utf-8") == (
+        "OLLAMA_BASE_URL=http://o\n"
+    )
 
 
 def test_main_happy_with_secrets_and_git(

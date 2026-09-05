@@ -271,7 +271,15 @@ class RenderFailed(GenError):
 
 class OutIsRequired(GenError):
     def __init__(self):
-        super().__init__("--out is required")
+        super().__init__("--out or --parent is required")
+
+
+class OutAndParentConflict(GenError):
+    def __init__(self):
+        super().__init__(
+            "--out and --parent are mutually exclusive: --out names the "
+            "project directory itself, --parent the directory to create it in"
+        )
 
 
 class TemplateNotFound(GenError):
@@ -289,7 +297,7 @@ class OutNotEmpty(GenError):
     def __init__(self, out):
         self.out = out
         super().__init__(
-            f"--out {out} exists and is not empty (use --force to override)"
+            f"{out} exists and is not empty (use --force to override)"
         )
 
 
@@ -675,6 +683,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         description="Scaffold a Soliplex Docker Compose project."
     )
     p.add_argument("--out", help="target directory for the new project")
+    p.add_argument(
+        "--parent",
+        help="directory to create the project in; the project directory is "
+        "named for project_name (alternative to --out)",
+    )
     p.add_argument("--params", help="JSON file of parameter overrides")
     p.add_argument(
         "--interactive",
@@ -684,7 +697,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument(
         "--force",
         action="store_true",
-        help="allow writing into a non-empty --out",
+        help="allow writing into a non-empty target directory",
     )
     p.add_argument(
         "--generate-secrets",
@@ -712,6 +725,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
+def require_empty_target(out: pathlib.Path, force: bool) -> None:
+    """Refuse to scaffold over a directory that already holds something."""
+    if out.exists() and any(out.iterdir()) and not force:
+        raise OutNotEmpty(out)
+
+
 def main(argv: list[str]) -> int:
     args = parse_args(argv)
 
@@ -719,7 +738,10 @@ def main(argv: list[str]) -> int:
         print(json.dumps(DEFAULTS, indent=2))
         return 0
 
-    if not args.out:
+    if args.out and args.parent:
+        raise OutAndParentConflict()
+
+    if not args.out and not args.parent:
         raise OutIsRequired()
 
     template_root = (
@@ -728,13 +750,26 @@ def main(argv: list[str]) -> int:
     if not template_root.is_dir():
         raise TemplateNotFound(template_root)
 
-    out = pathlib.Path(args.out).resolve()
-    if out.exists() and any(out.iterdir()) and not args.force:
-        raise OutNotEmpty(out)
+    # With --out the target is known up front, so check it before the
+    # (possibly interactive) interview rather than after. With --parent the
+    # directory is named for project_name, so the same check has to wait for
+    # parameters to resolve -- and validate() has by then guaranteed that
+    # project_name yields a valid Python identifier, so it cannot carry a
+    # path separator into the join below.
+    out = None
+    if args.out:
+        out = pathlib.Path(args.out).resolve()
+        require_empty_target(out, args.force)
 
     params = load_params(args)
     params = coerce_and_derive(params)
     validate(params)
+
+    if out is None:
+        out = (
+            pathlib.Path(args.parent) / str(params["project_name"])
+        ).resolve()
+        require_empty_target(out, args.force)
 
     out.mkdir(parents=True, exist_ok=True)
     manifest = render_manifest(params, read_skill_metadata(SKILL_DIR))

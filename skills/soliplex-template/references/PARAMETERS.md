@@ -16,8 +16,10 @@ not re-listed here):
 
 - `key=value` — set a parameter, where `key` is any parameter name in the table
   below **or** a friendly alias from `aliases` (e.g. `project=` → `project_name`,
-  `ollama=` → `ollama_base_url`). The alias `where=` / the name `output_dir=`
-  is special: it sets the `--out` target directory, not a template parameter.
+  `ollama=` → `ollama_base_url`). Two are special and set the target
+  directory rather than a template parameter: `where=` / `output_dir=` sets
+  `--out` (that directory *is* the project), and `in=` / `parent_dir=` sets
+  `--parent` (the project is created inside it, named for `project_name`).
 - `<group>=default` — accept the defaults for a whole `groups` set and skip its
   prompt, e.g. `ports=default` or `models=default`.
 - `force`, `git=no`, `secrets=no` — the `--force`, `--no-git`, and
@@ -31,10 +33,11 @@ prompt (a command-line value would leak into shell history).
 
 | Argument | Meaning |
 |----------|---------|
-| `--out DIR` | Target directory for the new project (required to generate). |
+| `--out DIR` | Target directory for the new project — this directory *is* the project. Required to generate, unless `--parent` is given. |
+| `--parent DIR` | Create the project *inside* `DIR`, in a directory named for `project_name` (e.g. `--parent ~/stacks` with `project_name: acme` → `~/stacks/acme`). Mutually exclusive with `--out`; `DIR` may already hold other projects. |
 | `--params FILE` | JSON object of parameter overrides. |
 | `--interactive` | Prompt for each parameter on stdin (blank keeps the default). |
-| `--force` | Allow writing into a non-empty `--out`. |
+| `--force` | Allow writing into a non-empty target directory. With `--parent` this refers to the project directory, not the parent — a parent holding other projects is always fine. |
 | `--generate-secrets` / `--no-generate-secrets` | Run `scripts/generate_secrets.py` in the new project after scaffolding. **Default: enabled**; pass `--no-generate-secrets` to skip. |
 | `--no-git` | Skip `git init` / initial commit. |
 | `--disable-gpg-sign` | Pass `commit.gpgsign=false` for the initial commit. Default: respect the host git config. |
