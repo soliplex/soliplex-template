@@ -34,9 +34,10 @@ _spec = importlib.util.spec_from_file_location(
 gen = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(gen)
 
-# ``where`` / ``output_dir`` is the one alias target that is NOT a generator
-# parameter: it routes to the ``--out`` argument (the target directory).
-_OUT_SPECIAL = "output_dir"
+# Two alias targets are NOT generator parameters: they route to CLI arguments.
+# ``where`` / ``output_dir`` names the project directory itself (``--out``);
+# ``in`` / ``parent_dir`` names the directory to create it in (``--parent``).
+_ROUTING_SPECIALS = {"output_dir", "parent_dir"}
 
 _ALIASES_PATH = _SKILL_DIR / "assets" / "aliases.json"
 _ALIASES = json.loads(_ALIASES_PATH.read_text())
@@ -60,7 +61,7 @@ def test_aliases_json_parses_and_has_expected_top_level_keys():
     sorted(_ALIASES["aliases"].items()),
 )
 def test_alias_target_is_a_known_parameter(token, target):
-    known = target in gen.DEFAULTS or target == _OUT_SPECIAL
+    known = target in gen.DEFAULTS or target in _ROUTING_SPECIALS
 
     assert known, f"alias {token!r} -> unknown target {target!r}"
 

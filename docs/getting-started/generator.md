@@ -31,6 +31,11 @@ uv run skills/soliplex-template/scripts/generate_soliplex_project.py --print-def
 # Generate into a new directory from a params file:
 uv run skills/soliplex-template/scripts/generate_soliplex_project.py \
     --out ../my-stack --params params.json
+
+# Or create it inside a directory that collects your stacks; the project
+# directory is named for project_name:
+uv run skills/soliplex-template/scripts/generate_soliplex_project.py \
+    --parent ~/stacks --params params.json
 ```
 
 `ollama_base_url` is the only value with no usable default; everything else
@@ -40,7 +45,10 @@ falls back to a sensible default. Useful flags:
 - `--no-generate-secrets` — skip generating the stack's Docker secrets
   (generation runs `generate_secrets.py` by default).
 - `--no-git` — skip the initial git commit.
-- `--force` — allow writing into a non-empty `--out`.
+- `--parent DIR` — create the project *inside* `DIR` rather than treating the
+  target as the project directory itself. Mutually exclusive with `--out`.
+- `--force` — allow writing into a non-empty target directory (with
+  `--parent`, that means the project directory, not the parent).
 
 ## What the generated project adds
 

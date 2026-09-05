@@ -31,9 +31,13 @@ from the user and invoke it.
    Read [assets/aliases.json](assets/aliases.json) — the single source of truth
    for the shortcut vocabulary — and apply:
    - `key=value` where `key` is a raw parameter name **or** an entry in
-     `aliases` → set that parameter. The one special case is `where` /
-     `output_dir`, which is **not** a parameter: it becomes the `--out`
-     argument (the target directory).
+     `aliases` → set that parameter. Two aliases are **not** parameters but
+     route to CLI arguments, and name the target two different ways:
+     `where` / `output_dir` becomes `--out` (that directory *is* the project),
+     while `in` / `parent_dir` becomes `--parent` (the project is created
+     *inside* it, in a directory named for `project_name`). Prefer `in=` when
+     the user points at a directory that holds other stacks. They are mutually
+     exclusive.
    - `<group>=default` for a key in `groups` (e.g. `ports=default`,
      `models=default`) → accept the defaults for every member of that group and
      **skip its prompt**.
