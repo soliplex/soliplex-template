@@ -15,6 +15,8 @@ independent; pick whichever fits what you're building.
 - [Work with Gitea](work-with-gitea.md) — ship a code change through a pull
   request hosted by the stack's own Gitea (extends
   [Add a custom tool](03-add-a-custom-tool.md)).
+- [Hack on the backend](backend-dev-mode.md) — run the stack against a
+  checkout of Soliplex itself, so backend edits reload live.
 - [Concierge room](concierge-room.md) — add an `about-<project>` room where
   users request new rooms that land as Gitea issues (builds on Work with Gitea).
 - [Resolve room requests](concierge-admin.md) — the administrator side: review
