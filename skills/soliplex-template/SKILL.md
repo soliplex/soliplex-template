@@ -56,7 +56,14 @@ from the user and invoke it.
    - **location** — `output_dir` (where to create the project; free text,
      required to actually write) and whether to `--force` into a non-empty dir.
    - **identity** — `project_name` (drives `server_name`, `setup_id`, and the
-     derived `package_name`).
+     derived `package_name`). **`soliplex` is reserved**: the generator
+     rejects it with `ReservedPackageName` and writes nothing, because the
+     stack's own package would shadow the installed distribution's
+     `soliplex.tools` / `soliplex.views` subpackages, and `src/soliplex/` is
+     where a dev-mode checkout is cloned. The check is on the derived
+     `package_name`, so `Soliplex` and `SOLIPLEX` fail too. Catch this when
+     the name arrives — inline (`project=soliplex`) or in the answer — and
+     offer the default `soliplex-dojo` instead of letting generation fail.
    - **ollama** — `ollama_base_url` (**required**, e.g. `http://host:11434`;
      free text — always obtain it, inline or by asking).
    - **ports** — offer "use defaults" vs "customize"; `ports=default`

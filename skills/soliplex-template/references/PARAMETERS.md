@@ -47,7 +47,7 @@ prompt (a command-line value would leak into shell history).
 
 | Parameter | Default | Notes / validation | Where it lands |
 |-----------|---------|--------------------|----------------|
-| `project_name` | `soliplex-dojo` | derived `package_name` must be a valid Python identifier; avoid `soliplex` itself (see below) | compose `name:`, `pyproject.toml` `[project] name`, `README.md` |
+| `project_name` | `soliplex-dojo` | derived `package_name` must be a valid Python identifier, and must not be `soliplex` itself — that name is reserved and rejected (see Notes) | compose `name:`, `pyproject.toml` `[project] name`, `README.md` |
 | `setup_id` | `<project_name>-conf` | derived if unset | `installation.yaml` `id:` |
 | `nginx_http` | `9000` | int 1–65535, unique among host ports | compose host port, `README.md` |
 | `nginx_https` | `9443` | int, unique | compose host port, TUI public-url, Gitea `ROOT_URL` port, `README.md` |
@@ -151,6 +151,38 @@ No publishing workflow is generated (the owner's eventual repository URL is
 unknown at generation time).
 
 ## Notes
+
+- **A stack cannot be named `soliplex`** — `validate()` rejects it, so
+  generation fails with `ReservedPackageName` and writes nothing:
+
+    ```text
+    error: project_name='soliplex' yields package name 'soliplex', which is
+    the Soliplex distribution's own import name. ...
+    ```
+
+    The check is on the derived `package_name` against
+    `RESERVED_PACKAGE_NAMES`, so every spelling that collapses onto it
+    (`Soliplex`, `SOLIPLEX`) is caught too. The default is `soliplex-dojo`.
+
+    Why it is blocked rather than merely discouraged: the generated package
+    has no `__init__.py`, so it does not replace the installed `soliplex`
+    distribution — it *merges* with it as a namespace portion, and being first
+    on `PYTHONPATH` its demo `tools.py` and `views.py` shadow the real
+    `soliplex.tools` and `soliplex.views` **subpackages**. A module is not a
+    package, so every import beneath them fails:
+
+    ```text
+    ModuleNotFoundError: No module named 'soliplex.views.installation';
+    'soliplex.views' is not a package
+    ```
+
+    Top-level modules the generated package does not define (such as
+    `soliplex.main`) still resolve from the installed release, so the damage
+    is partial and would otherwise surface as runtime import errors rather
+    than as an obvious failure at startup. The name also collides with
+    dev-mode, where `scripts/src_projects.py clone` puts a checkout of
+    Soliplex at `src/soliplex/` — the directory the stack's own project would
+    occupy.
 
 - Container-internal ports (backend `8000`, TUI `8002`, and the internal nginx
   `9000`/`9443`) are fixed; the port parameters set only the **host-published**

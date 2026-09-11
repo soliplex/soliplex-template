@@ -127,6 +127,13 @@ PORT_KEYS = (
 )
 INT_KEYS = PORT_KEYS + ("rag_embed_dim", "chunk_size")
 IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+# Import names the generated package must not claim. "soliplex" is the
+# Soliplex distribution's own: the generated package has no __init__.py, so it
+# would merge with the installed one as a namespace portion -- and, being first
+# on PYTHONPATH, its demo tools.py/views.py would shadow the real
+# soliplex.tools/soliplex.views subpackages, breaking every import beneath
+# them. src/soliplex/ is also where src_projects.py clones a dev-mode checkout.
+RESERVED_PACKAGE_NAMES = frozenset({"soliplex"})
 # "latest" or a soliplex/frontend release tag. Recent tags carry semver
 # build metadata (e.g. "v0.87.1+56"), so '+' is allowed alongside the usual
 # letters, digits, '.', '_', '-'. The tag is only ever used in the GitHub
@@ -229,6 +236,20 @@ class BadPackageName(GenError):
             f"{package_name!r}, which is not a valid Python identifier "
             "(use letters, digits, '-'/'_'; must not start with a digit "
             "or be a Python keyword)"
+        )
+
+
+class ReservedPackageName(GenError):
+    def __init__(self, project_name, package_name):
+        self.project_name = project_name
+        self.package_name = package_name
+        super().__init__(
+            f"project_name={project_name!r} yields package name "
+            f"{package_name!r}, which is the Soliplex distribution's own "
+            "import name. The generated package would shadow "
+            "'soliplex.tools' and 'soliplex.views', and src/soliplex/ is "
+            "where a dev-mode checkout of Soliplex is cloned. Choose another "
+            "name (the default is 'soliplex-dojo')."
         )
 
 
@@ -454,6 +475,8 @@ def validate(params: dict[str, object]) -> None:
     package = str(params["package_name"])
     if not package.isidentifier() or keyword.iskeyword(package):
         raise BadPackageName(params["project_name"], package)
+    if package in RESERVED_PACKAGE_NAMES:
+        raise ReservedPackageName(params["project_name"], package)
 
     seen: dict[int, str] = {}
     for key in PORT_KEYS:
