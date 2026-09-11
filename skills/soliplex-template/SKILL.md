@@ -1,6 +1,6 @@
 ---
 name: soliplex-template
-description: "Generate a new, runnable Soliplex Docker Compose stack from an embedded template, or inspect and change the configuration of an existing one — query its resolved installation config, and create or update extra RAG databases (with guidance for wiring them into rooms). Use when a user wants to stand up, bootstrap, or create a new Soliplex deployment / compose stack, or to inspect, configure, or add a RAG database to an existing one."
+description: "Generate a new, runnable Soliplex Docker Compose stack from an embedded template, or inspect and change an existing one — query its resolved installation config, create or update extra RAG databases (with guidance for wiring them into rooms), add a room, or migrate an older stack to the src/ project layout. Use when a user wants to stand up, bootstrap, or create a new Soliplex deployment / compose stack; to inspect, configure, or add a RAG database or room to an existing one; or to upgrade a stack's src/ layout."
 ---
 
 # Soliplex project generation and configuration
@@ -407,6 +407,54 @@ up without an image rebuild or restart.
 
    Then point the user at the generated `room_config.yaml` to uncomment the
    tool/skill examples or refine the prompt.
+
+## Migrating an existing stack to the src/ project layout
+
+Stacks scaffolded before v0.16 put the package directly under `src/`, with its
+tests at the stack root. Since #176 every entry under `src/` is a *project
+directory* — `src/<pkg>/{pyproject.toml,src/<pkg>/,tests/}` — so a checkout
+cloned alongside the project needs no special casing. Convert an old stack with
+`scripts/migrate_layout.py`; do not do it by hand (the `pyproject.toml` split
+is easy to get wrong, and dropping `[project]` leaves the stack root with no
+tooling environment).
+
+It reads `[tool.soliplex-template.params]` for the package name, moves the
+tree with `git mv` (so history follows as renames), splits `pyproject.toml`,
+repoints the backend's `PYTHONPATH`, and adds the `src/` ignore rule. Every
+edit asserts on the text it expects, and nothing is written until all checks
+pass — a drifted stack aborts intact rather than half-converted.
+
+1. **Dry-run** to show the plan (run from the stack dir, or pass
+   `--project-dir`):
+
+   ```bash
+   uv run scripts/migrate_layout.py --project-dir /path/to/stack --dry-run
+   ```
+
+2. **Apply** it. The working tree must be a clean git checkout so the result is
+   reviewable as a diff; `--force` waives that (and moves files without
+   `git mv`). Pass `--package-name` only if the stack has no manifest and the
+   inference is ambiguous.
+
+   ```bash
+   uv run scripts/migrate_layout.py --project-dir /path/to/stack
+   ```
+
+3. **Verify** both halves — the second command is the one a hand-migration
+   usually breaks:
+
+   ```bash
+   cd /path/to/stack/src/<pkg> && uv sync && uv run pytest
+   cd /path/to/stack && uv sync && uv run zensical build
+   ```
+
+   Then `docker compose up -d backend` to pick up the new `PYTHONPATH`, and
+   review the diff before committing. Comments in `installation.yaml` and
+   `rooms/custom/room_config.yaml` still name the old paths; they are cosmetic.
+
+If the script reports that a file has drifted from the exemplar, reconcile that
+one file by hand and re-run — the page linked from the error has the manual
+steps.
 
 ## Managing this skill's version
 

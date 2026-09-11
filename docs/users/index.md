@@ -52,4 +52,4 @@ This site documents *this* project. The quickest path to a running stack is the
 - **[Ingester control plane](operations/ingester.md)** — the control-plane API
   and its auth token.
 - **[Custom Python package](custom-package.md)** — the installable
-  `src/myproject` library.
+  `src/myproject` project, and how to clone others alongside it.

@@ -167,9 +167,12 @@ def test_t_compose():
     # UID/GID alignment interpolations reach the rendered compose verbatim.
     assert "<%text>${PUID:-1000}</%text>" in out
     assert "<%text>${PGID:-1000}</%text>" in out
-    # The backend gets this project's src/ on its import path.
-    assert "PYTHONPATH: /app/src" in out
+    # The whole src/ tree is mounted, but only THIS project's package
+    # directory is an import root -- /app/src itself must not be one.
+    assert "PYTHONPATH: /app/src/${package_name}/src\n" in out
+    assert "PYTHONPATH: /app/src\n" not in out
     assert 'source: "./src"' in out
+    assert 'target: "/app/src"' in out
 
 
 def test_t_installation():
@@ -392,17 +395,29 @@ def test_t_agents_wraps_gitea_on_real_exemplar():
     assert "<%text>${INGESTER_TOKEN:-secret}</%text>" in mako
 
 
+_SRC_RULE = "/src/*\n!/src/${package_name}/\n"
+
+
 def test_t_gitignore():
     text = "/.env\n# Skill build artifacts:\n# more notes\n/dist/\n\n/tmp/\n"
 
     out = rst.t_gitignore(text)
 
-    assert out == "/.env\n/tmp/\n"
+    # the /dist/ block is stripped; the parameterized src/ rule is appended
+    assert out.startswith("/.env\n/tmp/\n")
+    assert out.endswith(_SRC_RULE)
 
 
 def test_t_gitignore_missing_block_raises():
     with pytest.raises(rst.RefreshError, match="/dist/"):
         rst.t_gitignore("/.env\n/tmp/\n")
+
+
+def test_t_gitignore_existing_src_rule_raises():
+    text = "/src/soliplex/\n# Skill build artifacts:\n/dist/\n\n/tmp/\n"
+
+    with pytest.raises(rst.RefreshError, match="no '/src/' rules"):
+        rst.t_gitignore(text)
 
 
 def test_t_user_doc():
@@ -492,22 +507,22 @@ def test_build_into_happy_path(tmp_path, monkeypatch):
     src = tmp_path / "repo"
     src.mkdir()
     (src / "plain.txt").write_text("verbatim\n", encoding="utf-8")
-    (src / "v.txt").write_text("edit me\n", encoding="utf-8")
     (src / "d.txt").write_text("derive me\n", encoding="utf-8")
     monkeypatch.setattr(rst, "REPO", src)
-    monkeypatch.setattr(rst, "VERBATIM_EDITS", {"v.txt": str.upper})
     monkeypatch.setattr(rst, "DERIVED", {"d.txt": lambda t: "MAKO:" + t})
-    monkeypatch.setattr(rst, "AUTHORED", {"authored.md": "authored body\n"})
+    monkeypatch.setattr(
+        rst, "AUTHORED", {"nested/authored.md": "authored body\n"}
+    )
     dest = tmp_path / "dest"
 
-    derived, authored = rst._build_into(dest, ["plain.txt", "v.txt", "d.txt"])
+    derived, authored = rst._build_into(dest, ["plain.txt", "d.txt"])
 
     assert (derived, authored) == (1, 1)
     assert (dest / "plain.txt").read_text() == "verbatim\n"
-    assert (dest / "v.txt").read_text() == "EDIT ME\n"
     assert (dest / "d.txt.mako").read_text() == "MAKO:derive me\n"
     assert not (dest / "d.txt").exists()
-    assert (dest / "authored.md").read_text() == "authored body\n"
+    # authored paths may nest (src/__package__/src/__package__/tools.py.mako)
+    assert (dest / "nested" / "authored.md").read_text() == "authored body\n"
 
 
 def test_build_into_derives_user_docs(tmp_path, monkeypatch):
@@ -520,7 +535,6 @@ def test_build_into_derives_user_docs(tmp_path, monkeypatch):
         "## RAG\n", encoding="utf-8"
     )
     monkeypatch.setattr(rst, "REPO", src)
-    monkeypatch.setattr(rst, "VERBATIM_EDITS", {})
     monkeypatch.setattr(rst, "DERIVED", {})
     monkeypatch.setattr(rst, "AUTHORED", {})
     monkeypatch.setattr(rst, "USER_DOC_PARAMS", {})
@@ -543,7 +557,6 @@ def test_build_into_user_doc_error_is_wrapped(tmp_path, monkeypatch):
     (src / "docs" / "users").mkdir(parents=True)
     (src / "docs" / "users" / "bad.md").write_text("x\n", encoding="utf-8")
     monkeypatch.setattr(rst, "REPO", src)
-    monkeypatch.setattr(rst, "VERBATIM_EDITS", {})
     monkeypatch.setattr(rst, "DERIVED", {})
     monkeypatch.setattr(rst, "AUTHORED", {})
     monkeypatch.setattr(
@@ -554,38 +567,8 @@ def test_build_into_user_doc_error_is_wrapped(tmp_path, monkeypatch):
         rst._build_into(tmp_path / "dest", [])
 
 
-def test_build_into_verbatim_source_missing(tmp_path, monkeypatch):
-    monkeypatch.setattr(rst, "REPO", tmp_path / "repo")
-    monkeypatch.setattr(rst, "VERBATIM_EDITS", {"gone.txt": str.upper})
-    monkeypatch.setattr(rst, "DERIVED", {})
-    monkeypatch.setattr(rst, "AUTHORED", {})
-
-    with pytest.raises(
-        rst.RefreshError, match="verbatim-edit source gone.txt"
-    ):
-        rst._build_into(tmp_path / "dest", [])
-
-
-def test_build_into_verbatim_transform_error_is_wrapped(tmp_path, monkeypatch):
-    src = tmp_path / "repo"
-    src.mkdir()
-    (src / "v.txt").write_text("x\n", encoding="utf-8")
-    monkeypatch.setattr(rst, "REPO", src)
-
-    def boom(_text):
-        raise rst.RefreshError("inner")
-
-    monkeypatch.setattr(rst, "VERBATIM_EDITS", {"v.txt": boom})
-    monkeypatch.setattr(rst, "DERIVED", {})
-    monkeypatch.setattr(rst, "AUTHORED", {})
-
-    with pytest.raises(rst.Wrap, match="v.txt: inner"):
-        rst._build_into(tmp_path / "dest", ["v.txt"])
-
-
 def test_build_into_derived_source_missing(tmp_path, monkeypatch):
     monkeypatch.setattr(rst, "REPO", tmp_path / "repo")
-    monkeypatch.setattr(rst, "VERBATIM_EDITS", {})
     monkeypatch.setattr(rst, "DERIVED", {"gone.txt": str.upper})
     monkeypatch.setattr(rst, "AUTHORED", {})
 
@@ -602,7 +585,6 @@ def test_build_into_derived_transform_error_is_wrapped(tmp_path, monkeypatch):
     def boom(_text):
         raise rst.RefreshError("inner")
 
-    monkeypatch.setattr(rst, "VERBATIM_EDITS", {})
     monkeypatch.setattr(rst, "DERIVED", {"d.txt": boom})
     monkeypatch.setattr(rst, "AUTHORED", {})
 

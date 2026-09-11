@@ -353,18 +353,21 @@ def test_env_file_written(generated_project):
 
 
 # --------------------------------------------------------------------------
-# Installable package: src/<package_name>/ + tests/ + wiring
+# The project directory: src/<package_name>/, a repo-shaped project holding
+# the package and its tests, plus the wiring that reaches it (#176).
 #
 # project_name "soliplex-functest" normalises to the import name
 # "soliplex_functest".
 # --------------------------------------------------------------------------
 _PACKAGE = "soliplex_functest"
+# The project directory under src/, relative to the stack root.
+_PROJECT = f"src/{_PACKAGE}"
 
 
 def test_src_package_synthesized(generated_project):
     out, _params = generated_project
 
-    pkg = out / "src" / _PACKAGE
+    pkg = out / _PROJECT / "src" / _PACKAGE
 
     missing = [
         name for name in ("tools.py", "views.py") if not (pkg / name).is_file()
@@ -375,7 +378,7 @@ def test_src_package_synthesized(generated_project):
 def test_tests_tree_synthesized(generated_project):
     out, _params = generated_project
 
-    tests = out / "tests" / "unit"
+    tests = out / _PROJECT / "tests" / "unit"
 
     missing = [
         name
@@ -385,15 +388,79 @@ def test_tests_tree_synthesized(generated_project):
     assert missing == []
 
 
-def test_pyproject_declares_installable_package(generated_project):
+def test_project_pyproject_declares_installable_package(generated_project):
     out, _params = generated_project
 
-    pyproject = _read(out, "pyproject.toml")
+    pyproject = _read(out, f"{_PROJECT}/pyproject.toml")
 
     assert "[build-system]" in pyproject
     assert "hatchling" in pyproject
     assert f'packages = ["src/{_PACKAGE}"]' in pyproject
     assert "[tool.pytest.ini_options]" in pyproject
+
+
+def test_stack_root_pyproject_is_not_a_distribution(generated_project):
+    # The stack root is a tooling environment: the importable code all lives
+    # in project directories under src/.
+    out, _params = generated_project
+
+    pyproject = _read(out, "pyproject.toml")
+
+    assert "[build-system]" not in pyproject
+    assert "package = false" in pyproject
+    assert "hatch" not in pyproject
+
+
+def test_gitignore_ignores_foreign_checkouts_under_src(generated_project):
+    # Everything under src/ is a project directory; only ours belongs to this
+    # repo. Stated as a rule, so a checkout cloned alongside it costs no line.
+    out, _params = generated_project
+
+    gitignore = _read(out, ".gitignore")
+
+    assert "/src/*" in gitignore
+    assert f"!/src/{_PACKAGE}/" in gitignore
+
+
+def test_gitignore_excludes_a_sibling_checkout_but_not_ours(
+    generated_project,
+):
+    # check-ignore answers for paths that need not exist, so this asks the
+    # question without mutating the module-scoped generated tree.
+    out, _params = generated_project
+
+    result = subprocess.run(
+        [
+            "git",
+            "check-ignore",
+            "-v",
+            "src/soliplex/README.md",
+            f"{_PROJECT}/src/{_PACKAGE}/tools.py",
+        ],
+        cwd=out,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "src/soliplex/README.md" in result.stdout
+    assert f"{_PACKAGE}/tools.py" not in result.stdout
+
+
+def test_git_tracks_our_project_directory(generated_project):
+    out, _params = generated_project
+
+    result = subprocess.run(
+        ["git", "ls-files", "src"],
+        cwd=out,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    tracked = set(result.stdout.split())
+    assert f"{_PROJECT}/src/{_PACKAGE}/tools.py" in tracked
+    assert f"{_PROJECT}/tests/unit/test_tools.py" in tracked
+    assert f"{_PROJECT}/pyproject.toml" in tracked
 
 
 def test_pyproject_records_generation_manifest(generated_project):
@@ -433,13 +500,21 @@ def test_installation_registers_package_router(generated_project):
     assert '- "./rooms"' in installation
 
 
-def test_compose_puts_src_on_backend_pythonpath(generated_project):
+def test_compose_puts_the_project_dir_on_backend_pythonpath(
+    generated_project,
+):
     out, _params = generated_project
 
     compose = _read(out, "docker-compose.yml")
 
-    assert "PYTHONPATH: /app/src" in compose
+    # The whole src/ tree is mounted so sibling checkouts are reachable, but
+    # only this project's package directory is an import root: /app/src must
+    # not be one, or a checkout named for an installed distribution would
+    # graft its repo root onto that distribution's namespace package (#176).
+    assert f"PYTHONPATH: /app/src/{_PACKAGE}/src\n" in compose
+    assert "PYTHONPATH: /app/src\n" not in compose
     assert 'source: "./src"' in compose
+    assert 'target: "/app/src"' in compose
 
 
 def test_default_project_omits_tui_service(generated_project):
@@ -465,7 +540,7 @@ def test_generated_package_is_importable(generated_project):
     # is exercised by the generated tests/unit/test_views.py, not here.)
     env = {
         **os.environ,
-        "PYTHONPATH": str(out / "src"),
+        "PYTHONPATH": str(out / _PROJECT / "src"),
         "PYTHONDONTWRITEBYTECODE": "1",
     }
 

@@ -124,6 +124,60 @@ def test_resolve_template_unknown():
 
 
 # --------------------------------------------------------------------------
+# resolve_package_name: the stack's own package, under src/<pkg>/ (#176)
+# --------------------------------------------------------------------------
+@pytest.fixture
+def project_layout(tmp_path):
+    """Create a stack whose package sits in a project directory under src/."""
+    pkg = tmp_path / "src" / "mystack" / "src" / "mystack"
+    pkg.mkdir(parents=True)
+    (pkg / "tools.py").touch()
+    return tmp_path
+
+
+def test_resolve_package_name_override_wins(project_layout):
+    result = add_room.resolve_package_name(project_layout, "explicit")
+
+    assert result == "explicit"
+
+
+def test_resolve_package_name_from_project_directory(project_layout):
+    result = add_room.resolve_package_name(project_layout, None)
+
+    assert result == "mystack"
+
+
+def test_resolve_package_name_ignores_sibling_checkouts(project_layout):
+    # A repo cloned alongside the project has no src/<its name>/tools.py, so
+    # it must not make the inference ambiguous.
+    checkout = project_layout / "src" / "soliplex" / "src" / "soliplex"
+    checkout.mkdir(parents=True)
+    (project_layout / "src" / "soliplex" / "tools.py").touch()
+
+    result = add_room.resolve_package_name(project_layout, None)
+
+    assert result == "mystack"
+
+
+def test_resolve_package_name_falls_back_to_plumber(tmp_path):
+    # A stack scaffolded before #176 keeps its package directly under src/;
+    # plumber's resolver still recognises that shape.
+    legacy = tmp_path / "src" / "legacy"
+    legacy.mkdir(parents=True)
+    (legacy / "tools.py").touch()
+
+    result = add_room.resolve_package_name(tmp_path, None)
+
+    assert result == "legacy"
+
+
+def test_resolve_package_name_placeholder_when_absent(tmp_path):
+    result = add_room.resolve_package_name(tmp_path, None)
+
+    assert result == add_room.rooms.DEFAULT_PACKAGE_NAME
+
+
+# --------------------------------------------------------------------------
 # Rendering (skill-owned)
 # --------------------------------------------------------------------------
 def test_format_system_prompt_file():

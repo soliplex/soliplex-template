@@ -116,6 +116,36 @@ def _prompt_file_missing_error(path) -> rooms.AddRoomError:
     return rooms.AddRoomError(f"prompt file {path} does not exist")
 
 
+def resolve_package_name(project: pathlib.Path, override: str | None) -> str:
+    """Return the stack's own package name, or a placeholder.
+
+    ``soliplex_plumber.rooms.resolve_package_name`` looks for the single
+    directory under ``<project>/src/`` that contains a ``tools.py``, which is
+    how stacks were scaffolded before soliplex-template#176. Since then each
+    entry under ``src/`` is a *project directory*, so our package sits one
+    level deeper, at ``src/<pkg>/src/<pkg>/tools.py``.
+
+    Try the current layout first and delegate otherwise, so this works
+    against stacks of either shape. Drop the local half once
+    soliplex-plumber#28 lands and the PEP 723 constraint at the top of this
+    file is bumped past it.
+    """
+    if override is not None:
+        return override
+
+    src = project / "src"
+    if src.is_dir():
+        packages = [
+            child.name
+            for child in sorted(src.iterdir())
+            if (child / "src" / child.name / "tools.py").is_file()
+        ]
+        if len(packages) == 1:
+            return packages[0]
+
+    return rooms.resolve_package_name(project, None)
+
+
 def resolve_template(name: str) -> pathlib.Path:
     """Return the path to template ``name``'s mako file, or raise."""
     path = TEMPLATES_DIR / name / TEMPLATE_FILE
@@ -210,7 +240,7 @@ def do_add(args: argparse.Namespace) -> int:
             raise _prompt_file_missing_error(prompt_src)
         prompt_text = prompt_src.read_text()
 
-    package_name = rooms.resolve_package_name(project, args.package_name)
+    package_name = resolve_package_name(project, args.package_name)
     ctx = build_context(args, args.template, package_name)
     config_text = render_room_config(template_path, ctx)
 
@@ -398,7 +428,8 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             "the stack's own package, for '<pkg>.tools.greeting' (default: "
-            "inferred from src/<pkg>/, else a placeholder)"
+            "inferred from the project directory under src/, else a "
+            "placeholder)"
         ),
     )
     prompt = add.add_mutually_exclusive_group()

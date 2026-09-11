@@ -52,13 +52,28 @@ falls back to a sensible default. Useful flags:
 
 ## What the generated project adds
 
-Beyond the stack itself, a generated project is an **installable Python
-library**: it ships a `src/<package_name>/` package (a demo `tools.greeting`
-tool and a `views.router` FastAPI router) plus a `tests/unit/` tree, and its
-`pyproject.toml` declares a build backend. The backend reads the package over a
-read-only `./src` bind mount on `PYTHONPATH`, and the Soliplex config references
-it by dotted name — so you have a ready place to add custom tools, routers, and
+Beyond the stack itself, a generated project ships an **installable Python
+library** of its own, as a project directory under `src/`:
+
+```text
+src/
+  <package_name>/         # this project
+    pyproject.toml
+    src/<package_name>/   # a demo tools.greeting and views.router
+    tests/unit/
+```
+
+Every entry under `src/` has that shape, so `cd src/<X> && uv sync && uv run
+pytest` works the same for this project and for any repo the stack owner later
+clones alongside it (the `soliplex` checkout, a third-party dependency). The
+backend mounts the whole `src/` tree read-only and puts *this* project's
+package directory on `PYTHONPATH`, and the Soliplex config references it by
+dotted name — so you have a ready place to add custom tools, routers, and
 configuration.
+
+An existing stack generated before this layout is converted by the skill's
+`scripts/migrate_layout.py`: see [Migrating to the src/ project
+layout](migrating-layout.md).
 
 ## Where to look
 

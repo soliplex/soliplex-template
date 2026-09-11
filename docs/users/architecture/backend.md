@@ -44,9 +44,9 @@ of the `backend` image is the `backend/` directory, so anything the Dockerfile
 step (`uv add /vendor/<pkgname>`, or `--editable` for editable installs).
 
 !!! tip "Your own code does not need this"
-    For code that belongs to *this* project, use the bundled `src/` package
-    instead — it is bind-mounted onto the backend's `PYTHONPATH` with no
-    rebuild. See [Custom Python package](../custom-package.md).
+    For code that belongs to *this* project, use its own project directory
+    under `src/` instead — it is bind-mounted onto the backend's `PYTHONPATH`
+    with no rebuild. See [Custom Python package](../custom-package.md).
 
 ## Gotchas
 

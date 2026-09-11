@@ -15,12 +15,13 @@ continues from [First steps](01-first-steps.md).
 
 ## 1. Add a tool
 
-Your project is an installable Python package; tools live in
-`src/<package>/tools.py` (the `greeting` tool from
-[First steps](01-first-steps.md) is there). Add a sibling:
+Your project is an installable Python package living in its own project
+directory under `src/`; tools live in `src/<package>/src/<package>/tools.py`
+(the `greeting` tool from [First steps](01-first-steps.md) is there). Add a
+sibling:
 
 ```python
-# src/<package>/tools.py
+# src/<package>/src/<package>/tools.py
 def farewell(name: str) -> str:
     """Return a friendly farewell for ``name``."""
     return f"Goodbye, {name}! Come back soon."
@@ -55,11 +56,12 @@ The agent calls your new tool and replies:
 ## 4. Add a unit test
 
 The generated project is also a normal Python package with a test suite already
-wired up: `tests/unit/test_tools.py` covers `greeting`. Add a case for
-`farewell` beside it (`tools` is already imported at the top of that file):
+wired up: `src/<package>/tests/unit/test_tools.py` covers `greeting`. Add a
+case for `farewell` beside it (`tools` is already imported at the top of that
+file):
 
 ```python
-# tests/unit/test_tools.py
+# src/<package>/tests/unit/test_tools.py
 def test_farewell_includes_name():
     result = tools.farewell("Ada")
 
@@ -69,18 +71,25 @@ def test_farewell_includes_name():
 Create the dev environment once, then run the suite:
 
 ```bash
+cd src/<package>
 uv sync          # installs the dev dependencies, incl. pytest
 uv run pytest
 ```
 
-No setup is needed: `pyproject.toml` already declares `pytest`, puts `src/` on
-the path, and points `testpaths` at `tests/unit/`, so your new test is collected
-and passes.
+No setup is needed: the project's own `pyproject.toml` already declares
+`pytest`, puts its `src/` on the path, and points `testpaths` at `tests/unit/`,
+so your new test is collected and passes. (Run these from the project
+directory, not the stack root — the root `pyproject.toml` is for stack
+tooling.)
 
 ## 5. Commit it
 
+From the stack root again:
+
 ```bash
-git add src/<package>/tools.py tests/unit/test_tools.py \
+cd ../..            # back to the stack root from src/<package>
+git add src/<package>/src/<package>/tools.py \
+    src/<package>/tests/unit/test_tools.py \
     backend/environment/rooms/custom/room_config.yaml
 git commit -m "Add a farewell tool (with a test) to the custom room"
 ```

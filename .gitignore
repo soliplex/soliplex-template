@@ -6,6 +6,10 @@
 .coverage
 *.egg-info
 
+# Virtualenvs (uv). Unanchored, so it also covers the per-project
+# .venv under each project directory, not just the root one.
+.venv/
+
 # Dotenv
 .env
 

@@ -18,7 +18,8 @@ What it does:
   2. copies every tracked repo file (minus the excludes below) in verbatim
   3. rewrites the parameterized files as <name>.mako (Mako ${param} + <%text>
      escaping for literal ${...})
-  4. writes the two authored templates (README.md.mako, pyproject.toml.mako)
+  4. writes the authored templates (README.md.mako, the two
+     pyproject.toml.mako, the src/__package__/ project tree, …)
   5. render-checks every .mako with Mako
 
 Only *tracked* files are picked up (it uses ``git ls-files``); commit new stack
@@ -172,11 +173,13 @@ def t_compose(text: str) -> str:
             ('- "5001:5001"', '- "${docling_port}:5001"'),
             ('- "5432:5432"', '- "${postgres_port}:5432"'),
             ("- ./rag/docs:/docs", "- ./${docs_dir}:/docs"),
-            # Put this project's own src/ package on the backend's import
-            # path (read-only bind mount + PYTHONPATH) so Soliplex can resolve
-            # dotted names like '${package_name}.tools.greeting'. The anchors
-            # below are unique to the backend service (the ingester uses the
-            # short './rag/db:/data' volume form and a different environment).
+            # Mount the whole src/ tree (every project directory: ours,
+            # plus any checkout cloned alongside it) read-only, but put only
+            # *our* project's package directory on PYTHONPATH, so Soliplex can
+            # resolve dotted names like '${package_name}.tools.greeting'. The
+            # anchors below are unique to the backend service (the ingester
+            # uses the short './rag/db:/data' volume form and a different
+            # environment).
             (
                 "      - type: bind\n"
                 '        source: "rag/db/"\n'
@@ -185,6 +188,10 @@ def t_compose(text: str) -> str:
                 '        source: "rag/db/"\n'
                 '        target: "/db"\n'
                 "\n"
+                "      # Every project directory under src/: this\n"
+                "      # project's own, plus any repo cloned alongside\n"
+                "      # it. Only the package dirs named in PYTHONPATH\n"
+                "      # are importable.\n"
                 "      - type: bind\n"
                 '        source: "./src"\n'
                 '        target: "/app/src"\n'
@@ -195,10 +202,12 @@ def t_compose(text: str) -> str:
                 "\n"
                 "    volumes:\n",
                 "      OLLAMA_BASE_URL: <%text>${OLLAMA_BASE_URL}</%text>\n"
-                "      # Put this project's own src/ package on the\n"
+                "      # Put this project's own package directory on the\n"
                 "      # backend's import path so Soliplex can resolve\n"
                 "      # dotted tool / router names (see './src' below).\n"
-                "      PYTHONPATH: /app/src\n"
+                "      # Append ':/app/src/<other>/src' for each further\n"
+                "      # project directory whose code you want importable.\n"
+                "      PYTHONPATH: /app/src/${package_name}/src\n"
                 "\n"
                 "    volumes:\n",
             ),
@@ -263,8 +272,8 @@ _ROUTER_BLOCK = (
     "#" + "=" * 74 + "\n"
     "# FastAPI routers (custom)\n"
     "#" + "=" * 74 + "\n"
-    "# Add this project's own router (defined in src/${package_name}/"
-    "views.py)\n"
+    "# Add this project's own router (defined in\n"
+    "# src/${package_name}/src/${package_name}/views.py)\n"
     "# by dotted name, without clearing the default Soliplex routers.\n"
     "#" + "=" * 74 + "\n"
     "app_router_operations:\n"
@@ -573,7 +582,23 @@ def t_gitignore(text: str) -> str:
         n == 1,
         "expected the '/dist/' skill build artifacts block in .gitignore",
     )
-    return new
+    # Append the rule the repo's own .gitignore cannot carry: in a generated
+    # project every entry under src/ is a project directory, and only *this*
+    # project's is part of this repo. Stated as a rule rather than one
+    # exclusion line per checkout the owner happens to clone.
+    require(
+        "/src/" not in new,
+        "expected no '/src/' rules in .gitignore (derived here instead)",
+    )
+    return new + (
+        "\n"
+        "# Every entry under src/ is a project directory. This project's own\n"
+        "# package is tracked; anything else cloned there (the soliplex\n"
+        "# checkout, a third-party repo you want to hack on) belongs to its\n"
+        "# own repo, so it is ignored without needing a line per clone.\n"
+        "/src/*\n"
+        "!/src/${package_name}/\n"
+    )
 
 
 def t_agents(text: str) -> str:
@@ -641,12 +666,8 @@ def t_agents(text: str) -> str:
     )
 
 
-# Files transformed but kept under their original name (NOT Mako templates).
-VERBATIM_EDITS = {
-    ".gitignore": t_gitignore,
-}
-
 DERIVED = {
+    ".gitignore": t_gitignore,
     "docker-compose.yml": t_compose,
     "backend/environment/installation.yaml": t_installation,
     "backend/environment/haiku.rag.yaml": t_backend_haiku,
@@ -742,8 +763,18 @@ USER_DOC_PARAMS = {
     "operations/ingester.md": [
         ("localhost:8765/stats", "localhost:${ingester_port}/stats"),
     ],
+    # Order matters: repl() replaces *every* occurrence of each anchor, so
+    # the longer paths have to be consumed before the bare 'src/myproject/'
+    # that is a substring of them.
     "custom-package.md": [
-        ("`src/myproject/`", "`src/${package_name}/`"),
+        (
+            "src/myproject/src/myproject/",
+            "src/${package_name}/src/${package_name}/",
+        ),
+        ("/app/src/myproject/src", "/app/src/${package_name}/src"),
+        ("cd src/myproject\n", "cd src/${package_name}\n"),
+        ("src/myproject/", "src/${package_name}/"),
+        ("\nsrc/\n  myproject/\n", "\nsrc/\n  ${package_name}/\n"),
         ("`myproject.tools.greeting`", "`${package_name}.tools.greeting`"),
         ("`myproject.views.router`", "`${package_name}.views.router`"),
         ("`myproject.*`", "`${package_name}.*`"),
@@ -831,14 +862,18 @@ Open the app at <http://localhost:${nginx_http}/> (or
 
 <%text>## Custom Python package</%text>
 
-This project is also an installable Python library: your own code lives under
-`src/${package_name}/` (a demo tool and FastAPI router ship wired up) and its
-tests under `tests/unit/`.
+Every entry under `src/` is a self-contained project directory. This project's
+own is `src/${package_name}/` -- an installable Python library with a demo
+tool and FastAPI router already wired up:
 
 ```bash
+cd src/${package_name}
 uv sync                 # create/refresh the dev environment (installs pytest)
 uv run pytest           # run the project's tests
 ```
+
+Clone any other repo you want to hack on as a sibling (`src/<other>/`) and the
+same two commands work there.
 
 See [Custom Python package](docs/custom-package.md) for how the package is put
 on the backend's import path and referenced by dotted name from the Soliplex
@@ -854,7 +889,42 @@ uv run zensical serve     # preview at http://localhost:8000
 uv run zensical build     # static site under site/
 ```
 """,
+    # The stack root is a tooling environment, not a distribution: the
+    # importable code is its own project under src/__package__/ (below).
     "pyproject.toml.mako": """\
+[project]
+name = "${project_name}"
+version = "0.1.0"
+requires-python = ">=3.13"
+# Host-side dependencies for driving *the stack* -- e.g. running
+# `soliplex-cli` against the Postgres backing store. The container images
+# install their own pinned deps; this file is for host-side use:
+#   uv sync                 # create/refresh the dev environment
+dependencies = [
+    "soliplex ${soliplex_backend_constraint}",
+    "psycopg[binary]",
+    "asyncpg",
+]
+
+# Nothing at the stack root is importable, so there is nothing to build here.
+# This project's own library lives in its own project directory,
+# src/${package_name}/ -- run `uv sync` / `uv run pytest` from there.
+[tool.uv]
+package = false
+
+[dependency-groups]
+dev = [
+    # Builds the documentation site under docs/ (`uv run zensical build`).
+    "zensical",
+]
+
+${soliplex_template_manifest}\
+""",
+    # Every entry under src/ is a project directory in the same shape: a
+    # pyproject.toml, an src/ package, and its own tests. This is ours; a
+    # checkout cloned alongside it (the soliplex repo, a third-party
+    # dependency you want to hack on) is a sibling, not a special case.
+    "src/__package__/pyproject.toml.mako": """\
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -863,27 +933,23 @@ build-backend = "hatchling.build"
 name = "${project_name}"
 version = "0.1.0"
 requires-python = ">=3.13"
-# Host-side dependencies for this project's own tooling and the custom code
-# under src/${package_name}/ (e.g. running `soliplex-cli` against the Postgres
-# backing store, or this project's tests). The container images install their
-# own pinned deps; this file is for host-side use:
+# What the code under src/${package_name}/ imports. Host-side use:
+#   cd src/${package_name}
 #   uv sync                 # create/refresh the dev environment
+#   uv run pytest           # run this project's tests
 #   uv pip install -e .     # or a plain editable install
 dependencies = [
     "soliplex ${soliplex_backend_constraint}",
-    "psycopg[binary]",
-    "asyncpg",
 ]
 
 [dependency-groups]
 dev = [
     "pytest",
-    # Builds the documentation site under docs/ (`uv run zensical build`).
-    "zensical",
 ]
 
-# src/ layout: the importable package lives at src/${package_name}/. The
-# Soliplex backend puts src/ on PYTHONPATH (see docker-compose.yml); the
+# src/ layout: the importable package is src/${package_name}/ *within this
+# project directory*. The Soliplex backend puts that directory on PYTHONPATH
+# as /app/src/${package_name}/src (see the stack's docker-compose.yml); the
 # build + test config below points at the same layout for host-side use.
 [tool.hatch.build.targets.wheel]
 packages = ["src/${package_name}"]
@@ -891,10 +957,8 @@ packages = ["src/${package_name}"]
 [tool.pytest.ini_options]
 testpaths = ["tests/unit"]
 pythonpath = ["src"]
-
-${soliplex_template_manifest}\
 """,
-    "src/__package__/tools.py.mako": '''\
+    "src/__package__/src/__package__/tools.py.mako": '''\
 """Custom agent tools for the ``${package_name}`` Soliplex install.
 
 A Soliplex "tool" is just a dotted name resolving to a plain callable (see a
@@ -911,7 +975,7 @@ def greeting(name: str) -> str:
     """
     return f"Hello, {name}! This greeting came from your own package's tool."
 ''',
-    "src/__package__/views.py.mako": '''\
+    "src/__package__/src/__package__/views.py.mako": '''\
 """A custom FastAPI router for the ``${package_name}`` Soliplex install.
 
 Soliplex registers extra routers by dotted name via the installation-level
@@ -930,7 +994,7 @@ def ping() -> dict[str, str]:
     """A trivial endpoint contributed by this project's own package."""
     return {"ping": "pong"}
 ''',
-    "tests/unit/test_tools.py.mako": '''\
+    "src/__package__/tests/unit/test_tools.py.mako": '''\
 """Tests for :mod:`${package_name}.tools`."""
 
 from ${package_name} import tools
@@ -941,7 +1005,7 @@ def test_greeting_includes_name():
 
     assert "Ada" in result
 ''',
-    "tests/unit/test_views.py.mako": '''\
+    "src/__package__/tests/unit/test_views.py.mako": '''\
 """Tests for :mod:`${package_name}.views`."""
 
 from ${package_name} import views
@@ -960,9 +1024,11 @@ def test_ping_returns_pong():
 ''',
     "backend/environment/rooms/custom/room_config.yaml.mako": """\
 # A demonstration room that wires in a tool from this project's own
-# '${package_name}' package (defined in src/${package_name}/tools.py). The
-# dotted 'tool_name' below is importable because src/ is on the backend's
-# PYTHONPATH (see docker-compose.yml). Delete this room once you have your own.
+# '${package_name}' package, defined in
+# src/${package_name}/src/${package_name}/tools.py. The dotted 'tool_name'
+# below is importable because that project's package directory is on the
+# backend's PYTHONPATH (see docker-compose.yml). Delete this room once you
+# have your own.
 id: "custom"
 name: "Custom Tool Demo"
 description: "Demonstrates a tool provided by this project's own package."
@@ -1165,18 +1231,6 @@ def _build_into(dest_root: pathlib.Path, files: list[str]) -> tuple[int, int]:
         dest = dest_root / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dest)  # preserves mode (executable scripts, etc.)
-
-    # in-place edits to files kept under their original name
-    for rel, fn in VERBATIM_EDITS.items():
-        copied = dest_root / rel
-        require(
-            copied.is_file(),
-            f"verbatim-edit source {rel} not found (committed?)",
-        )
-        try:
-            copied.write_text(fn(copied.read_text()))
-        except RefreshError as exc:
-            raise Wrap(rel, exc) from exc
 
     # rewrite parameterized files as .mako
     derived = 0

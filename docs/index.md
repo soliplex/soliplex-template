@@ -57,7 +57,7 @@ up and operate it day to day:
 | [Secrets](users/operations/secrets.md) | File-based vs env-var secret modes. |
 | [RAG pipeline](users/operations/rag.md) | The vector store, the ingester, and adding documents. |
 | [Ingester control plane](users/operations/ingester.md) | The control-plane API and its auth token. |
-| [Custom Python package](users/custom-package.md) | The installable `src/` library wired into the backend. |
+| [Custom Python package](users/custom-package.md) | The installable project under `src/`, wired into the backend. |
 
 ## Contributing
 

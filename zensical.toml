@@ -29,6 +29,7 @@ nav = [
     { "Home" = "index.md" },
     { "Getting started" = [
         "getting-started/generator.md",
+        "getting-started/migrating-layout.md",
     ] },
     { "Tutorials" = [
         "getting-started/tutorials/01-first-steps.md",
