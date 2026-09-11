@@ -102,24 +102,37 @@ prompt (a command-line value would leak into shell history).
   built images** (`docker compose build`), since the uid is baked in at build
   time. See `operations/secrets.md` in the generated project's docs.
 - `package_name` ← `project_name` lower-cased with hyphens turned into underscores.
-  This is the **import name** of the generated `src/<package_name>/` package, so it
-  must be a valid Python identifier (and not a keyword); generation fails otherwise.
-  It lands in: the package path `src/<package_name>/`, `pyproject.toml`
-  (`[tool.hatch.build.targets.wheel]`), the backend `PYTHONPATH` bind mount in
-  `docker-compose.yml`, and the dotted names referenced from `installation.yaml`
-  (`app_router_operations`, commented `meta:` examples) and
-  `rooms/custom/room_config.yaml` (`tool_name`).
+  This is the **import name** of the generated package, so it must be a valid
+  Python identifier (and not a keyword); generation fails otherwise.
+  It names both levels of the project directory
+  (`src/<package_name>/src/<package_name>/`), and lands in that project's
+  `pyproject.toml` (`[tool.hatch.build.targets.wheel]`), the backend
+  `PYTHONPATH` in `docker-compose.yml`, the `.gitignore` rule that keeps
+  sibling checkouts out of the stack's repo, and the dotted names referenced
+  from `installation.yaml` (`app_router_operations`, commented `meta:`
+  examples) and `rooms/custom/room_config.yaml` (`tool_name`).
 
 ## The generated project as an installable library
 
-The scaffolded project ships a `src/<package_name>/` package (`tools.py`,
-`views.py`) and a `tests/unit/` tree, and its `pyproject.toml` declares a
-build backend (`hatchling`) plus a `dev` dependency group, so it is
-`uv sync` / `uv pip install -e .`-able. The backend reads the package over a
-read-only `./src` bind mount on `PYTHONPATH` — no image rebuild needed to edit
-the custom code. The bundled `tools.greeting` tool and `views.router` FastAPI
-router are referenced by dotted name from the Soliplex config (which is why
-those config files are Mako templates).
+Every entry under the stack's `src/` is a self-contained project directory,
+and the scaffolded one is `src/<package_name>/`: a `pyproject.toml` declaring
+a build backend (`hatchling`) plus a `dev` dependency group, the package
+itself at `src/<package_name>/`, and a `tests/unit/` tree. So
+`cd src/<package_name> && uv sync && uv run pytest` works there, and works
+identically in any repo the stack owner later clones alongside it.
+
+The stack root keeps its own `pyproject.toml`, but only as a tooling
+environment (`soliplex-cli`, the docs site) and the home of the
+`[tool.soliplex-template]` generation manifest — it builds nothing
+(`[tool.uv] package = false`).
+
+The backend bind-mounts the whole `./src` tree read-only and puts *this*
+project's package directory on `PYTHONPATH` as
+`/app/src/<package_name>/src` — no image rebuild needed to edit the custom
+code, and `/app/src` itself is deliberately not an import root. The bundled
+`tools.greeting` tool and `views.router` FastAPI router are referenced by
+dotted name from the Soliplex config (which is why those config files are
+Mako templates).
 
 ## The generated project's documentation site
 

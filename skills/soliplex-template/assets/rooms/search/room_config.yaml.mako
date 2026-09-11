@@ -35,7 +35,8 @@ tools:
 
   #
   # 'greeting' comes from this project's own package
-  # (src/${package_name}/tools.py; src/ is on the backend PYTHONPATH).
+  # (src/${package_name}/src/${package_name}/tools.py; that project's
+  # package dir is on the backend PYTHONPATH).
   # Replace or remove it as you build out your own tools.
   #
   - tool_name: "${package_name}.tools.greeting"

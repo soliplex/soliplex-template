@@ -15,15 +15,17 @@ agent:
 
 # --- Tools (optional) ------------------------------------------------------
 # Give the agent callable tools by dotted import name. soliplex.tools.* ship
-# with the backend; a tool from this project's own package (src/<pkg>/) is
-# importable too -- src/ is on the backend PYTHONPATH (see docker-compose.yml).
+# with the backend; a tool from this project's own package
+# (src/<pkg>/src/<pkg>/) is importable too -- that project's package dir
+# is on the backend PYTHONPATH (see docker-compose.yml).
 #
 #tools:
 #  - tool_name: "soliplex.tools.get_current_datetime"
 #  - tool_name: "soliplex.tools.get_current_user"
 #  #
 #  # 'greeting' comes from this project's own package
-#  # (src/${package_name}/tools.py; src/ is on the backend PYTHONPATH):
+#  # (src/${package_name}/src/${package_name}/tools.py; that
+#  # project's package dir is on the backend PYTHONPATH):
 #  #
 #  - tool_name: "${package_name}.tools.greeting"
 

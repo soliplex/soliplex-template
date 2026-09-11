@@ -52,7 +52,7 @@ login step.
 
 Open <http://localhost:9000> and select the **Custom Tool Demo** room. Every
 generated stack ships it to demonstrate a tool provided by the project's *own*
-Python package (`src/<package>/tools.py`).
+Python package (`src/<package>/src/<package>/tools.py`).
 
 ## 5. Exercise the greeting tool
 
