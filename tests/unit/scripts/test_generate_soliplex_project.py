@@ -344,6 +344,40 @@ def test_validate_bad_package_name(package_name):
         gen.validate(params)
 
 
+# Derivation lower-cases and swaps '-' for '_', so every spelling of the
+# project name collapses onto the one reserved package name.
+@pytest.mark.parametrize("project_name", ["soliplex", "Soliplex"])
+def test_validate_reserved_package_name(project_name):
+    params = _valid_params()
+    params["project_name"] = project_name
+    params["package_name"] = "soliplex"
+
+    with pytest.raises(gen.ReservedPackageName):
+        gen.validate(params)
+
+
+def test_validate_reserved_package_name_reports_both_names():
+    params = _valid_params()
+    params["project_name"] = "soliplex"
+    params["package_name"] = "soliplex"
+
+    with pytest.raises(gen.ReservedPackageName) as exc_info:
+        gen.validate(params)
+
+    assert exc_info.value.project_name == "soliplex"
+    assert exc_info.value.package_name == "soliplex"
+    assert "soliplex-dojo" in str(exc_info.value)
+
+
+# The default must not trip the guard it exists to steer around.
+def test_validate_accepts_default_project_name():
+    params = _valid_params()
+    params["project_name"] = gen.DEFAULTS["project_name"]
+    params["package_name"] = "soliplex_dojo"
+
+    gen.validate(params)
+
+
 @pytest.mark.parametrize("frontend_version", ["", "v 1", 'has"quote'])
 def test_validate_bad_frontend_version(frontend_version):
     params = _valid_params()
