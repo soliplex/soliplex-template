@@ -182,9 +182,9 @@ def test_coerce_derives_defaults():
 
     result = gen.coerce_and_derive(params)
 
-    assert result["setup_id"] == "soliplex-conf"
-    assert result["server_name"] == "soliplex.localhost"
-    assert result["tls_subject"].endswith("CN=soliplex.localhost")
+    assert result["setup_id"] == "soliplex-dojo-conf"
+    assert result["server_name"] == "soliplex-dojo.localhost"
+    assert result["tls_subject"].endswith("CN=soliplex-dojo.localhost")
     assert result["backend_auth_flag"] == "--no-auth-mode "
     assert result["nginx_http"] == 9000
     assert result["frontend_release_path"] == "latest"
