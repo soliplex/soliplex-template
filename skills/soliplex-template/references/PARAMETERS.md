@@ -47,7 +47,7 @@ prompt (a command-line value would leak into shell history).
 
 | Parameter | Default | Notes / validation | Where it lands |
 |-----------|---------|--------------------|----------------|
-| `project_name` | `soliplex` | derived `package_name` must be a valid Python identifier | compose `name:`, `pyproject.toml` `[project] name`, `README.md` |
+| `project_name` | `soliplex-dojo` | derived `package_name` must be a valid Python identifier; avoid `soliplex` itself (see below) | compose `name:`, `pyproject.toml` `[project] name`, `README.md` |
 | `setup_id` | `<project_name>-conf` | derived if unset | `installation.yaml` `id:` |
 | `nginx_http` | `9000` | int 1–65535, unique among host ports | compose host port, `README.md` |
 | `nginx_https` | `9443` | int, unique | compose host port, TUI public-url, Gitea `ROOT_URL` port, `README.md` |

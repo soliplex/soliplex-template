@@ -33,11 +33,24 @@ _spec.loader.exec_module(src_projects)
 _COMPOSE = """\
 services:
   backend:
-    environment:
+    environment: &backend_environment
       OLLAMA_BASE_URL: http://h:11434
       # Append ':/app/src/<other>/src' for each further project directory.
       PYTHONPATH: /app/src/acme_widgets/src
+    command: "$SERVE"
+
+  soliplex-dev:
+    profiles: ["devmode"]
+    environment: *backend_environment
 """
+
+# A generated stack keeps the serve command on one (long) line; build it
+# here so the fixture stays faithful without a 100-column source line.
+_SERVE = (
+    "/app/.venv/bin/soliplex-cli serve --no-auth-mode --reload=config"
+    " --host=0.0.0.0 /environment"
+)
+_COMPOSE = _COMPOSE.replace("$SERVE", _SERVE)
 
 _MANIFEST = """\
 [project]
@@ -473,6 +486,157 @@ def test_add_reports_an_unverifiable_check(checkout, no_docker, capsys):
     out = capsys.readouterr().out
     assert "could not check" in out
     assert "- httpx" in out
+
+
+# --------------------------------------------------------------------------
+# --reload=both (dev-mode): soliplex-template#75
+# --------------------------------------------------------------------------
+@pytest.fixture
+def soliplex_checkout(stack):
+    """A checkout under src/ that provides the 'soliplex' package."""
+    _write(
+        stack / "src/soliplex/pyproject.toml",
+        '[project]\nname = "soliplex"\ndependencies = []\n',
+    )
+    (stack / "src/soliplex/src/soliplex").mkdir(parents=True)
+    return stack
+
+
+def test_read_reload(tmp_path):
+    result = src_projects.read_reload(_COMPOSE, tmp_path / "c.yml")
+
+    assert result == "config"
+
+
+def test_read_reload_requires_the_flag(tmp_path):
+    with pytest.raises(src_projects.ReloadFlagMissing, match="--reload="):
+        src_projects.read_reload("services:\n", tmp_path / "c.yml")
+
+
+def test_write_reload():
+    result = src_projects.write_reload(_COMPOSE, "both")
+
+    assert "--reload=both" in result
+    assert "--reload=config" not in result
+
+
+def test_provides_soliplex_true(soliplex_checkout):
+    result = src_projects.provides_soliplex(soliplex_checkout, "soliplex")
+
+    assert result is True
+
+
+def test_provides_soliplex_false_for_another_checkout(checkout):
+    result = src_projects.provides_soliplex(checkout, "widgetlib")
+
+    assert result is False
+
+
+def test_add_hints_at_reload_without_acting(soliplex_checkout, capsys):
+    result = src_projects.main(
+        [
+            "add",
+            "soliplex",
+            "--project-dir",
+            str(soliplex_checkout),
+            "--no-dep-check",
+        ]
+    )
+
+    assert result == 0
+    assert "Pass --reload-python" in capsys.readouterr().out
+    compose = (soliplex_checkout / "docker-compose.yml").read_text()
+    assert "--reload=config" in compose
+
+
+def test_add_with_reload_python_switches_the_serve_flag(
+    soliplex_checkout, capsys
+):
+    result = src_projects.main(
+        [
+            "add",
+            "soliplex",
+            "--project-dir",
+            str(soliplex_checkout),
+            "--no-dep-check",
+            "--reload-python",
+        ]
+    )
+
+    assert result == 0
+    assert (
+        "--reload=both"
+        in (soliplex_checkout / "docker-compose.yml").read_text()
+    )
+    assert "'--reload=both'" in capsys.readouterr().out
+
+
+def test_reload_python_is_honoured_on_an_already_added_checkout(
+    soliplex_checkout, capsys
+):
+    src_projects.main(
+        [
+            "add",
+            "soliplex",
+            "--project-dir",
+            str(soliplex_checkout),
+            "--no-dep-check",
+        ]
+    )
+
+    result = src_projects.main(
+        [
+            "add",
+            "soliplex",
+            "--project-dir",
+            str(soliplex_checkout),
+            "--no-dep-check",
+            "--reload-python",
+        ]
+    )
+
+    assert result == 0
+    assert (
+        "--reload=both"
+        in (soliplex_checkout / "docker-compose.yml").read_text()
+    )
+    assert "unchanged" in capsys.readouterr().out
+
+
+def test_reload_python_is_idempotent(soliplex_checkout, capsys):
+    src_projects.main(
+        [
+            "add",
+            "soliplex",
+            "--project-dir",
+            str(soliplex_checkout),
+            "--no-dep-check",
+            "--reload-python",
+        ]
+    )
+
+    result = src_projects.main(
+        [
+            "add",
+            "soliplex",
+            "--project-dir",
+            str(soliplex_checkout),
+            "--no-dep-check",
+            "--reload-python",
+        ]
+    )
+
+    assert result == 0
+    assert "already serves with '--reload=both'" in capsys.readouterr().out
+
+
+def test_add_of_a_plain_checkout_says_nothing_about_reload(checkout, capsys):
+    result = src_projects.main(
+        ["add", "widgetlib", "--project-dir", str(checkout), "--no-dep-check"]
+    )
+
+    assert result == 0
+    assert "reload" not in capsys.readouterr().out
 
 
 # --------------------------------------------------------------------------

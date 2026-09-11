@@ -56,8 +56,13 @@ _SENSITIVE_PARAMS = frozenset({"ingester_token"})
 # See references/PARAMETERS.md for the authoritative descriptions.
 # --------------------------------------------------------------------------
 DEFAULTS: dict[str, object] = {
-    # Project
-    "project_name": "soliplex",
+    # Project. Deliberately NOT "soliplex": that is the name of the Soliplex
+    # distribution itself, so a stack called "soliplex" puts its own project
+    # directory at src/soliplex/ -- exactly where a clone of the upstream repo
+    # goes, and its package at src/soliplex/src/soliplex/, where the installed
+    # distribution's own modules live. "-dojo" also reads as a place to
+    # practice.
+    "project_name": "soliplex-dojo",
     "setup_id": None,  # derived from project_name if unset
     # Host ports
     "nginx_http": 9000,
