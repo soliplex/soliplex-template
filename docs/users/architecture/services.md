@@ -36,6 +36,36 @@ Runs `soliplex-cli serve /environment`, installed from the pinned `soliplex`
 package (see [Backend image & dependencies](backend.md)). The `--reload=config`
 flag means edits under `backend/environment/` take effect without a rebuild.
 
+## soliplex-dev
+
+A one-shot task runner, not a long-running service: `profiles: ["devmode"]`
+keeps it out of `docker compose up`. It exists for commands that need the
+stack's config, secrets and databases *and* write access to the project
+directories under `src/`.
+
+It is built from the backend image and mirrors that service's secrets, mounts
+and environment — the same `/app/src` paths, and the very same `PYTHONPATH`
+(a YAML alias, so the two cannot drift). So an audit run here sees exactly
+what the backend sees:
+
+```bash
+docker compose run --rm soliplex-dev \
+    /app/.venv/bin/soliplex-cli audit /environment
+```
+
+The one difference is that `src/` is mounted **read-write** (the backend
+mounts the same tree read-only). Pass `-w /app/src/<project>` for anything
+that must run from a project's own root — `alembic` writes into its
+`versions/` directory and prepends `.` to `sys.path`:
+
+```bash
+docker compose run --rm -w /app/src/soliplex soliplex-dev \
+    /app/.venv/bin/alembic -x soliplex.installation_path=/environment \
+    revision --autogenerate -m "add a column"
+```
+
+Any project directory under `src/` works, not just a `soliplex` checkout.
+
 ## haiku-ingester
 
 The **writer** for the LanceDB at `rag/db/`. Runs `haiku-ingester serve` with a

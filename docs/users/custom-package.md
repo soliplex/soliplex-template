@@ -152,6 +152,10 @@ docker compose up -d backend
   site-packages, so a `soliplex` checkout listed there wins over the
   `soliplex` installed in the image. That is what makes a backend dev-mode
   checkout work — and what makes an accidental name collision confusing.
+  For that case, `src_projects.py --reload-python` also switches the backend's
+  serve command to `--reload=both`, so editing the checkout restarts the
+  server; it offers this as a hint when it notices a checkout providing the
+  `soliplex` package, and only acts when you ask.
 - **It does not install anything.** The checkout's own dependencies are *not*
   resolved: only its source becomes importable. If it imports a third-party
   package the backend image does not already have, the import fails at
