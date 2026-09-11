@@ -498,6 +498,10 @@ def origin(tmp_path_factory):
             "user.email=a@b",
             "-c",
             "user.name=a",
+            # Throwaway repo: never invoke the host's signing key, which
+            # would block on a pinentry prompt.
+            "-c",
+            "commit.gpgsign=false",
             "commit",
             "-q",
             "-m",
