@@ -442,6 +442,14 @@ reporting one of three outcomes:
 - not checkable (no docker, or the image is not built) → it says so and lists
   what the checkout declares, rather than guessing.
 
+**Dev-mode (#75).** A checkout that provides the `soliplex` package is the one
+case where the backend's `--reload=python` earns its keep: it watches
+`soliplex.__path__`, which is then the checkout. `add`/`clone` notice this and
+say so; pass `--reload-python` to act on it, switching the serve command to
+`--reload=both` so edits to the checkout restart the server. It is honoured
+even when the path entry was already there, so a re-run can set just the
+reload mode.
+
 Pass `--no-dep-check` to skip that container round-trip, `--dry-run` to report
 without writing, and `--no-path` to `clone` when the user wants the checkout
 but not the import-path change.

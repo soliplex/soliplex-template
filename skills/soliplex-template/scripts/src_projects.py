@@ -269,6 +269,42 @@ def write_entries(text: str, entries: list[str]) -> str:
 # --------------------------------------------------------------------------
 # Subcommands
 # --------------------------------------------------------------------------
+# The backend's 'soliplex-cli serve --reload=<mode>' flag. 'python' watches
+# 'soliplex.__path__', so it only earns its keep when a checkout providing the
+# 'soliplex' package is on PYTHONPATH -- which is exactly what this script
+# arranges. One line in a generated stack.
+_RELOAD = re.compile(r"--reload=(?P<mode>config|python|both)")
+
+
+class ReloadFlagMissing(SrcProjectError):
+    def __init__(self, compose: pathlib.Path):
+        super().__init__(
+            f"{compose}: no '--reload=' flag found on the backend's serve "
+            "command; set the reload mode by hand."
+        )
+
+
+def read_reload(text: str, compose: pathlib.Path) -> str:
+    match = _RELOAD.search(text)
+    _require(match is not None, ReloadFlagMissing(compose))
+    return match.group("mode")
+
+
+def write_reload(text: str, mode: str) -> str:
+    return _RELOAD.sub(f"--reload={mode}", text, count=1)
+
+
+def provides_soliplex(project: pathlib.Path, name: str) -> bool:
+    """True when ``src/<name>``'s import root holds a ``soliplex`` package.
+
+    That is the case dev-mode cares about: the backend then imports soliplex
+    from the checkout, and '--reload=python' can restart the server when it
+    is edited.
+    """
+    root = container_path(project, name).removeprefix(f"{CONTAINER_SRC}/")
+    return (project / "src" / root / "soliplex").is_dir()
+
+
 def _compose_path(project: pathlib.Path) -> pathlib.Path:
     return project / "docker-compose.yml"
 
@@ -375,6 +411,40 @@ def _report_dependencies(project: pathlib.Path, name: str, skip: bool) -> bool:
     return True
 
 
+def _apply_reload(
+    project: pathlib.Path, name: str, requested: bool
+) -> str | None:
+    """Switch the backend to '--reload=both', or hint that it could be.
+
+    Returns a line to print, or None when the checkout has nothing to do with
+    reloading. Only acts when asked: silently rewriting the serve command
+    because of what a checkout happens to contain would be too much magic.
+    """
+    compose = _compose_path(project)
+    text = compose.read_text()
+
+    if not requested:
+        if (
+            provides_soliplex(project, name)
+            and read_reload(text, compose) == "config"
+        ):
+            return (
+                f"  reload: src/{name} provides the 'soliplex' package. Pass "
+                "--reload-python to have\n          the backend restart when "
+                "you edit it ('--reload=both')."
+            )
+        return None
+
+    mode = read_reload(text, compose)
+    if mode == "both":
+        return "  reload: the backend already serves with '--reload=both'"
+    compose.write_text(write_reload(text, "both"))
+    return (
+        f"  reload: backend serve flag '--reload={mode}' -> '--reload=both'; "
+        "edits under\n          the checkout now restart the server."
+    )
+
+
 def _report_added(
     project: pathlib.Path,
     name: str,
@@ -382,18 +452,37 @@ def _report_added(
     verb: str,
     dry_run: bool,
     skip_deps: bool,
+    reload_python: bool = False,
 ) -> None:
     print(f"{verb}: {path}")
-    if verb == "unchanged":
+    fresh = verb != "unchanged"
+    if not fresh:
         print(f"  src/{name} was already on the backend's PYTHONPATH")
-        return
     if dry_run:
         print("\n(dry run: nothing written)")
         return
 
-    rebuild = _report_dependencies(project, name, skip_deps)
+    # The dependency report is about a checkout the backend is newly able to
+    # import, so it only applies to a fresh entry.
+    rebuild = (
+        _report_dependencies(project, name, skip_deps) if fresh else False
+    )
 
-    steps = [f"  cd src/{name} && uv sync        # host-side work on it"]
+    # --reload-python is an explicit request, so honour it even when the path
+    # entry was already there: re-running purely to change the reload mode is
+    # a reasonable thing to do, and silently ignoring the flag would not be.
+    reload_line = _apply_reload(project, name, reload_python)
+    if reload_line:
+        print(reload_line)
+
+    if not fresh and not reload_python:
+        return
+
+    steps = []
+    if fresh:
+        steps.append(
+            f"  cd src/{name} && uv sync        # host-side work on it"
+        )
     if rebuild:
         steps += [
             "  # add the missing distributions to backend/constraints.txt "
@@ -401,19 +490,28 @@ def _report_added(
             "  # 'uv add' line in backend/Dockerfile, then:",
             "  docker compose build backend",
         ]
-    steps.append("  docker compose up -d backend    # pick up the PYTHONPATH")
-    print("\nNext:\n" + "\n".join(steps))
-    print(
-        "\nNothing to do for git: .gitignore already ignores everything "
-        "under src/\nexcept this stack's own project."
+    steps.append(
+        "  docker compose up -d backend    # apply the compose change"
     )
+    print("\nNext:\n" + "\n".join(steps))
+    if fresh:
+        print(
+            "\nNothing to do for git: .gitignore already ignores everything "
+            "under src/\nexcept this stack's own project."
+        )
 
 
 def do_add(args: argparse.Namespace) -> int:
     project = rooms.resolve_project(args.project_dir)
     path, verb = _add_entry(project, args.name, args.dry_run)
     _report_added(
-        project, args.name, path, verb, args.dry_run, args.no_dep_check
+        project,
+        args.name,
+        path,
+        verb,
+        args.dry_run,
+        args.no_dep_check,
+        args.reload_python,
     )
     return 0
 
@@ -449,7 +547,15 @@ def do_clone(args: argparse.Namespace) -> int:
         return 0
 
     path, verb = _add_entry(project, name, dry_run=False)
-    _report_added(project, name, path, verb, False, args.no_dep_check)
+    _report_added(
+        project,
+        name,
+        path,
+        verb,
+        False,
+        args.no_dep_check,
+        args.reload_python,
+    )
     return 0
 
 
@@ -494,6 +600,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subs = parser.add_subparsers(dest="command", required=True)
 
+    def _reload_flag(sub):
+        sub.add_argument(
+            "--reload-python",
+            action="store_true",
+            help=(
+                "also switch the backend's serve command to '--reload=both', "
+                "so edits to a checkout providing the 'soliplex' package "
+                "restart the server"
+            ),
+        )
+
     def _dep_check_flag(sub):
         sub.add_argument(
             "--no-dep-check",
@@ -535,6 +652,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="clone only; leave the backend's PYTHONPATH alone",
     )
     _dep_check_flag(clone)
+    _reload_flag(clone)
     clone.set_defaults(func=do_clone)
 
     add = common(
@@ -545,6 +663,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="directory name under src/ (not a clone URL -- see 'clone')",
     )
     _dep_check_flag(add)
+    _reload_flag(add)
     add.set_defaults(func=do_add)
 
     remove = common(
