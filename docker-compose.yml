@@ -82,7 +82,7 @@ services:
       - authz_db_password
       - url_safe_token_secret
 
-    environment:
+    environment: &backend_environment
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL}
 
     volumes:
@@ -107,6 +107,65 @@ services:
 
     # Temporary: run with '--no-auth-mode'
     command: "/app/.venv/bin/soliplex-cli serve --no-auth-mode --reload=config --host=0.0.0.0 --proxy-headers --forwarded-allow-ips=* /environment"
+
+  # One-shot dev task runner. 'profiles' keeps it out of 'docker compose up';
+  # it exists for commands that need the stack's config, secrets and databases
+  # *and* write access to the project directories under src/.
+  #
+  # It is built from the backend image and mirrors that service's secrets,
+  # mounts and environment -- the same '/app/src' paths and, via the YAML
+  # alias below, the very same PYTHONPATH -- so 'soliplex-cli audit' here
+  # validates the installation the backend actually serves, and the two cannot
+  # drift. The one difference is that src/ is mounted read-WRITE.
+  #
+  #   docker compose run --rm soliplex-dev \
+  #       /app/.venv/bin/soliplex-cli audit /environment
+  #
+  #   docker compose run --rm -w /app/src/soliplex soliplex-dev \
+  #       /app/.venv/bin/alembic -x soliplex.installation_path=/environment \
+  #       revision --autogenerate -m "add a column"
+  #
+  # Pass '-w /app/src/<project>' for anything that must run from a project's
+  # own root: alembic writes into its versions/ directory and prepends '.' to
+  # sys.path. Any project directory under src/ works, not just a soliplex
+  # checkout.
+  soliplex-dev:
+
+    profiles: ["devmode"]
+
+    build:
+      context: backend
+      dockerfile: Dockerfile
+      args:
+        PUID: ${PUID:-1000}
+        PGID: ${PGID:-1000}
+
+    env_file: ".env"
+    user: "${PUID:-1000}:${PGID:-1000}"
+
+    working_dir: /app/src
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    secrets:
+      - agui_db_password
+      - authz_db_password
+      - url_safe_token_secret
+
+    environment: *backend_environment
+
+    # Short volume form throughout, deliberately: the long form of the
+    # 'rag/db/' bind is the anchor scripts/refresh_skill_template.py uses to
+    # find the *backend* service, and that anchor has to stay unique.
+    volumes:
+      - ./backend/environment:/environment/
+      - ./backend/sandbox/workdirs:/sandbox/workdirs
+      - ./backend/uploads:/uploads/
+      - ./rag/db:/db
+      # src/ read-WRITE; the backend mounts the same tree read-only.
+      - ./src:/app/src
 
   haiku-ingester:
 
