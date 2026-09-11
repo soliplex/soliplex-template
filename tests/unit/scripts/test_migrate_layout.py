@@ -80,6 +80,21 @@ services:
 _OLD_GITIGNORE = "# Docker secrets\n.secrets/\n\n*.pyc\n"
 
 
+# Committing identity for the throwaway repos these tests build.
+# gpgsign=false because the host's commit.gpgsign would otherwise invoke a
+# real signing key and block on a pinentry prompt -- the same reason the
+# generator has --disable-gpg-sign.
+_GIT = [
+    "git",
+    "-c",
+    "user.email=a@b",
+    "-c",
+    "user.name=a",
+    "-c",
+    "commit.gpgsign=false",
+]
+
+
 def _write(path: pathlib.Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text)
@@ -104,11 +119,10 @@ def old_stack(tmp_path):
 @pytest.fixture
 def old_stack_git(old_stack):
     """The same stack, as a clean git checkout."""
-    run = ["git", "-c", "user.email=a@b", "-c", "user.name=a"]
     subprocess.run(["git", "init", "-q", "."], cwd=old_stack, check=True)
     subprocess.run(["git", "add", "-A"], cwd=old_stack, check=True)
     subprocess.run(
-        [*run, "commit", "-q", "-m", "pre"], cwd=old_stack, check=True
+        [*_GIT, "commit", "-q", "-m", "pre"], cwd=old_stack, check=True
     )
     return old_stack
 
@@ -500,17 +514,7 @@ def test_main_honours_package_name_override(old_stack_git):
     )
     subprocess.run(["git", "add", "-A"], cwd=old_stack_git, check=True)
     subprocess.run(
-        [
-            "git",
-            "-c",
-            "user.email=a@b",
-            "-c",
-            "user.name=a",
-            "commit",
-            "-q",
-            "-m",
-            "second candidate",
-        ],
+        [*_GIT, "commit", "-q", "-m", "second candidate"],
         cwd=old_stack_git,
         check=True,
     )
