@@ -80,13 +80,23 @@ patching.
 
 ### 1. Clone it
 
+The `soliplex-template` skill does the clone and the wiring below in one step,
+which is the recommended route:
+
+```bash
+uv run <skill>/scripts/src_projects.py clone <url>
+uv run <skill>/scripts/src_projects.py list     # what is there, what is on the path
+```
+
+By hand it is just:
+
 ```bash
 git clone <url> src/<other>
 ```
 
-Nothing to do for git: `.gitignore` ignores everything under `src/` except
-this project's own directory, so the clone stays part of its own repo and
-never shows up in this stack's `git status`. That is a rule, not a list — a
+Nothing to do for git either way: `.gitignore` ignores everything under `src/`
+except this project's own directory, so the clone stays part of its own repo
+and never shows up in this stack's `git status`. That is a rule, not a list — a
 third and fourth clone need no further edits.
 
 ### 2. Work on it
@@ -107,8 +117,16 @@ stack root's.
 
 Only needed if the backend should run *that* checkout's code. The `./src`
 bind mount already carries it into the container at `/app/src/<other>`; what
-it lacks is a place on the import path. Append its package directory to the
-backend's `PYTHONPATH` in `docker-compose.yml`:
+it lacks is a place on the import path.
+
+`src_projects.py clone` does this automatically, and `src_projects.py add
+<other>` does it for a checkout you cloned by hand. Either way it also checks
+the checkout's declared dependencies against the backend image and tells you
+whether a rebuild is needed — see *What `PYTHONPATH` does and does not do*
+below for why that matters.
+
+By hand, append its package directory to the backend's `PYTHONPATH` in
+`docker-compose.yml`:
 
 ```yaml
       PYTHONPATH: /app/src/myproject/src:/app/src/<other>/src
@@ -137,7 +155,11 @@ docker compose up -d backend
 - **It does not install anything.** The checkout's own dependencies are *not*
   resolved: only its source becomes importable. If it imports a third-party
   package the backend image does not already have, the import fails at
-  runtime. Adding that dependency to the image is a different job — see
-  [Backend image & dependencies](architecture/backend.md).
+  runtime — and `docker compose up -d backend` will not fix it, because the
+  dependency has to be baked into the image. Add it to
+  `backend/constraints.txt` and the `uv add` line in `backend/Dockerfile`,
+  then `docker compose build backend`; see [Backend image &
+  dependencies](architecture/backend.md). `src_projects.py` checks this for
+  you and says which of the three cases you are in.
 - **The mount is read-only**, and the container runs as the `PUID:PGID` from
   `.env`. Edit the checkout on the host; the backend only reads it.
