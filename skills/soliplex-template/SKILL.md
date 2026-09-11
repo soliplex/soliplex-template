@@ -1,6 +1,6 @@
 ---
 name: soliplex-template
-description: "Generate a new, runnable Soliplex Docker Compose stack from an embedded template, or inspect and change an existing one — query its resolved installation config, create or update extra RAG databases (with guidance for wiring them into rooms), add a room, or migrate an older stack to the src/ project layout. Use when a user wants to stand up, bootstrap, or create a new Soliplex deployment / compose stack; to inspect, configure, or add a RAG database or room to an existing one; or to upgrade a stack's src/ layout."
+description: "Generate a new, runnable Soliplex Docker Compose stack from an embedded template, or inspect and change an existing one — query its resolved installation config, create or update extra RAG databases (with guidance for wiring them into rooms), add a room, clone another Python project into the stack's src/ and make it importable by the backend, or migrate an older stack to the src/ project layout. Use when a user wants to stand up, bootstrap, or create a new Soliplex deployment / compose stack; to inspect, configure, or add a RAG database or room to an existing one; to add, clone, or wire a Python project or repo checkout into a stack's backend (PYTHONPATH); or to upgrade a stack's src/ layout."
 ---
 
 # Soliplex project generation and configuration
@@ -407,6 +407,47 @@ up without an image rebuild or restart.
 
    Then point the user at the generated `room_config.yaml` to uncomment the
    tool/skill examples or refine the prompt.
+
+## Cloning another project into a stack's src/
+
+Every entry under a stack's `src/` is a project directory, so a repo the owner
+wants to hack on alongside their own — the `soliplex` backend itself, a library
+they depend on — is cloned there as a sibling. `scripts/src_projects.py` does
+the clone *and* the wiring:
+
+```bash
+uv run scripts/src_projects.py list                  # what is there, what is on the path
+uv run scripts/src_projects.py clone <url>           # clone into src/ and wire it up
+uv run scripts/src_projects.py add <name>            # a checkout cloned by hand
+uv run scripts/src_projects.py remove <name>         # off the path; checkout untouched
+```
+
+`clone` picks the directory name from the URL (`--name` overrides), then
+appends the checkout's package directory to the backend's `PYTHONPATH` in
+`docker-compose.yml` — with the trailing `/src` only when the checkout uses a
+`src/` layout, which it detects. Nothing is needed for git: `.gitignore`
+already ignores everything under `src/` except the stack's own project.
+
+**It then checks the checkout's dependencies.** `PYTHONPATH` makes source
+importable; it does not install anything. So `add`/`clone` read the checkout's
+`[project].dependencies` and compare them against what the backend image
+actually has (via a one-off `docker compose run --rm --no-deps backend`),
+reporting one of three outcomes:
+
+- all satisfied → the next step is just `docker compose up -d backend`;
+- some **MISSING** → it names them and leads with `docker compose build
+  backend`, because `up` alone will not fix an `ImportError`. Add them to
+  `backend/constraints.txt` and the `uv add` line in `backend/Dockerfile`
+  first;
+- not checkable (no docker, or the image is not built) → it says so and lists
+  what the checkout declares, rather than guessing.
+
+Pass `--no-dep-check` to skip that container round-trip, `--dry-run` to report
+without writing, and `--no-path` to `clone` when the user wants the checkout
+but not the import-path change.
+
+Relay the reported outcome — especially a rebuild — rather than just saying the
+clone succeeded.
 
 ## Migrating an existing stack to the src/ project layout
 
