@@ -65,7 +65,9 @@ from the user and invoke it.
      the name arrives — inline (`project=soliplex`) or in the answer — and
      offer the default `soliplex-dojo` instead of letting generation fail.
    - **ollama** — `ollama_base_url` (**required**, e.g. `http://host:11434`;
-     free text — always obtain it, inline or by asking).
+     free text — always obtain it, inline or by asking). If the answer names
+     `localhost` / `127.0.0.1`, see *A local Ollama on the Docker host* below
+     before generating.
    - **ports** — offer "use defaults" vs "customize"; `ports=default`
      pre-answers this. Customizing collects `nginx_http`, `nginx_https`,
      `ingester_port`, `docling_port`, `postgres_port`.
@@ -85,6 +87,59 @@ from the user and invoke it.
    ```bash
    uv run scripts/generate_soliplex_project.py --print-defaults
    ```
+
+   **A local Ollama on the Docker host needs extra wiring.** If
+   `ollama_base_url` names `localhost`, `127.0.0.1`, or `::1`, the model probes
+   below will pass — you run them on the host — but the generated stack will
+   still fail: every container has its own network namespace, so the host's
+   loopback is unreachable from `backend` and `haiku-ingester`. Catch this
+   during the interview, not after the stack is up. Confirm what the server is
+   bound to:
+
+   ```bash
+   ss -ltn | grep 11434   # '127.0.0.1:11434' = loopback only, unreachable
+   ```
+
+   If it is loopback-bound, **present the options rather than silently
+   rewriting the URL**. Binding Ollama to `0.0.0.0` is not among them: that
+   publishes an unauthenticated model server to every network the host is on.
+
+   - **Relay sidecar (recommended)** — leave Ollama on loopback and add a
+     `socat` service that republishes it on the docker bridge gateway. Nothing
+     about the host's Ollama install changes, so it suits a systemd-managed
+     one.
+   - **Rebind Ollama** — `OLLAMA_HOST=<gateway>:11434` in its systemd unit. The
+     host's `ollama` CLI then needs the same `OLLAMA_HOST` exported to find it.
+   - **Use a different server** — a remote Ollama that is already reachable.
+
+   For either of the first two, set `ollama_base_url` to
+   `http://<gateway>:11434`, finding the gateway with `ip -4 addr show docker0`
+   (conventionally `172.17.0.1`). **Keep probing the models over the loopback
+   URL** — that is what works from the host; only the value written into
+   `params.json` is the gateway address.
+
+   `ollama_base_url` must carry a **bare IP, never a hostname**. Ollama's
+   DNS-rebinding guard answers `403` with an empty body to any `Host` header
+   that is not `localhost` or an IP literal, and a TCP relay forwards bytes
+   without rewriting headers — so adding an `extra_hosts` alias to let services
+   say `http://ollama:11434` breaks the stack rather than tidying it.
+
+   The relay itself is a post-generation edit. Once the project is written, add
+   to its `docker-compose.yml`:
+
+   ```yaml
+     ollama-relay:
+       image: alpine/socat:latest
+       network_mode: host      # required to reach the host's 127.0.0.1
+       command:
+         - "TCP-LISTEN:11434,bind=${OLLAMA_RELAY_BIND:-172.17.0.1},fork,reuseaddr"
+         - "TCP:127.0.0.1:11434"
+       restart: unless-stopped
+   ```
+
+   and set `OLLAMA_RELAY_BIND` to the same address in `.env`. The generated
+   stack ships `docs/operations/ollama.md`, which covers all three options
+   (including running Ollama inside the stack) — point the user at it.
 
    **Choosing and checking models.** Every model parameter resolves through the
    default Ollama provider at `ollama_base_url` — the template pins no other
