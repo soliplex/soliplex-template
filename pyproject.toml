@@ -31,7 +31,7 @@ dev = [
     "pyyaml",
     "pytest",
     "pytest-cov",
-    "ruff",
+    "ruff >= 0.16.6, < 0.17",
     "skills-ref==0.1.1",  # 'generate_soliplex_project.py'
     "soliplex-skills >= 0.5",
     "soliplex-plumber >= 0.4", # skill's 'add_room.py'/'soliplex_config.py'
@@ -73,7 +73,9 @@ show_missing = true
 [tool.ruff]
 line-length = 79
 exclude = [
+    "*.md",  # ruff 0.16 formats Python in Markdown fences
 ]
+force-exclude = true
 target-version = "py313"
 
 [tool.ruff.lint]
