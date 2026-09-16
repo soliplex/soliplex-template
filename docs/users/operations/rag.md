@@ -41,18 +41,23 @@ docker compose restart haiku-ingester
 ## A separate, static database
 
 The ingester only maintains **one** LanceDB. For a *separate*, mostly-static
-corpus, build a standalone database with the `haiku-rag` CLI via a one-off
-`docker compose run` on the `haiku-ingester` service — it already mounts
-`rag/db`, carries `OLLAMA_BASE_URL`, and ships the same `haiku.rag.yaml`. Point
-it at a **different** `--db` so it never collides with `haiku.rag.lancedb`:
+corpus, build a standalone database with the `haiku-rag` CLI through the
+`haiku-rag` service — the stack's one-shot CLI runner, which shares the
+ingester's image, its `rag/db` and `rag/docs` mounts, its `OLLAMA_BASE_URL` and
+its `haiku.rag.yaml`. Point it at a **different** `--db` so it never collides
+with `haiku.rag.lancedb`:
 
 ```bash
-docker compose run --rm --no-TTY haiku-ingester \
-    haiku-rag --config /app/haiku.rag.yaml --db /data/handbook.lancedb init
-docker compose run --rm --no-TTY haiku-ingester \
-    haiku-rag --config /app/haiku.rag.yaml --db /data/handbook.lancedb \
-    add-src /docs/handbook/
+docker compose run --rm --no-TTY haiku-rag init --db /data/handbook.lancedb
+docker compose run --rm --no-TTY haiku-rag add-src /docs/handbook/ \
+    --db /data/handbook.lancedb
 ```
+
+Everything after the service name goes to `haiku-rag`. Do not run the CLI on
+the `haiku-ingester` service instead: `docker compose run` replaces that
+service's command, which is the only thing that exports the queue password
+`haiku.rag.yaml` interpolates, and the config then fails to load before the
+subcommand runs.
 
 `add-src` also takes a URL or `s3://` URI; for a local path outside
 `rag/docs/`, add `-v /abs/path:/src:ro` and point `add-src` at `/src`. Use

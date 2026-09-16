@@ -75,6 +75,24 @@ port 8765. There is a **single-writer constraint**: only one
 ingester per LanceDB. The backend reads the same store through a bind mount.
 See [RAG pipeline](../operations/rag.md).
 
+## haiku-rag
+
+A **one-shot runner** for the `haiku-rag` CLI, held out of
+`docker compose up` by `profiles: ["tools"]` (`docker compose run` enables the
+profile itself). It shares the ingester's image, mounts, environment and
+queue-password secret, and passes whatever follows the service name straight to
+the CLI:
+
+```bash
+docker compose run --rm haiku-rag info --db /data/haiku.rag.lancedb
+```
+
+Its entrypoint exports `INGESTER_DB_PASSWORD` from the Docker secret first,
+which every CLI call needs: `haiku.rag.yaml` interpolates that variable into
+the queue `dburi` and haiku.rag expands the whole file before running the
+subcommand. Reads are safe while the stack is up; writing a store the ingester
+owns needs `docker compose stop haiku-ingester` first.
+
 ## docling-serve
 
 A stateless document converter (CPU image by default; a GPU variant is a

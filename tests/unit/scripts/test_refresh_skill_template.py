@@ -135,7 +135,7 @@ def test_t_compose():
         '      - "9443:9443"\n'
         "      command: --public-url https://localhost:9443/tui\n"
         "      command: soliplex-cli serve --no-auth-mode --reload=config\n"
-        "    image: ghcr.io/ggozad/haiku.rag-slim:0.82.1\n"
+        "    image: &haiku_rag_image ghcr.io/ggozad/haiku.rag-slim:0.82.1\n"
         '      - "8765:8765"\n'
         '      - "5001:5001"\n'
         '      - "5432:5432"\n'
@@ -158,7 +158,10 @@ def test_t_compose():
     assert "https://${server_name}:${nginx_https}/tui" in out
     assert "soliplex-cli serve ${backend_auth_flag}--reload=config" in out
     assert '- "${ingester_port}:8765"' in out
-    assert "image: ghcr.io/ggozad/haiku.rag-slim:${haiku_rag_version}" in out
+    assert (
+        "image: &haiku_rag_image "
+        "ghcr.io/ggozad/haiku.rag-slim:${haiku_rag_version}" in out
+    )
     assert '- "${docling_port}:5001"' in out
     assert '- "${postgres_port}:5432"' in out
     assert "- ./${docs_dir}:/docs" in out

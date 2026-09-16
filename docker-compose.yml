@@ -169,7 +169,7 @@ services:
 
   haiku-ingester:
 
-    image: ghcr.io/ggozad/haiku.rag-slim:0.82.1
+    image: &haiku_rag_image ghcr.io/ggozad/haiku.rag-slim:0.82.1
 
     build:
       context: haiku.rag
@@ -190,12 +190,12 @@ services:
     ports:
       - "8765:8765"  # control plane: /health, /jobs, /sources, /dlq, /stats
 
-    volumes:
+    volumes: &haiku_rag_volumes
       - ./rag/db:/data
       - ./rag/docs:/docs
       - ./haiku.rag/haiku.rag.yaml:/app/haiku.rag.yaml:ro
 
-    environment:
+    environment: &haiku_rag_environment
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL}
       # Bearer token clients must send to /jobs, /sources, /dlq, etc.
       # Override in '.env'; the default 'secret' is intentionally weak
@@ -215,7 +215,7 @@ services:
     # LanceDB's full-text-search (content_fts) index merge opens many
     # files at once; the default soft limit of 1024 trips EMFILE
     # ("Too many open files") and the merge is skipped. Raise it.
-    ulimits:
+    ulimits: &haiku_rag_ulimits
       nofile:
         soft: 65536
         hard: 65536
@@ -243,6 +243,52 @@ services:
       start_period: 30s
 
     restart: unless-stopped
+
+  # One-shot 'haiku-rag' CLI runner: the same image, mounts, environment and
+  # secret as the ingester, held out of 'docker compose up' by its profile
+  # ('docker compose run' enables the profile itself). Everything after the
+  # service name is passed straight to 'haiku-rag':
+  #
+  #   docker compose run --rm haiku-rag info --db /data/haiku.rag.lancedb
+  #   docker compose run --rm haiku-rag migrate --db /data/haiku.rag.lancedb
+  #
+  # The entrypoint exports INGESTER_DB_PASSWORD from the Docker secret before
+  # exec'ing the CLI, which every call needs and no caller should have to
+  # arrange: haiku.rag.yaml interpolates that variable into the queue dburi
+  # and the loader expands the whole file up front, so an unset value fails
+  # before the subcommand runs. The trailing 'haiku-rag' is the inner shell's
+  # '$$0'; '"$$@"' is the arguments Compose appends.
+  #
+  # Reads are safe while the stack is up; anything that WRITES a store needs
+  # 'docker compose stop haiku-ingester' first (LanceDB allows one writer).
+  haiku-rag:
+
+    profiles: ["tools"]
+
+    image: *haiku_rag_image
+
+    build:
+      context: haiku.rag
+      dockerfile: Dockerfile
+
+    entrypoint:
+      - sh
+      - -c
+      - |
+        export INGESTER_DB_PASSWORD="$$(cat /run/secrets/ingester_db_password)"
+        exec haiku-rag --config /app/haiku.rag.yaml "$$@"
+      - haiku-rag
+
+    volumes: *haiku_rag_volumes
+
+    environment: *haiku_rag_environment
+
+    user: "${PUID:-1000}:${PGID:-1000}"
+
+    secrets:
+      - ingester_db_password
+
+    ulimits: *haiku_rag_ulimits
 
   docling-serve:
 

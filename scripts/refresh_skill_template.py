@@ -166,8 +166,9 @@ def t_compose(text: str) -> str:
             # Same parameter as the ingester Dockerfile's FROM: compose tags
             # the locally built image with this name, so the two must agree.
             (
-                "image: ghcr.io/ggozad/haiku.rag-slim:0.82.1",
-                "image: ghcr.io/ggozad/haiku.rag-slim:${haiku_rag_version}",
+                "image: &haiku_rag_image ghcr.io/ggozad/haiku.rag-slim:0.82.1",
+                "image: &haiku_rag_image "
+                "ghcr.io/ggozad/haiku.rag-slim:${haiku_rag_version}",
             ),
             ('- "8765:8765"', '- "${ingester_port}:8765"'),
             ('- "5001:5001"', '- "${docling_port}:5001"'),

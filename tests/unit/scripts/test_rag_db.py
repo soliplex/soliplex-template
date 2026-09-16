@@ -61,8 +61,7 @@ def _expected(
     *,
     mounts: tuple[str, ...] = (),
     db: str = "handbook",
-    service: str = "haiku-ingester",
-    config: str = "/app/haiku.rag.yaml",
+    service: str = "haiku-rag",
 ) -> mock._Call:
     cmd = [
         "docker",
@@ -74,12 +73,9 @@ def _expected(
         "--no-TTY",
         *mounts,
         service,
-        "haiku-rag",
-        "--config",
-        config,
+        *tail,
         "--db",
         f"/data/{db}.lancedb",
-        *tail,
     ]
     return mock.call(cmd, check=True)
 
@@ -304,18 +300,10 @@ def test_rebuild_modifier(overrides, expected):
 def test_compose_run_builds_argv(tmp_path, run):
     project = _make_project(tmp_path)
 
-    rag_db.compose_run(
-        project, "svc", "/cfg.yaml", "handbook", ["-v", "a:b"], ["init"]
-    )
+    rag_db.compose_run(project, "svc", "handbook", ["-v", "a:b"], ["init"])
 
     assert run.call_args_list == [
-        _expected(
-            project,
-            ["init"],
-            mounts=("-v", "a:b"),
-            service="svc",
-            config="/cfg.yaml",
-        )
+        _expected(project, ["init"], mounts=("-v", "a:b"), service="svc")
     ]
 
 
