@@ -351,11 +351,12 @@ should be run from the directory holding `docker-compose.yml`.
 
 The stack's `haiku-ingester` *continuously* maintains a single LanceDB. When a
 user wants a *separate*, mostly-static RAG database — e.g. one room per corpus —
-run `scripts/rag_db.py` from inside the generated stack directory. It reuses the
-`haiku-ingester` service (its image, the `rag/db`/`rag/docs` mounts, the
-`OLLAMA_BASE_URL` env, and the same `haiku.rag.yaml`) via `docker compose run`,
-writing to a *different* `rag/db/<name>.lancedb`, so it never collides with the
-running ingester's single-writer database.
+run `scripts/rag_db.py` from inside the generated stack directory. It drives the
+stack's `haiku-rag` service (the one-shot CLI runner sharing the ingester's
+image, the `rag/db`/`rag/docs` mounts, the `OLLAMA_BASE_URL` env, and the same
+`haiku.rag.yaml`) via `docker compose run`, writing to a *different*
+`rag/db/<name>.lancedb`, so it never collides with the running ingester's
+single-writer database.
 
 ```bash
 # create a new database and populate it (db must not exist yet)

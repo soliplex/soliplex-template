@@ -276,6 +276,29 @@ def test_ingester_wired_to_postgres_queue(generated_project):
     assert "ingester_db_password:\n      file: ./.secrets/" in compose
 
 
+def test_one_shot_haiku_rag_service_exports_the_queue_password(
+    generated_project,
+):
+    # #192: every one-off 'haiku-rag' call goes through the profiled
+    # 'haiku-rag' service, whose entrypoint exports the queue password the
+    # config interpolates -- 'docker compose run' replaces the ingester's
+    # command, which is the only other thing that exports it.
+    out, _params = generated_project
+
+    compose = _read(out, "docker-compose.yml")
+
+    assert "\n  haiku-rag:\n" in compose
+    assert 'profiles: ["tools"]' in compose
+    assert "image: *haiku_rag_image" in compose
+    # '$$' is Compose's escape for a literal '$', so this is what the
+    # container's shell sees as '$(cat ...)' / '"$@"'.
+    assert (
+        'export INGESTER_DB_PASSWORD="$$(cat /run/secrets/'
+        'ingester_db_password)"' in compose
+    )
+    assert 'exec haiku-rag --config /app/haiku.rag.yaml "$$@"' in compose
+
+
 def test_runtime_dirs_have_gitkeep(generated_project):
     out, params = generated_project
 

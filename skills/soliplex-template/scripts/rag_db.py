@@ -11,13 +11,15 @@ different but largely *static* RAG databases, running an ingester per database
 is overkill and trips the single-writer constraint. This script builds (or
 later updates) a standalone database with the ``haiku-rag`` CLI instead.
 
-It reuses the existing ``haiku-ingester`` service definition via
-``docker compose run --rm`` -- the same image (which ships the ``haiku-rag``
-CLI), the ``./rag/db -> /data`` and ``./rag/docs -> /docs`` bind mounts, the
-``OLLAMA_BASE_URL`` env, the RO-mounted ``haiku.rag.yaml`` config, and the
-``docling-serve`` dependency. The one-off container writes to a *different*
+It runs the stack's ``haiku-rag`` service via ``docker compose run --rm`` --
+the one-shot CLI runner defined alongside the ingester, sharing its image, its
+``./rag/db -> /data`` and ``./rag/docs -> /docs`` bind mounts, its
+``OLLAMA_BASE_URL`` env and its RO-mounted ``haiku.rag.yaml``. Everything after
+the service name goes to ``haiku-rag``, whose ``--config`` (and the
+``INGESTER_DB_PASSWORD`` export the config's queue ``dburi`` needs) the service
+entrypoint supplies. The one-off container writes to a *different*
 ``--db /data/<name>.lancedb`` than the running ingester's database, so there is
-no single-writer conflict. Reusing the same config means the new database's
+no single-writer conflict. Sharing the config means the new database's
 embeddings/chunking match the rest of the stack.
 
 Run it from the stack directory (or pass ``--project-dir``)::
@@ -66,9 +68,10 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 INGESTER_STEM = "haiku.rag"
 # A LanceDB stem usable as a path segment: no '/', no '..', no leading dot.
 DB_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
-DEFAULT_SERVICE = "haiku-ingester"
-# The service's existing read-only config mount inside the container.
-DEFAULT_CONFIG = "/app/haiku.rag.yaml"
+# The one-shot CLI runner every haiku-rag call goes through, and the
+# long-lived writer whose database it must not touch while running.
+DEFAULT_SERVICE = "haiku-rag"
+INGESTER_SERVICE = "haiku-ingester"
 
 # Room wiring: the rag skill we attach the LanceDB stem to, and the key.
 RAG_SKILL_KIND = "haiku.rag.skills.rag"
@@ -121,7 +124,7 @@ class ReservedDatabaseName(RagDbError):
         self.name = name
         super().__init__(
             f"--db-name {name!r} is the continuous ingester's database and "
-            f"the {DEFAULT_SERVICE} service is running; stop it first "
+            f"the {INGESTER_SERVICE} service is running; stop it first "
             "(concurrent writers corrupt LanceDB) or pick a different stem"
         )
 
@@ -198,7 +201,7 @@ def ingester_running(project: pathlib.Path) -> bool:
             str(project),
             "ps",
             "-q",
-            DEFAULT_SERVICE,
+            INGESTER_SERVICE,
         ],
         capture_output=True,
         text=True,
@@ -220,7 +223,7 @@ def guard_reserved_stem(project: pathlib.Path, db_name: str) -> None:
         raise ReservedDatabaseName(db_name)
     print(
         f"warning: writing the ingester's database {db_name!r}; safe only "
-        f"because the {DEFAULT_SERVICE} service is not running."
+        f"because the {INGESTER_SERVICE} service is not running."
     )
 
 
@@ -268,7 +271,6 @@ def resolve_source(
 def compose_run(
     project: pathlib.Path,
     service: str,
-    config: str,
     db_name: str,
     mounts: list[str],
     cli_args: list[str],
@@ -285,12 +287,9 @@ def compose_run(
         "--no-TTY",
         *mounts,
         service,
-        "haiku-rag",
-        "--config",
-        config,
+        *cli_args,
         "--db",
         db,
-        *cli_args,
     ]
     subprocess.run(cmd, check=True)
 
@@ -391,11 +390,10 @@ def do_create(args: argparse.Namespace) -> int:
     # Resolve (and validate) the source before creating anything.
     mounts, container_src = resolve_source(project, args.source)
 
-    compose_run(project, args.service, args.config, args.db_name, [], ["init"])
+    compose_run(project, args.service, args.db_name, [], ["init"])
     compose_run(
         project,
         args.service,
-        args.config,
         args.db_name,
         mounts,
         ["add-src", container_src],
@@ -433,7 +431,6 @@ def do_update(args: argparse.Namespace) -> int:
         compose_run(
             project,
             args.service,
-            args.config,
             args.db_name,
             [],
             ["delete", doc_id],
@@ -442,7 +439,6 @@ def do_update(args: argparse.Namespace) -> int:
         compose_run(
             project,
             args.service,
-            args.config,
             args.db_name,
             mounts,
             ["add-src", container_src],
@@ -455,7 +451,6 @@ def do_update(args: argparse.Namespace) -> int:
         compose_run(
             project,
             args.service,
-            args.config,
             args.db_name,
             [],
             rebuild_args,
@@ -543,12 +538,7 @@ def build_parser() -> argparse.ArgumentParser:
     common.add_argument(
         "--service",
         default=DEFAULT_SERVICE,
-        help=f"compose service to reuse (default: {DEFAULT_SERVICE})",
-    )
-    common.add_argument(
-        "--config",
-        default=DEFAULT_CONFIG,
-        help=f"in-container haiku.rag config (default: {DEFAULT_CONFIG})",
+        help=f"compose service running haiku-rag (default: {DEFAULT_SERVICE})",
     )
 
     parser = argparse.ArgumentParser(
