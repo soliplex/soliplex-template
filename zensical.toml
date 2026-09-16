@@ -52,6 +52,7 @@ nav = [
         "users/operations/secrets.md",
         "users/operations/rag.md",
         "users/operations/ingester.md",
+        "users/operations/migrations.md",
         "users/operations/ollama.md",
         "users/custom-package.md",
     ] },
