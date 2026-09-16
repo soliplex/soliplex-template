@@ -66,6 +66,13 @@ lands at `rag/db/handbook.lancedb`, which the backend already reads through its
 `rag/db` mount. Wire a room to it with `rag_lancedb_stem: "handbook"` in that
 room's `room_config.yaml`.
 
+## Migrating a store
+
+Most `haiku.rag-slim` bumps need nothing, but a release that changed the store
+layout leaves every LanceDB written before it needing a one-off upgrade before
+haiku.rag will open it. See [Database migrations](migrations.md) for how to
+ask which case a bump is.
+
 ## Searching several databases at once
 
 A room's RAG skill or `search_documents` tool can name more than one database

@@ -1081,6 +1081,7 @@ nav = [
         "operations/secrets.md",
         "operations/rag.md",
         "operations/ingester.md",
+        "operations/migrations.md",
         "operations/ollama.md",
     ] },
     { "Custom Python package" = "custom-package.md" },

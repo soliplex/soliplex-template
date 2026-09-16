@@ -375,6 +375,45 @@ Building the database does not make any room use it. **After `create`, offer to
 wire the new database into one or more rooms.** If the user agrees, follow the
 steps in *Wiring the database into rooms* below.
 
+## Migrating the RAG stores after a haiku.rag bump
+
+haiku.rag ships a store *upgrade* only for the few releases that changed the
+LanceDB layout, and checks a store against that set rather than against the
+release number — so **most** `haiku.rag-slim` bumps require no migration, even
+ones that skip releases. A bump that does cross an upgrade leaves every store
+under `rag/db/` written before it needing a one-off migration; until it runs,
+the ingester crash-loops at startup and reads fail, the backend's included, so
+rooms lose RAG search. Stacks that have only ever run the pinned image have
+nothing to migrate. Do not guess which case a bump is — ask, as below.
+
+Raising the tag means both `docker-compose.yml` and `haiku.rag/Dockerfile`,
+which must agree.
+
+The stack ships `scripts/migrate_rag_dbs.py` for this; it runs the pinned
+image's own `haiku-rag` CLI over every `*.lancedb` under `rag/db/`. Report
+first (read-only, safe while the stack is up, non-zero exit if anything is
+behind):
+
+```bash
+uv run scripts/migrate_rag_dbs.py --check
+```
+
+Applying writes, so the single writer has to stop first — the script refuses
+while `haiku-ingester` is running:
+
+```bash
+docker compose stop haiku-ingester
+uv run scripts/migrate_rag_dbs.py
+docker compose start haiku-ingester
+```
+
+Both forms take `--project-dir` (default: the stack holding the script) and
+`--db-name STEM` (repeatable; default: every store). Migrating is idempotent,
+so re-running after a failure is safe. Suggest a copy of `rag/db/` first when
+the corpus is expensive to rebuild. The underlying calls, if one is wanted by
+hand, are `docker compose run --rm haiku-rag info --db /data/<stem>.lancedb`
+and the same with `migrate`.
+
 ## Wiring the database into rooms
 
 Wire a database into rooms when the user asks directly (including pointing a

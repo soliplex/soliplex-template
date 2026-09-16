@@ -597,6 +597,7 @@ _DOC_PAGES = (
     "docs/operations/secrets.md",
     "docs/operations/rag.md",
     "docs/operations/ingester.md",
+    "docs/operations/migrations.md",
     "docs/operations/ollama.md",
     "docs/custom-package.md",
 )
