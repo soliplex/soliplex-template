@@ -315,7 +315,7 @@ def plan_project_pyproject(project: pathlib.Path, package: str) -> str:
         project_name=params.get("project_name", package),
         package=package,
         constraint=params.get(
-            "soliplex_backend_constraint", ">= 0.79, < 0.80"
+            "soliplex_backend_constraint", ">= 0.82, < 0.83"
         ),
     )
 

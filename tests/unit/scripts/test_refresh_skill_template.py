@@ -135,7 +135,7 @@ def test_t_compose():
         '      - "9443:9443"\n'
         "      command: --public-url https://localhost:9443/tui\n"
         "      command: soliplex-cli serve --no-auth-mode --reload=config\n"
-        "    image: &haiku_rag_image ghcr.io/ggozad/haiku.rag-slim:0.82.1\n"
+        "    image: &haiku_rag_image ghcr.io/ggozad/haiku.rag-slim:0.84.0\n"
         '      - "8765:8765"\n'
         '      - "5001:5001"\n'
         '      - "5432:5432"\n'
@@ -240,7 +240,7 @@ def test_t_ingester_haiku():
 
 
 def test_t_ingester_dockerfile():
-    text = "FROM ghcr.io/ggozad/haiku.rag-slim:0.82.1\n"
+    text = "FROM ghcr.io/ggozad/haiku.rag-slim:0.84.0\n"
 
     out = rst.t_ingester_dockerfile(text)
 
@@ -253,7 +253,7 @@ def test_t_ingester_dockerfile_no_match_raises():
 
 
 def test_t_backend_constraints():
-    out = rst.t_backend_constraints("soliplex >= 0.79, < 0.80\nother==1\n")
+    out = rst.t_backend_constraints("soliplex >= 0.82, < 0.83\nother==1\n")
 
     assert out == "soliplex ${soliplex_backend_constraint}\nother==1\n"
 
@@ -264,7 +264,7 @@ def test_t_backend_constraints_no_match_raises():
 
 
 def test_t_tui_constraints():
-    out = rst.t_tui_constraints("soliplex >= 0.79, < 0.80\n")
+    out = rst.t_tui_constraints("soliplex >= 0.82, < 0.83\n")
 
     assert out == "soliplex ${soliplex_tui_constraint}\n"
 

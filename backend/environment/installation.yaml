@@ -297,20 +297,26 @@ sandbox_config:
 #==========================================================================
 # Thread peristence:  SQLAlchemy DBURIs
 #==========================================================================
-thread_persistence_dburi:
-  #sync: "sqlite://"
-  #async: "sqlite+aiosqlite://"
-  sync: "postgresql+psycopg://soliplex_agui:secret:AGUI_DB_PASSWORD@postgres/soliplex_agui"
-  async: "postgresql+asyncpg://soliplex_agui:secret:AGUI_DB_PASSWORD@postgres/soliplex_agui"
+# See: https://soliplex.github.io/soliplex/config/dburis/
+#
+# Each application role owns the schema of its own database (see
+# 'postgres/config/init.sh'), so Soliplex migrates it itself, on the first
+# writable open.  Neither 'migration_dburi' nor 'migration_policy' is needed.
+#==========================================================================
+thread_persistence_db:
+  #sync_dburi: "sqlite://"
+  #async_dburi: "sqlite+aiosqlite://"
+  sync_dburi: "postgresql+psycopg://soliplex_agui:secret:AGUI_DB_PASSWORD@postgres/soliplex_agui"
+  async_dburi: "postgresql+asyncpg://soliplex_agui:secret:AGUI_DB_PASSWORD@postgres/soliplex_agui"
 
 #==========================================================================
 # Authorization policy:  SQLAlchemy DBURIs
 #==========================================================================
-authorization_dburi:
-  #sync: "sqlite://"
-  #async: "sqlite+aiosqlite://"
-  sync: "postgresql+psycopg://soliplex_authz:secret:AUTHZ_DB_PASSWORD@postgres/soliplex_authz"
-  async: "postgresql+asyncpg://soliplex_authz:secret:AUTHZ_DB_PASSWORD@postgres/soliplex_authz"
+authorization_db:
+  #sync_dburi: "sqlite://"
+  #async_dburi: "sqlite+aiosqlite://"
+  sync_dburi: "postgresql+psycopg://soliplex_authz:secret:AUTHZ_DB_PASSWORD@postgres/soliplex_authz"
+  async_dburi: "postgresql+asyncpg://soliplex_authz:secret:AUTHZ_DB_PASSWORD@postgres/soliplex_authz"
 
 #==========================================================================
 # OIDC authentication provider configuration

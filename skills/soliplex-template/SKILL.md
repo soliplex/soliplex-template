@@ -222,8 +222,8 @@ from the user and invoke it.
      | jq -r '.releases | keys[]' | sort -V | tail
    ```
 
-   From the user's pick, set `soliplex_backend_constraint` — e.g. `== 0.79.1`
-   to pin a single release, or a range such as `>= 0.79, < 0.80`. Fall back to
+   From the user's pick, set `soliplex_backend_constraint` — e.g. `== 0.82`
+   to pin a single release, or a range such as `>= 0.82, < 0.83`. Fall back to
    the default constraint if PyPI is unreachable.
 
 2. **Write the answers to a JSON file** (omit keys to accept defaults), e.g.

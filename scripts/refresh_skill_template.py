@@ -166,7 +166,7 @@ def t_compose(text: str) -> str:
             # Same parameter as the ingester Dockerfile's FROM: compose tags
             # the locally built image with this name, so the two must agree.
             (
-                "image: &haiku_rag_image ghcr.io/ggozad/haiku.rag-slim:0.82.1",
+                "image: &haiku_rag_image ghcr.io/ggozad/haiku.rag-slim:0.84.0",
                 "image: &haiku_rag_image "
                 "ghcr.io/ggozad/haiku.rag-slim:${haiku_rag_version}",
             ),
@@ -634,11 +634,11 @@ def t_agents(text: str) -> str:
             # parameters or the generated AGENTS.md goes stale the moment a
             # project picks different ones.
             (
-                "`soliplex >= 0.79, < 0.80`",
+                "`soliplex >= 0.82, < 0.83`",
                 "`soliplex ${soliplex_backend_constraint}`",
             ),
             (
-                "haiku.rag-slim:0.82.1",
+                "haiku.rag-slim:0.84.0",
                 "haiku.rag-slim:${haiku_rag_version}",
             ),
             # tui/constraints.txt only exists in a project that took the TUI.
@@ -753,7 +753,7 @@ USER_DOC_PARAMS = {
     ],
     "architecture/backend.md": [
         (
-            "soliplex >= 0.79, < 0.80",
+            "soliplex >= 0.82, < 0.83",
             "soliplex ${soliplex_backend_constraint}",
         ),
     ],
