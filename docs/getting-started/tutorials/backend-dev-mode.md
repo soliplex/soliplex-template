@@ -143,13 +143,24 @@ docker compose run --rm soliplex-dev \
 ```
 
 A checkout of `main` is usually ahead of the pinned release, so its database
-schema may be too. Apply its migrations, and generate new ones, from the
-checkout's own root (`alembic` writes into `versions/` and prepends `.` to
-`sys.path`, so the `-w` matters):
+schema may be too. The backend applies the checkout's revisions itself when it
+restarts, since it migrates on startup; to apply them first, where you can see
+them, run `soliplex-cli database` in the same environment:
+
+```bash
+docker compose run --rm soliplex-dev \
+    /app/.venv/bin/soliplex-cli database upgrade /environment
+```
+
+(`database status` in place of `upgrade` reports without changing anything.)
+Generate new revisions with `alembic` itself, from the checkout's own root
+(`alembic` writes into `versions/` and prepends `.` to `sys.path`, so the `-w`
+matters):
 
 ```bash
 docker compose run --rm -w /app/src/soliplex soliplex-dev \
-    /app/.venv/bin/alembic -x soliplex.installation_path=/environment upgrade head
+    /app/.venv/bin/alembic -x soliplex.installation_path=/environment \
+    revision --autogenerate -m "add a column"
 ```
 
 ## 6. When you need a rebuild
