@@ -1,6 +1,6 @@
 ---
 name: soliplex-template
-description: "Generate a new, runnable Soliplex Docker Compose stack from an embedded template, or inspect and change an existing one — query its resolved installation config, create or update extra RAG databases (with guidance for wiring them into rooms), add a room, clone another Python project into the stack's src/ and make it importable by the backend, or migrate an older stack to the src/ project layout. Use when a user wants to stand up, bootstrap, or create a new Soliplex deployment / compose stack; to inspect, configure, or add a RAG database or room to an existing one; to add, clone, or wire a Python project or repo checkout into a stack's backend (PYTHONPATH); or to upgrade a stack's src/ layout."
+description: "Generate a new, runnable Soliplex Docker Compose stack from an embedded template, or inspect and change an existing one — query its resolved installation config, create or update extra RAG databases (with guidance for wiring them into rooms), add a room, clone another Python project into the stack's src/ and make it importable by the backend, migrate an older stack to the src/ project layout, or migrate its Soliplex / RAG databases after a version bump. Use when a user wants to stand up, bootstrap, or create a new Soliplex deployment / compose stack; to inspect, configure, or add a RAG database or room to an existing one; to add, clone, or wire a Python project or repo checkout into a stack's backend (PYTHONPATH); to upgrade a stack's src/ layout; or to check or apply database migrations after bumping soliplex or haiku.rag."
 ---
 
 # Soliplex project generation and configuration
@@ -374,6 +374,51 @@ local path (auto-bind-mounted read-only).
 Building the database does not make any room use it. **After `create`, offer to
 wire the new database into one or more rooms.** If the user agrees, follow the
 steps in *Wiring the database into rooms* below.
+
+## Migrating the Soliplex databases after a soliplex bump
+
+The backend's `soliplex_agui` and `soliplex_authz` databases are
+Alembic-managed, and in a generated stack the backend migrates them to its
+release's head itself, on startup — so **most** `soliplex` bumps need only
+`docker compose build backend` and a restart. The exception is a stack whose
+databases were created by soliplex 0.81 or earlier: they carry no
+`alembic_version` stamp, and from 0.82 on the backend refuses to start
+against them (`UnstampedDatabase` in `docker compose logs backend`) until
+they have been stamped once. Do not guess which case a stack is — ask, as
+below.
+
+The stack ships `scripts/migrate_soliplex_dbs.py` for this; it runs the
+backend image's own `soliplex-cli database` commands, so rebuild the backend
+after raising the pin in `backend/constraints.txt` (the script refuses an
+image older than 0.82). Report first (read-only, safe while the stack is up,
+non-zero exit if a database is unstamped, behind head, or unreachable):
+
+```bash
+docker compose build backend
+uv run scripts/migrate_soliplex_dbs.py --check
+```
+
+Applying changes the schema, so the backend has to stop first — the script
+refuses while it is running:
+
+```bash
+docker compose stop backend
+uv run scripts/migrate_soliplex_dbs.py
+docker compose start backend
+```
+
+It stamps unstamped databases with soliplex's one-time
+`bootstrap_alembic_version.py` (fetched at the tag matching the image's
+`soliplex`), then runs `soliplex-cli database upgrade /environment`.
+Re-running is safe: with nothing owed it reports `Nothing to migrate.`. Both
+forms take `--project-dir` (default: the stack holding the script). Suggest a
+`pg_dump` first when the threads matter; the "Database migrations" operations
+docs page has the command. For a single command by hand, run it in the
+backend image: `docker compose run --rm --no-deps backend
+/app/.venv/bin/soliplex-cli database status /environment` (or `upgrade`).
+
+The haiku-ingester's job queue (`soliplex_ingester`) is not Alembic-managed:
+the ingester migrates it in place whenever it opens it.
 
 ## Migrating the RAG stores after a haiku.rag bump
 
