@@ -169,7 +169,7 @@ services:
 
   haiku-ingester:
 
-    image: &haiku_rag_image ghcr.io/ggozad/haiku.rag-slim:0.82.1
+    image: &haiku_rag_image ghcr.io/ggozad/haiku.rag-slim:0.84.0
 
     build:
       context: haiku.rag

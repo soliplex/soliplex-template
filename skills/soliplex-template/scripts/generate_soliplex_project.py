@@ -94,13 +94,13 @@ DEFAULTS: dict[str, object] = {
     "puid": None,  # derived from os.getuid() if unset
     "pgid": None,  # derived from os.getgid() if unset
     # Version pins
-    "soliplex_backend_constraint": ">= 0.79, < 0.80",
-    "soliplex_tui_constraint": ">= 0.79, < 0.80",
+    "soliplex_backend_constraint": ">= 0.82, < 0.83",
+    "soliplex_tui_constraint": ">= 0.82, < 0.83",
     # haiku-ingester image tag (ghcr.io/ggozad/haiku.rag-slim). Not a free
     # choice: the pinned soliplex release constrains 'haiku.rag-slim' as a
     # dependency, and the ingester writes the LanceDB the backend reads, so
     # this has to satisfy the range 'soliplex_backend_constraint' implies.
-    "haiku_rag_version": "0.82.1",
+    "haiku_rag_version": "0.84.0",
     # Frontend: "latest" (newest soliplex/frontend release, the historical
     # behavior) or a specific soliplex/frontend release tag to pin.
     "frontend_version": "latest",

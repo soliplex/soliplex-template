@@ -10,6 +10,60 @@ icon: lucide/database-backup
     project ships its own copy of this page without this note.
 <!-- endsite-only -->
 
+## The Soliplex databases (Postgres)
+
+The backend keeps two databases, `soliplex_agui` (thread persistence) and
+`soliplex_authz` (authorization policy), and tracks their schema with
+[Alembic](https://soliplex.github.io/soliplex/server/migrations/). In this
+stack each application role owns its own schema, so the backend migrates
+both databases itself, on startup: a `soliplex` bump that adds a revision
+needs nothing more than a rebuild and a restart.
+
+### Upgrading from soliplex 0.81 or earlier
+
+Releases through 0.81 created these databases without recording an Alembic
+revision. From 0.82 on, the backend refuses to start against such a
+database, rather than guess its schema:
+
+```text
+soliplex.alembic_migrations.UnstampedDatabase: agui: tables are present but
+alembic_version is empty, so this database was created by soliplex 0.81 or
+earlier. ...
+```
+
+Stamping them is a one-time step. Soliplex's
+`scripts/bootstrap_alembic_version.py` is not part of the installed package,
+so fetch it at the tag matching the pin and run it in the backend image,
+where it reads the DBURIs and passwords from the installation config.
+Check first, with `--dry-run`, then run again without it to write the stamp:
+
+```bash
+docker compose stop backend
+docker compose run --rm --no-deps backend sh -c '
+  curl -fsSL https://raw.githubusercontent.com/soliplex/soliplex/v0.82/scripts/bootstrap_alembic_version.py \
+    -o /tmp/bootstrap.py &&
+  /app/.venv/bin/python /tmp/bootstrap.py --installation-path /environment --dry-run'
+```
+
+It writes the `alembic_version` row and nothing else, detecting the revision
+by fingerprinting the live schema. Then bring both databases to head and
+start the backend:
+
+```bash
+docker compose run --rm --no-deps backend \
+    /app/.venv/bin/soliplex-cli database upgrade /environment
+docker compose start backend
+```
+
+(Starting the backend would also apply the pending revisions; running
+`database upgrade` first reports them where you can see them.) At any point,
+`soliplex-cli database status /environment` reports each database's applied
+and pending revisions, and `soliplex-cli audit databases /environment` its
+state, without changing anything.
+
+A database created by 0.82 or later is stamped when it is created, so a
+stack first brought up on 0.82 never needs this step.
+
 ## The RAG vector store (LanceDB)
 
 Each LanceDB under `rag/db/` records the haiku.rag version that last wrote it,

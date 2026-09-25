@@ -142,7 +142,7 @@ version = "0.1.0"
 requires-python = ">=3.13"
 # Host-side dependencies for driving *the stack*.
 dependencies = [
-    "soliplex >= 0.79, < 0.80",
+    "soliplex >= 0.82, < 0.83",
     "psycopg[binary]",
     "asyncpg",
 ]
@@ -179,7 +179,7 @@ build-backend = "hatchling.build"
 name = "<project_name>"
 version = "0.1.0"
 requires-python = ">=3.13"
-dependencies = ["soliplex >= 0.79, < 0.80"]
+dependencies = ["soliplex >= 0.82, < 0.83"]
 
 [dependency-groups]
 dev = ["pytest"]

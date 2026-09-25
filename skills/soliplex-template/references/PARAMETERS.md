@@ -66,9 +66,9 @@ prompt (a command-line value would leak into shell history).
 | `chunk_size` | `256` | int | both `haiku.rag.yaml` files |
 | `agui_db` | `soliplex_agui` | SQL identifier; ≠ `authz_db` | `installation.yaml` DB URIs, `postgres/config/init.sh` (role **and** database) |
 | `authz_db` | `soliplex_authz` | SQL identifier; ≠ `agui_db` | `installation.yaml` DB URIs, `postgres/config/init.sh` |
-| `soliplex_backend_constraint` | `>= 0.79, < 0.80` | non-empty | `backend/constraints.txt`, `pyproject.toml` |
-| `soliplex_tui_constraint` | `>= 0.79, < 0.80` | non-empty; only applies when `include_tui` is true | `tui/constraints.txt` |
-| `haiku_rag_version` | `0.82.1` | non-empty; must satisfy the `haiku.rag-slim` range `soliplex_backend_constraint` implies | `haiku.rag/Dockerfile` (`FROM`) and the `haiku-ingester` `image:` in `docker-compose.yml` |
+| `soliplex_backend_constraint` | `>= 0.82, < 0.83` | non-empty | `backend/constraints.txt`, `pyproject.toml` |
+| `soliplex_tui_constraint` | `>= 0.82, < 0.83` | non-empty; only applies when `include_tui` is true | `tui/constraints.txt` |
+| `haiku_rag_version` | `0.84.0` | non-empty; must satisfy the `haiku.rag-slim` range `soliplex_backend_constraint` implies | `haiku.rag/Dockerfile` (`FROM`) and the `haiku-ingester` `image:` in `docker-compose.yml` |
 | `frontend_version` | `latest` | `latest` or a release tag (letters, digits, `.`, `_`, `-`) | `nginx/Dockerfile` frontend release fetched at image build |
 | `auth_mode` | `no-auth` | `no-auth` or `auth` | backend `command` (`--no-auth-mode` present/absent) |
 | `include_gitea` | `false` | bool (`true`/`false`, or `yes`/`no`/`1`/`0`) | adds the opt-in gitea service (postgres-backed, nginx `/gitea/` on 9443, `gitea_db_password` secret) plus `scripts/init_gitea.py` (run after `up`; `--admin-user NAME` adds a web-UI login, `--push-to-gitea` sets `origin` to a Gitea repo over SSH and pushes the initial commit); omitted entirely when false |
@@ -207,5 +207,5 @@ unknown at generation time).
 - The backend `soliplex` version pin (`soliplex_backend_constraint`) lands in
   `backend/constraints.txt`. Choose it from the published releases on PyPI
   (`https://pypi.org/pypi/soliplex/json`) rather than guessing — pin one
-  release (e.g. `== 0.79.1`) or keep a range (e.g. `>= 0.79, < 0.80`); the
+  release (e.g. `== 0.82`) or keep a range (e.g. `>= 0.82, < 0.83`); the
   skill's interview step (see `SKILL.md`) lists them for you.
