@@ -292,9 +292,9 @@ services:
 
   docling-serve:
 
-    #image: ghcr.io/docling-project/docling-serve:v1.16.1
+    #image: ghcr.io/docling-project/docling-serve:v1.32.0
     # Use CPU version for machines w/o compatible/ capable GPU
-    image: ghcr.io/docling-project/docling-serve-cpu:v1.16.1
+    image: ghcr.io/docling-project/docling-serve-cpu:v1.32.0
 
     build:
       context: docling-serve

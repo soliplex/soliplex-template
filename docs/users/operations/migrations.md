@@ -231,3 +231,20 @@ docker compose run --rm haiku-rag migrate --db /data/haiku.rag.lancedb
 the version that last wrote the store (`haiku.rag version (db)`) and either
 `Database is up to date.` or the pending upgrades. Note that it exits `0` in
 both cases — that is why `--check` reads its output rather than its status.
+
+### Converter bumps (docling-serve)
+
+Bumping `docling-serve` — in **both** `docker-compose.yml` and
+`docling-serve/Dockerfile`, which have to agree — never needs a migration: the
+store layout belongs to haiku.rag, and `migrate_rag_dbs.py --check` has
+nothing to say about the converter. What a bump can change is the conversion
+output itself, and so where chunks begin and end.
+
+The move to `v1.32.0` (docling 2.124.0, the docling stack haiku.rag 0.83+ pins)
+is one of those: adjacent text items now merge, so chunk boundaries shift.
+Existing stores stay readable and their chunks are left as they are; nothing
+changes until a document is re-ingested. A re-ingested document then gets new
+chunks with **new chunk ids**, so anything that kept an id from before — a
+saved citation, an external index — no longer resolves. A store that mixes
+documents ingested on either side of the bump works, but chunks them
+differently; re-ingest the whole corpus if consistent chunking matters.
