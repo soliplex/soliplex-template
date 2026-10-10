@@ -8,6 +8,7 @@ RUN \
     curl \
     gpg \
     apt-transport-https \
+    bubblewrap \
     git \
     jq && \
     rm -rf /var/lib/apt/lists/*

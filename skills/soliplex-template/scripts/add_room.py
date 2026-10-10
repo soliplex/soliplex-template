@@ -15,6 +15,9 @@ Run it with ``uv run``, which provisions the PEP 723 dependencies above::
     # list the bundled room templates
     uv run add_room.py list
 
+    # ... only those a given stack can use
+    uv run add_room.py list --project-dir /path/to/stack
+
     # add a conversational-RAG room called 'handbook'
     uv run add_room.py add --project-dir /path/to/stack \\
         --template chat --room-id handbook \\
@@ -28,6 +31,11 @@ commented-out tool and skill examples included -- for the operator to edit.
 ``room_paths`` is left alone when it already points at ``./rooms`` (which
 auto-discovers the new room); installs that enumerate rooms instead get
 ``- "./rooms/<room-id>"`` spliced in.
+
+A template that configures the ``bubble-sandbox`` skill needs a stack whose
+backend may run ``bwrap``: one generated with ``enable_sandbox: true``, or with
+the backend's ``security_opt`` block uncommented by hand. ``add`` refuses such
+a template for any other stack, and ``list --project-dir`` skips it.
 """
 
 from __future__ import annotations
@@ -35,6 +43,7 @@ from __future__ import annotations
 import argparse
 import functools
 import pathlib
+import re
 import subprocess
 import sys
 
@@ -52,6 +61,17 @@ TEMPLATE_FILE = "room_config.yaml.mako"
 # The line a template carries to describe itself for 'list' (a Mako '##' line
 # comment, so it never renders into the room_config.yaml).
 _SUMMARY_PREFIX = "## summary:"
+
+# A template configures the sandbox skill when it carries a live (uncommented)
+# skill entry of either kind spelling soliplex accepts.
+_SANDBOX_SKILL_RE = re.compile(
+    r'(?m)^[ \t]*- kind: "(?:bubble-sandbox|bwrap_sandbox)"'
+)
+# A stack lets the backend run 'bwrap' when its compose file carries the live
+# 'security_opt' block the generator emits for 'enable_sandbox: true'.
+_SANDBOX_ENABLED_RE = re.compile(
+    r"(?m)^[ \t]*security_opt:[ \t]*&sandbox_security_opt\b"
+)
 
 DEFAULT_AGENT_TEMPLATE = "default_chat"
 DEFAULT_RAG_STEM = "haiku.rag"
@@ -146,6 +166,28 @@ def resolve_package_name(project: pathlib.Path, override: str | None) -> str:
     return rooms.resolve_package_name(project, None)
 
 
+def template_needs_sandbox(path: pathlib.Path) -> bool:
+    """Whether the template at ``path`` configures the sandbox skill."""
+    return bool(_SANDBOX_SKILL_RE.search(path.read_text()))
+
+
+def stack_allows_sandbox(project: pathlib.Path) -> bool:
+    """Whether ``project``'s backend may run ``bwrap``."""
+    compose = project / "docker-compose.yml"
+    return compose.is_file() and bool(
+        _SANDBOX_ENABLED_RE.search(compose.read_text())
+    )
+
+
+def _sandbox_disabled_error(name: str) -> rooms.AddRoomError:
+    return rooms.AddRoomError(
+        f"template {name!r} configures the sandbox skill, which this stack "
+        "cannot run: generate it with 'enable_sandbox: true', or uncomment "
+        "the backend's (and soliplex-dev's) 'security_opt' block in "
+        "docker-compose.yml"
+    )
+
+
 def resolve_template(name: str) -> pathlib.Path:
     """Return the path to template ``name``'s mako file, or raise."""
     path = TEMPLATES_DIR / name / TEMPLATE_FILE
@@ -221,10 +263,27 @@ def build_context(
 # --------------------------------------------------------------------------
 def do_list(args: argparse.Namespace) -> int:
     templates = available_templates()
-    width = max((len(name) for name in templates), default=0)
+    needs_sandbox = {
+        name
+        for name in templates
+        if template_needs_sandbox(resolve_template(name))
+    }
+    skipped = set()
+    if args.project_dir is not None:
+        project = rooms.resolve_project(args.project_dir)
+        if not stack_allows_sandbox(project):
+            skipped = needs_sandbox
+    shown = {k: v for k, v in templates.items() if k not in skipped}
+    width = max((len(name) for name in shown), default=0)
     print("Bundled room templates:")
-    for name, summary in templates.items():
-        print(f"  {name.ljust(width)}  {summary}")
+    for name, summary in shown.items():
+        note = ""
+        if args.project_dir is None and name in needs_sandbox:
+            note = " (needs a sandbox-enabled stack)"
+        print(f"  {name.ljust(width)}  {summary}{note}")
+    if skipped:
+        names = ", ".join(sorted(skipped))
+        print(f"Skipped (this stack is not sandbox-enabled): {names}")
     return 0
 
 
@@ -232,6 +291,10 @@ def do_add(args: argparse.Namespace) -> int:
     project = rooms.resolve_project(args.project_dir)
     rooms.validate_room_id(args.room_id)
     template_path = resolve_template(args.template)
+    if template_needs_sandbox(template_path) and not stack_allows_sandbox(
+        project
+    ):
+        raise _sandbox_disabled_error(args.template)
 
     prompt_text = None
     if args.prompt_file is not None:
@@ -382,6 +445,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     listing = sub.add_parser(
         "list", help="list the bundled room templates and their summaries"
+    )
+    listing.add_argument(
+        "--project-dir",
+        default=None,
+        help="list only the templates this stack can use (default: list all)",
     )
     listing.set_defaults(func=do_list)
 

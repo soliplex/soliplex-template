@@ -166,7 +166,7 @@ def t_compose(text: str) -> str:
             # Same parameter as the ingester Dockerfile's FROM: compose tags
             # the locally built image with this name, so the two must agree.
             (
-                "image: &haiku_rag_image ghcr.io/ggozad/haiku.rag-slim:0.84.0",
+                "image: &haiku_rag_image ghcr.io/ggozad/haiku.rag-slim:0.96.1",
                 "image: &haiku_rag_image "
                 "ghcr.io/ggozad/haiku.rag-slim:${haiku_rag_version}",
             ),
@@ -264,7 +264,42 @@ def t_compose(text: str) -> str:
     # the tui service block (open anchor + close anchor before backend):
     text = opt_replace(text, "  tui:\n", "% if include_tui:\n  tui:\n")
     text = opt_replace(text, "  backend:\n", "% endif\n  backend:\n")
+    # The sandbox 'security_opt' blocks (backend + soliplex-dev). Unlike the
+    # opt-in services these are never dropped: a stack generated without
+    # enable_sandbox carries them commented out, so it can opt in later by
+    # uncommenting rather than regenerating.
+    text = toggle_sandbox(text, _SANDBOX_BACKEND_OPTS)
+    text = toggle_sandbox(text, _SANDBOX_DEV_OPTS)
     return text
+
+
+_SANDBOX_BACKEND_OPTS = (
+    "    security_opt: &sandbox_security_opt\n"
+    "      - seccomp=unconfined\n"
+    "      - apparmor=unconfined\n"
+    "      - systempaths=unconfined\n"
+)
+_SANDBOX_DEV_OPTS = "    security_opt: *sandbox_security_opt\n"
+
+
+def comment_out(block: str) -> str:
+    """Comment out each line of a YAML ``block``, keeping its indentation."""
+    return "".join(
+        re.sub(r"^( *)", r"\1# ", line, count=1)
+        for line in block.splitlines(keepends=True)
+    )
+
+
+def toggle_sandbox(text: str, block: str) -> str:
+    """Emit ``block`` live when enable_sandbox is true, else commented out.
+
+    Tolerant of absence, like the opt-in service fragments: the exemplar
+    carries both blocks, and the real-exemplar test pins that."""
+    return opt_replace(
+        text,
+        block,
+        f"% if enable_sandbox:\n{block}% else:\n{comment_out(block)}% endif\n",
+    )
 
 
 _ROUTER_BLOCK = (
@@ -634,11 +669,11 @@ def t_agents(text: str) -> str:
             # parameters or the generated AGENTS.md goes stale the moment a
             # project picks different ones.
             (
-                "`soliplex >= 0.82, < 0.83`",
+                "`soliplex >= 0.85, < 0.86`",
                 "`soliplex ${soliplex_backend_constraint}`",
             ),
             (
-                "haiku.rag-slim:0.84.0",
+                "haiku.rag-slim:0.96.1",
                 "haiku.rag-slim:${haiku_rag_version}",
             ),
             # tui/constraints.txt only exists in a project that took the TUI.
@@ -753,7 +788,7 @@ USER_DOC_PARAMS = {
     ],
     "architecture/backend.md": [
         (
-            "soliplex >= 0.82, < 0.83",
+            "soliplex >= 0.85, < 0.86",
             "soliplex ${soliplex_backend_constraint}",
         ),
     ],
@@ -1196,6 +1231,7 @@ PROBE = dict(
     docs_dir="d",
     include_gitea=True,
     include_tui=True,
+    enable_sandbox=True,
     soliplex_template_manifest="[tool.soliplex-template]\n",
 )
 

@@ -135,7 +135,7 @@ def test_t_compose():
         '      - "9443:9443"\n'
         "      command: --public-url https://localhost:9443/tui\n"
         "      command: soliplex-cli serve --no-auth-mode --reload=config\n"
-        "    image: &haiku_rag_image ghcr.io/ggozad/haiku.rag-slim:0.84.0\n"
+        "    image: &haiku_rag_image ghcr.io/ggozad/haiku.rag-slim:0.96.1\n"
         '      - "8765:8765"\n'
         '      - "5001:5001"\n'
         '      - "5432:5432"\n'
@@ -240,7 +240,7 @@ def test_t_ingester_haiku():
 
 
 def test_t_ingester_dockerfile():
-    text = "FROM ghcr.io/ggozad/haiku.rag-slim:0.84.0\n"
+    text = "FROM ghcr.io/ggozad/haiku.rag-slim:0.96.1\n"
 
     out = rst.t_ingester_dockerfile(text)
 
@@ -253,7 +253,7 @@ def test_t_ingester_dockerfile_no_match_raises():
 
 
 def test_t_backend_constraints():
-    out = rst.t_backend_constraints("soliplex >= 0.82, < 0.83\nother==1\n")
+    out = rst.t_backend_constraints("soliplex >= 0.85, < 0.86\nother==1\n")
 
     assert out == "soliplex ${soliplex_backend_constraint}\nother==1\n"
 
@@ -264,7 +264,7 @@ def test_t_backend_constraints_no_match_raises():
 
 
 def test_t_tui_constraints():
-    out = rst.t_tui_constraints("soliplex >= 0.82, < 0.83\n")
+    out = rst.t_tui_constraints("soliplex >= 0.85, < 0.86\n")
 
     assert out == "soliplex ${soliplex_tui_constraint}\n"
 
@@ -366,6 +366,36 @@ def test_t_compose_wraps_tui_on_real_exemplar():
     # service, and nginx's depends_on entry is wrapped too.
     assert "% endif\n  backend:\n" in mako
     assert "% if include_tui:\n      - tui\n% endif\n" in mako
+
+
+@pytest.mark.parametrize(
+    "block", [rst._SANDBOX_BACKEND_OPTS, rst._SANDBOX_DEV_OPTS]
+)
+def test_t_compose_toggles_sandbox_on_real_exemplar(block):
+    exemplar = (rst.REPO / "docker-compose.yml").read_text()
+
+    mako = rst.t_compose(exemplar)
+
+    assert (
+        f"% if enable_sandbox:\n{block}% else:\n"
+        f"{rst.comment_out(block)}% endif\n"
+    ) in mako
+
+
+def test_comment_out_keeps_indentation():
+    block = "    key: &anchor\n      - a\n"
+
+    out = rst.comment_out(block)
+
+    assert out == "    # key: &anchor\n      # - a\n"
+
+
+def test_toggle_sandbox_absent_is_noop():
+    text = "services: {}\n"
+
+    out = rst.toggle_sandbox(text, rst._SANDBOX_DEV_OPTS)
+
+    assert out == text
 
 
 def test_t_init_sh_wraps_gitea_on_real_exemplar():

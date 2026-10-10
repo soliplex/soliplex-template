@@ -608,6 +608,35 @@ def test_coerce_and_derive_w_invalid_include_tui_raises():
         gen.coerce_and_derive(params)
 
 
+# --------------------------------------------------------------------------
+# enable_sandbox (opt-in sandbox code execution)
+# --------------------------------------------------------------------------
+@pytest.mark.parametrize(
+    "es_kw, expected",
+    [
+        ({}, False),
+        ({"enable_sandbox": False}, False),
+        ({"enable_sandbox": "no"}, False),
+        ({"enable_sandbox": True}, True),
+        ({"enable_sandbox": "yes"}, True),
+    ],
+)
+def test_coerce_and_derive_w_valid_enable_sandbox_converts(es_kw, expected):
+    params = dict(gen.DEFAULTS) | es_kw
+
+    result = gen.coerce_and_derive(params)
+
+    assert result["enable_sandbox"] is expected
+
+
+def test_coerce_and_derive_w_invalid_enable_sandbox_raises():
+    params = dict(gen.DEFAULTS)
+    params["enable_sandbox"] = "maybe"
+
+    with pytest.raises(gen.BadBoolean):
+        gen.coerce_and_derive(params)
+
+
 def test_render_tree_omits_tui_when_disabled(tmp_path):
     template = tmp_path / "template"
     (template / "tui").mkdir(parents=True)
@@ -910,6 +939,7 @@ PARAMS = {
     "auth_mode": "no-auth",
     "include_gitea": False,
     "include_tui": False,
+    "enable_sandbox": False,
     "docs_dir": "rag/docs",
 }
 

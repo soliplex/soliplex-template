@@ -7,6 +7,7 @@
     "ollama": "ollama_base_url",
     "auth": "auth_mode",
     "gitea": "include_gitea",
+    "sandbox": "enable_sandbox",
     "frontend": "frontend_version"
   },
   "groups": {

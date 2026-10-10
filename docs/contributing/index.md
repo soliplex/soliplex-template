@@ -29,8 +29,8 @@ exemplars by `scripts/refresh_skill_template.py`:
 - most tracked files are copied verbatim (minus `EXCLUDE_PATHSPECS`);
 - the parameterized files (`docker-compose.yml`, `installation.yaml`,
   `nginx.conf`, …) are rewritten as `*.mako` by per-file transforms (`DERIVED`),
-  injecting `${param}` substitutions and the `include_gitea` / `include_tui`
-  conditionals;
+  injecting `${param}` substitutions and the `include_gitea` / `include_tui` /
+  `enable_sandbox` conditionals;
 - the shipped doc pages are derived from `docs/users/` (see below);
 - a few templates with no repo exemplar are written verbatim (`AUTHORED`, e.g.
   `README.md.mako`);

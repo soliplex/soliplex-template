@@ -44,25 +44,29 @@ skills:
     # This skill runs Python in a bubblewrap sandbox.
     # Use it to compute results from files.
     #
+    # Running code needs a stack generated with 'enable_sandbox: true' (the
+    # backend's live 'security_opt' block in docker-compose.yml); without it
+    # this room fails when used ("Sandbox unavailable").
+    #
     - kind: "bubble-sandbox"
       #
       # 'id': explicit skill id (default: derived).
-      # 'default_environment': a backend/sandbox/environments/<name>/ project.
-      # 'allowed_environments': restrict the selectable environments
-      # (omit to allow any).
+      # 'environment': the backend/sandbox/environments/<name>/ project every
+      # execution in this room runs in (default: "bare"). The model does
+      # not choose it.
       #
 #     id: "sandbox"
-#     default_environment: "bare"
-#     allowed_environments: ["bare"]
+#     environment: "bare"
 
       #
-      # 'sandbox_config' tunables:
-      #   'execution_timeout_seconds': per-execution wall-clock limit.
-      #   'max_output_chars': truncate captured stdout/stderr beyond this.
+      # Execution limits (omit for the defaults):
+      #   'execution_timeout_seconds': per-execution wall-clock limit
+      #   (default: 30.0).
+      #   'max_output_chars': how much of each output stream reaches the
+      #   model; the rest is truncated (default: 10000).
       #
-#     sandbox_config:
-#       execution_timeout_seconds: 30
-#       max_output_chars: 100000
+#     execution_timeout_seconds: 30.0
+#     max_output_chars: 10000
 
       #
       # 'volumes': extra mounts keyed by sandbox volume name; each has a

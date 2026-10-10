@@ -67,6 +67,18 @@ services:
     env_file: ".env"
     user: "${PUID:-1000}:${PGID:-1000}"
 
+    # Lets the 'bubble-sandbox' skill run code (generator: 'enable_sandbox').
+    # 'bwrap' needs user namespaces and a fresh '/proc', which Docker's default
+    # seccomp profile, AppArmor profile and '/proc' masking each block, so all
+    # three are lifted. That relaxes this container's own hardening in
+    # exchange for 'bwrap' isolating each execution inside it. Without it, a
+    # room that configures the skill fails when used ("Sandbox unavailable").
+    # Keep 'soliplex-dev' below in step.
+    security_opt: &sandbox_security_opt
+      - seccomp=unconfined
+      - apparmor=unconfined
+      - systempaths=unconfined
+
     depends_on:
       - postgres
 
@@ -145,6 +157,9 @@ services:
 
     working_dir: /app/src
 
+    # The backend's 'security_opt' (see there), so code runs here too.
+    security_opt: *sandbox_security_opt
+
     depends_on:
       postgres:
         condition: service_healthy
@@ -169,7 +184,7 @@ services:
 
   haiku-ingester:
 
-    image: &haiku_rag_image ghcr.io/ggozad/haiku.rag-slim:0.84.0
+    image: &haiku_rag_image ghcr.io/ggozad/haiku.rag-slim:0.96.1
 
     build:
       context: haiku.rag
