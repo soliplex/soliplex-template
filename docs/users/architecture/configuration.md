@@ -47,3 +47,27 @@ same as being unconfigured.
 Dependencies needed by agent-executed sandbox code belong in the relevant
 sandbox environment, **not** in the backend image's top-level dependency list
 (see [Backend image & dependencies](backend.md)).
+
+Running sandbox code is **opt-in**, chosen when the stack is generated
+(`enable_sandbox`). The backend image includes `bwrap` (bubblewrap), but
+inside a container `bwrap` needs user namespaces and a fresh `/proc`.
+Docker's default seccomp profile, AppArmor profile and `/proc` masking each
+block one of those, so all three have to be lifted. A stack generated with
+`enable_sandbox: true` carries this `security_opt` block on the `backend`
+service in `docker-compose.yml` (and the matching line on `soliplex-dev`);
+one generated without it carries the same lines commented out. To opt in
+later, uncomment both and recreate the containers:
+
+```yaml
+    security_opt: &sandbox_security_opt
+      - seccomp=unconfined
+      - apparmor=unconfined
+      - systempaths=unconfined
+```
+
+That relaxes the backend container's own hardening, in exchange for `bwrap`
+isolating each execution inside it. Without it, a room that configures the
+`bubble-sandbox` skill fails when used, with "Sandbox unavailable": soliplex
+checks that `bwrap` can run before it hands the room the skill. The skill's
+`add_room.py` checks the same `security_opt` block, and refuses to add such
+a room (the `sandbox` template) to a stack without it.

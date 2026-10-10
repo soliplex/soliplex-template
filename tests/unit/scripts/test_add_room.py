@@ -60,6 +60,21 @@ def _make_stack(tmp_path):
     return project
 
 
+_SANDBOX_COMPOSE = (
+    "services:\n"
+    "  backend:\n"
+    "    security_opt: &sandbox_security_opt\n"
+    "      - seccomp=unconfined\n"
+)
+
+
+def _make_sandbox_stack(tmp_path):
+    """A stack whose compose file carries the live sandbox 'security_opt'."""
+    project = _make_stack(tmp_path)
+    (project / "docker-compose.yml").write_text(_SANDBOX_COMPOSE)
+    return project
+
+
 def _add_args(**over):
     """An ``add`` Namespace with defaults, overridable per test."""
     base = {
@@ -121,6 +136,50 @@ def test_resolve_template_ok():
 def test_resolve_template_unknown():
     with pytest.raises(add_room.rooms.AddRoomError, match="unknown template"):
         add_room.resolve_template("does-not-exist")
+
+
+@pytest.mark.parametrize(
+    "template, expected",
+    [
+        ("chat", False),
+        ("minimal", False),
+        ("search", False),
+        ("sandbox", True),
+    ],
+)
+def test_template_needs_sandbox_bundled(template, expected):
+    path = add_room.resolve_template(template)
+
+    result = add_room.template_needs_sandbox(path)
+
+    assert result is expected
+
+
+def test_template_needs_sandbox_ignores_commented_skill(tmp_path):
+    path = tmp_path / "room_config.yaml.mako"
+    path.write_text('skill_configs:\n#   - kind: "bubble-sandbox"\n')
+
+    result = add_room.template_needs_sandbox(path)
+
+    assert result is False
+
+
+@pytest.mark.parametrize(
+    "compose, expected",
+    [
+        (None, False),
+        ("services: {}\n", False),
+        ("    # security_opt: &sandbox_security_opt\n", False),
+        (_SANDBOX_COMPOSE, True),
+    ],
+)
+def test_stack_allows_sandbox(tmp_path, compose, expected):
+    if compose is not None:
+        (tmp_path / "docker-compose.yml").write_text(compose)
+
+    result = add_room.stack_allows_sandbox(tmp_path)
+
+    assert result is expected
 
 
 # --------------------------------------------------------------------------
@@ -298,6 +357,37 @@ def test_list(capsys):
     assert "minimal" in out
 
 
+def test_list_marks_sandbox_templates_without_project(capsys):
+    rc = add_room.main(["list"])
+
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "(needs a sandbox-enabled stack)" in out
+
+
+def test_list_skips_sandbox_templates_for_disabled_stack(tmp_path, capsys):
+    project = _make_stack(tmp_path)
+
+    rc = add_room.main(["list", "--project-dir", str(project)])
+
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "  sandbox " not in out
+    assert "Skipped (this stack is not sandbox-enabled): sandbox" in out
+
+
+def test_list_shows_sandbox_templates_for_enabled_stack(tmp_path, capsys):
+    project = _make_sandbox_stack(tmp_path)
+
+    rc = add_room.main(["list", "--project-dir", str(project)])
+
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "  sandbox " in out
+    assert "Skipped" not in out
+    assert "(needs a sandbox-enabled stack)" not in out
+
+
 # --------------------------------------------------------------------------
 # CLI: add (end-to-end through the real soliplex_plumber.rooms)
 # --------------------------------------------------------------------------
@@ -389,6 +479,24 @@ def test_add_dry_run_writes_nothing(tmp_path, capsys):
     assert "would write" in capsys.readouterr().out
     assert not _room_dir(project).exists()
     assert _installation(project).read_text() == before
+
+
+def test_add_sandbox_template_refused_for_disabled_stack(tmp_path):
+    project = _make_stack(tmp_path)
+    args = _add_args(project_dir=str(project), template="sandbox")
+
+    with pytest.raises(add_room.rooms.AddRoomError, match="enable_sandbox"):
+        add_room.do_add(args)
+
+
+def test_add_sandbox_template_allowed_for_enabled_stack(tmp_path):
+    project = _make_sandbox_stack(tmp_path)
+    args = _add_args(project_dir=str(project), template="sandbox")
+
+    rc = add_room.do_add(args)
+
+    assert rc == 0
+    assert (_room_dir(project) / "room_config.yaml").is_file()
 
 
 # --------------------------------------------------------------------------

@@ -66,13 +66,14 @@ prompt (a command-line value would leak into shell history).
 | `chunk_size` | `256` | int | both `haiku.rag.yaml` files |
 | `agui_db` | `soliplex_agui` | SQL identifier; ≠ `authz_db` | `installation.yaml` DB URIs, `postgres/config/init.sh` (role **and** database) |
 | `authz_db` | `soliplex_authz` | SQL identifier; ≠ `agui_db` | `installation.yaml` DB URIs, `postgres/config/init.sh` |
-| `soliplex_backend_constraint` | `>= 0.82, < 0.83` | non-empty | `backend/constraints.txt`, `pyproject.toml` |
-| `soliplex_tui_constraint` | `>= 0.82, < 0.83` | non-empty; only applies when `include_tui` is true | `tui/constraints.txt` |
-| `haiku_rag_version` | `0.84.0` | non-empty; must satisfy the `haiku.rag-slim` range `soliplex_backend_constraint` implies | `haiku.rag/Dockerfile` (`FROM`) and the `haiku-ingester` `image:` in `docker-compose.yml` |
+| `soliplex_backend_constraint` | `>= 0.85, < 0.86` | non-empty | `backend/constraints.txt`, `pyproject.toml` |
+| `soliplex_tui_constraint` | `>= 0.85, < 0.86` | non-empty; only applies when `include_tui` is true | `tui/constraints.txt` |
+| `haiku_rag_version` | `0.96.1` | non-empty; must satisfy the `haiku.rag-slim` range `soliplex_backend_constraint` implies | `haiku.rag/Dockerfile` (`FROM`) and the `haiku-ingester` `image:` in `docker-compose.yml` |
 | `frontend_version` | `latest` | `latest` or a release tag (letters, digits, `.`, `_`, `-`) | `nginx/Dockerfile` frontend release fetched at image build |
 | `auth_mode` | `no-auth` | `no-auth` or `auth` | backend `command` (`--no-auth-mode` present/absent) |
 | `include_gitea` | `false` | bool (`true`/`false`, or `yes`/`no`/`1`/`0`) | adds the opt-in gitea service (postgres-backed, nginx `/gitea/` on 9443, `gitea_db_password` secret) plus `scripts/init_gitea.py` (run after `up`; `--admin-user NAME` adds a web-UI login, `--push-to-gitea` sets `origin` to a Gitea repo over SSH and pushes the initial commit); omitted entirely when false |
 | `include_tui` | `false` | bool (`true`/`false`, or `yes`/`no`/`1`/`0`) | adds the opt-in `tui` service (web TUI proxied by nginx at `/tui/`) plus the `tui/` build context; omitted entirely when false |
+| `enable_sandbox` | `false` | bool (`true`/`false`, or `yes`/`no`/`1`/`0`) | lets the `bubble-sandbox` skill run code: emits the `security_opt` block (`seccomp`, `apparmor` and `systempaths` unconfined) on `backend` and `soliplex-dev` live; when false the block ships commented out, and `add_room.py` refuses (and `list --project-dir` skips) room templates that configure the skill, such as `sandbox` |
 | `docs_dir` | `rag/docs` | relative path inside the project | compose ingester bind mount; created at generation time |
 | `ingester_token` | `secret` | weak default — override for real deployments | `.env` `INGESTER_TOKEN` |
 | `puid` | *(host `os.getuid()`)* | derived if unset; positive int < 2³¹ (an explicit `0`/root is rejected) | `.env` `PUID`; compose `build.args`, service `user:`, postgres tmpfs |
@@ -207,5 +208,5 @@ unknown at generation time).
 - The backend `soliplex` version pin (`soliplex_backend_constraint`) lands in
   `backend/constraints.txt`. Choose it from the published releases on PyPI
   (`https://pypi.org/pypi/soliplex/json`) rather than guessing — pin one
-  release (e.g. `== 0.82`) or keep a range (e.g. `>= 0.82, < 0.83`); the
+  release (e.g. `== 0.85`) or keep a range (e.g. `>= 0.85, < 0.86`); the
   skill's interview step (see `SKILL.md`) lists them for you.

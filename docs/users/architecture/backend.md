@@ -29,7 +29,7 @@ docker compose up -d backend
    reproducible:
 
     ```text
-    soliplex >= 0.82, < 0.83
+    soliplex >= 0.85, < 0.86
     httpx >= 0.28, < 0.29
     ```
 

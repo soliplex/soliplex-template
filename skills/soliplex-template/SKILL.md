@@ -79,6 +79,10 @@ from the user and invoke it.
    - **versions** — `frontend_version` and `soliplex_backend_constraint` (use
      the version-listing guidance below; they are independent choices).
    - **gitea** — `include_gitea`: include the opt-in local Gitea service or not.
+   - **sandbox** — `enable_sandbox`: let rooms run agent code in the bubblewrap
+     sandbox. It lifts the backend container's seccomp, AppArmor and `/proc`
+     masking, so say so when asking; default no. Without it the `sandbox` room
+     template is unavailable.
    - **secrets handling** — prompt for `ingester_token` (or accept the warned
      default) and confirm the secrets/git flags.
 
@@ -222,8 +226,8 @@ from the user and invoke it.
      | jq -r '.releases | keys[]' | sort -V | tail
    ```
 
-   From the user's pick, set `soliplex_backend_constraint` — e.g. `== 0.82`
-   to pin a single release, or a range such as `>= 0.82, < 0.83`. Fall back to
+   From the user's pick, set `soliplex_backend_constraint` — e.g. `== 0.85`
+   to pin a single release, or a range such as `>= 0.85, < 0.86`. Fall back to
    the default constraint if PyPI is unreachable.
 
 2. **Write the answers to a JSON file** (omit keys to accept defaults), e.g.
@@ -520,7 +524,10 @@ up without an image rebuild or restart.
    with citations), `minimal` (bare agent + prompt), and `sandbox` (file upload +
    bubblewrap code execution + RAG). Each renders with commented-out examples for
    adding custom tools and skills (both filesystem and entrypoint), for the
-   operator to uncomment later.
+   operator to uncomment later. Pass `--project-dir` to list only the templates
+   that stack can use: `sandbox` needs a stack generated with
+   `enable_sandbox: true` (or with the backend's `security_opt` block
+   uncommented), and `add` refuses it otherwise.
 
 2. **Gather the parameters** with `AskUserQuestion`: `--room-id` (required;
    letters/digits/`.`/`_`/`-`, no leading dot — also the directory name and the

@@ -94,13 +94,13 @@ DEFAULTS: dict[str, object] = {
     "puid": None,  # derived from os.getuid() if unset
     "pgid": None,  # derived from os.getgid() if unset
     # Version pins
-    "soliplex_backend_constraint": ">= 0.82, < 0.83",
-    "soliplex_tui_constraint": ">= 0.82, < 0.83",
+    "soliplex_backend_constraint": ">= 0.85, < 0.86",
+    "soliplex_tui_constraint": ">= 0.85, < 0.86",
     # haiku-ingester image tag (ghcr.io/ggozad/haiku.rag-slim). Not a free
     # choice: the pinned soliplex release constrains 'haiku.rag-slim' as a
     # dependency, and the ingester writes the LanceDB the backend reads, so
     # this has to satisfy the range 'soliplex_backend_constraint' implies.
-    "haiku_rag_version": "0.84.0",
+    "haiku_rag_version": "0.96.1",
     # Frontend: "latest" (newest soliplex/frontend release, the historical
     # behavior) or a specific soliplex/frontend release tag to pin.
     "frontend_version": "latest",
@@ -113,6 +113,11 @@ DEFAULTS: dict[str, object] = {
     # (web TUI at /tui/) plus the tui/ build context. Omitted entirely when
     # false; soliplex_tui_constraint only applies when this is true.
     "include_tui": False,
+    # Sandbox (opt-in): let the 'bubble-sandbox' skill run code, by lifting
+    # the backend container's seccomp / AppArmor / '/proc' restrictions that
+    # 'bwrap' trips over. When false the compose block ships commented out,
+    # and add_room.py skips room templates that configure the skill.
+    "enable_sandbox": False,
     # Ingester
     "docs_dir": "rag/docs",
     "ingester_token": "secret",
@@ -438,6 +443,12 @@ def coerce_and_derive(params: dict[str, object]) -> dict[str, object]:
     # template and the authored docs; gates the tui/ build context in
     # render_tree).
     params["include_tui"] = _as_bool(params.get("include_tui"), "include_tui")
+
+    # Opt-in sandbox (consumed by the conditional 'security_opt' blocks in the
+    # compose template).
+    params["enable_sandbox"] = _as_bool(
+        params.get("enable_sandbox"), "enable_sandbox"
+    )
 
     # Container UID/GID. Unset (None) -> the host operator's uid/gid so the
     # secret files this run writes are owned by, and the bind mounts are
@@ -828,6 +839,7 @@ def main(argv: list[str]) -> int:
     print(f"  auth:     {params['auth_mode']}")
     print(f"  gitea:    {'yes' if params['include_gitea'] else 'no'}")
     print(f"  tui:      {'yes' if params['include_tui'] else 'no'}")
+    print(f"  sandbox:  {'yes' if params['enable_sandbox'] else 'no'}")
     git_status = "initial commit created" if did_git else "not initialized"
     print(f"  git:      {git_status}")
     # Build images explicitly before starting: the nginx image runs a full
