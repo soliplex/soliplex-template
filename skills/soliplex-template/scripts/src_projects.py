@@ -485,9 +485,8 @@ def _report_added(
         )
     if rebuild:
         steps += [
-            "  # add the missing distributions to backend/constraints.txt "
-            "and the",
-            "  # 'uv add' line in backend/Dockerfile, then:",
+            "  # add the missing distributions to "
+            "backend/requirements.txt, then:",
             "  docker compose build backend",
         ]
     steps.append(

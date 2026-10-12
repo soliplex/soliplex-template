@@ -76,8 +76,8 @@ from the user and invoke it.
      pre-answers this. Whichever way the models are chosen, **probe them
      against `ollama_base_url` before generating** — see *Choosing and checking
      models* below.
-   - **versions** — `frontend_version` and `soliplex_backend_constraint` (use
-     the version-listing guidance below; they are independent choices).
+   - **versions** — `frontend_version` and `soliplex_image_tag` (use the
+     version-listing guidance below; they are independent choices).
    - **gitea** — `include_gitea`: include the opt-in local Gitea service or not.
    - **sandbox** — `enable_sandbox`: let rooms run agent code in the bubblewrap
      sandbox. It lifts the backend container's seccomp, AppArmor and `/proc`
@@ -197,9 +197,9 @@ from the user and invoke it.
    is the skill's own, complementary check.
 
    The frontend version (`frontend_version`) and the backend `soliplex`
-   version (`soliplex_backend_constraint`) are **independent choices**: the
-   `soliplex/frontend` repo and the `soliplex` PyPI package release on their
-   own schedules, so any frontend version can pair with any backend version.
+   release (`soliplex_image_tag`) are **independent choices**: the
+   `soliplex/frontend` and `soliplex` repos release on their own schedules,
+   so any frontend version can pair with any backend version.
    **Ask for them as two separate selections**, each with its own list of real
    versions (below). Never present paired/coupled front-end+back-end
    combinations; the user picks one value on each axis.
@@ -216,19 +216,28 @@ from the user and invoke it.
    Fall back to `latest` (or free-text tag entry) if the API is unreachable or
    rate-limited; set `GITHUB_TOKEN`/`GH_TOKEN` to raise the rate limit.
 
-   For the backend `soliplex` version (`soliplex_backend_constraint`, which
-   lands in `backend/constraints.txt`), **offer the user real choices** instead
-   of asking them to hand-write a constraint: list the published `soliplex`
-   releases on PyPI (oldest first) and present the most recent:
+   For the backend `soliplex` release (`soliplex_image_tag`: the tag of
+   `ghcr.io/soliplex/soliplex-postgres`, which `backend/Dockerfile` builds
+   `FROM`, and of `ghcr.io/soliplex/soliplex-tui` for the TUI), **offer the
+   user real choices** instead of asking them to recall a tag: list the
+   published tags (oldest first) and present the most recent:
 
    ```bash
-   curl -s https://pypi.org/pypi/soliplex/json \
-     | jq -r '.releases | keys[]' | sort -V | tail
+   TOKEN=$(curl -s "https://ghcr.io/token?scope=repository:soliplex/soliplex-postgres:pull" | jq -r .token)
+   TAGS=https://ghcr.io/v2/soliplex/soliplex-postgres/tags/list
+   curl -s -H "Authorization: Bearer $TOKEN" "$TAGS" | jq -r '.tags[]' | sort -V
    ```
 
-   From the user's pick, set `soliplex_backend_constraint` — e.g. `== 0.85`
-   to pin a single release, or a range such as `>= 0.85, < 0.86`. Fall back to
-   the default constraint if PyPI is unreachable.
+   Explain the two kinds: a `<major>.<minor>` tag (e.g. `0.85`, the default)
+   moves, picking up patch releases on `docker compose build --pull`; an
+   exact `<major>.<minor>.<patch>` pins one release. `latest` is also
+   accepted. Fall back to the default if GHCR is unreachable.
+
+   Then set `soliplex_dev_constraint` (the `soliplex` requirement in the
+   stack's host-side `pyproject.toml` files) to a range that admits the
+   release, e.g. `>= 0.86, < 0.87` for `0.86` or `0.86.1`; the default
+   `>= 0.85, < 0.86` already suits any `0.85` tag. The generator refuses a
+   tag outside the constraint.
 
 2. **Write the answers to a JSON file** (omit keys to accept defaults), e.g.
    `params.json`:
@@ -393,8 +402,8 @@ below.
 
 The stack ships `scripts/migrate_soliplex_dbs.py` for this; it runs the
 backend image's own `soliplex-cli database` commands, so rebuild the backend
-after raising the pin in `backend/constraints.txt` (the script refuses an
-image older than 0.82). Report first (read-only, safe while the stack is up,
+after raising the soliplex image tag in `backend/Dockerfile` (the script
+refuses an image older than 0.82). Report first (read-only, safe while the stack is up,
 non-zero exit if a database is unstamped, behind head, or unreachable):
 
 ```bash
@@ -591,8 +600,7 @@ reporting one of three outcomes:
 - all satisfied → the next step is just `docker compose up -d backend`;
 - some **MISSING** → it names them and leads with `docker compose build
   backend`, because `up` alone will not fix an `ImportError`. Add them to
-  `backend/constraints.txt` and the `uv add` line in `backend/Dockerfile`
-  first;
+  `backend/requirements.txt` first;
 - not checkable (no docker, or the image is not built) → it says so and lists
   what the checkout declares, rather than guessing.
 

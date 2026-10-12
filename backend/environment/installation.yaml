@@ -307,7 +307,7 @@ thread_persistence_db:
   #sync_dburi: "sqlite://"
   #async_dburi: "sqlite+aiosqlite://"
   sync_dburi: "postgresql+psycopg://soliplex_agui:secret:AGUI_DB_PASSWORD@postgres/soliplex_agui"
-  async_dburi: "postgresql+asyncpg://soliplex_agui:secret:AGUI_DB_PASSWORD@postgres/soliplex_agui"
+  async_dburi: "postgresql+psycopg://soliplex_agui:secret:AGUI_DB_PASSWORD@postgres/soliplex_agui"
 
 #==========================================================================
 # Authorization policy:  SQLAlchemy DBURIs
@@ -316,7 +316,7 @@ authorization_db:
   #sync_dburi: "sqlite://"
   #async_dburi: "sqlite+aiosqlite://"
   sync_dburi: "postgresql+psycopg://soliplex_authz:secret:AUTHZ_DB_PASSWORD@postgres/soliplex_authz"
-  async_dburi: "postgresql+asyncpg://soliplex_authz:secret:AUTHZ_DB_PASSWORD@postgres/soliplex_authz"
+  async_dburi: "postgresql+psycopg://soliplex_authz:secret:AUTHZ_DB_PASSWORD@postgres/soliplex_authz"
 
 #==========================================================================
 # OIDC authentication provider configuration

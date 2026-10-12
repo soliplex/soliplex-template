@@ -12,7 +12,7 @@ project. To *create* a stack, see
 ## What this repository is
 
 `soliplex-template` is **configuration + Dockerfiles**, not application source:
-the Soliplex backend is installed from the published `soliplex` package, the
+the Soliplex backend is built on the published `soliplex` release image, the
 frontend from a `soliplex/frontend` release, and `haiku-rag` / `docling-serve`
 use upstream images.
 

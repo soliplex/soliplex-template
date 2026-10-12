@@ -28,6 +28,7 @@ dependencies = []
 dev = [
     "coverage",
     "mako",
+    "packaging",  # 'generate_soliplex_project.py'
     "pyyaml",
     "pytest",
     "pytest-cov",

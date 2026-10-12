@@ -1,34 +1,17 @@
 # syntax=docker/dockerfile:1
-FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim
-
-RUN \
-  apt-get update && \
-  apt-get install -y \
-    ca-certificates \
-    curl && \
-    rm -rf /var/lib/apt/lists/*
+#
+# Built on the soliplex-tui release image: soliplex plus the TUI's
+# dependencies (textual, textual-serve, textual-fspicker) in '/app/.venv'. It
+# talks to the backend over HTTP, so it needs no PostgreSQL driver. It shares
+# its tag with the backend's soliplex-postgres image, so the two always run
+# the same soliplex release.
+FROM ghcr.io/soliplex/soliplex-tui:0.85
 
 WORKDIR /app
 
-# Enable bytecode compilation for faster startup
-ENV UV_COMPILE_BYTECODE=1 \
-    UV_LINK_MODE=copy
-
-COPY --link constraints.txt constraints.txt
-
-RUN \
-    uv init --bare --name "soliplex-template-tui" --no-description && \
-    uv add \
-      --constraints constraints.txt \
-      soliplex \
-      textual \
-      textual-fspicker \
-      textual-serve \
-      typer && \
-    uv sync
-
 # UID/GID the service runs as (build.args from docker-compose.yml, sourced from
-# PUID/PGID in .env; defaults to the historical 1000:1000).
+# PUID/PGID in .env; defaults to the historical 1000:1000). The soliplex-tui
+# image deliberately creates no user of its own.
 ARG PUID=1000
 ARG PGID=1000
 RUN groupadd -g ${PGID} soliplex && useradd -m -u ${PUID} -g ${PGID} soliplex

@@ -129,6 +129,31 @@ def test_load_params_unknown_key(tmp_path):
         gen.load_params(_args(params=str(params_file)))
 
 
+@pytest.mark.parametrize(
+    "name, hint",
+    [
+        (
+            "soliplex_backend_constraint",
+            "soliplex_backend_constraint (now soliplex_image_tag, "
+            "soliplex_dev_constraint)",
+        ),
+        (
+            "soliplex_tui_constraint",
+            "soliplex_tui_constraint (now soliplex_image_tag)",
+        ),
+    ],
+)
+def test_load_params_renamed_key_names_its_replacement(tmp_path, name, hint):
+    params_file = tmp_path / "p.json"
+    params_file.write_text(f'{{"{name}": ">= 0.85"}}', encoding="utf-8")
+
+    with pytest.raises(gen.UnknownParams) as exc_info:
+        gen.load_params(_args(params=str(params_file)))
+
+    assert exc_info.value.names == {name}
+    assert str(exc_info.value).endswith(hint)
+
+
 def test_load_params_interactive(monkeypatch):
     sentinel = {"sentinel": True}
     prompt = mock.Mock(return_value=sentinel)
@@ -435,10 +460,58 @@ def test_validate_bad_auth_mode():
 
 def test_validate_empty_constraint():
     params = _valid_params()
-    params["soliplex_backend_constraint"] = "   "
+    params["soliplex_dev_constraint"] = "   "
 
     with pytest.raises(gen.EmptyConstraint):
         gen.validate(params)
+
+
+@pytest.mark.parametrize("tag", ["", "v0.85", "0", "0.85.3.1", "0.85-rc1"])
+def test_validate_bad_image_tag(tag):
+    params = _valid_params()
+    params["soliplex_image_tag"] = tag
+
+    with pytest.raises(gen.BadImageTag):
+        gen.validate(params)
+
+
+@pytest.mark.parametrize("tag", ["0.86", "0.84.9"])
+def test_validate_image_tag_outside_constraint(tag):
+    params = _valid_params()
+    params["soliplex_image_tag"] = tag
+
+    with pytest.raises(gen.ImageTagOutsideConstraint) as exc_info:
+        gen.validate(params)
+
+    assert exc_info.value.tag == tag
+    assert exc_info.value.constraint == params["soliplex_dev_constraint"]
+
+
+@pytest.mark.parametrize("tag", ["latest", "0.85", "0.85.3"])
+def test_validate_accepts_image_tag(tag):
+    params = _valid_params()
+    params["soliplex_image_tag"] = tag
+
+    assert gen.validate(params) is None
+
+
+@pytest.mark.parametrize(
+    "tag, constraint, expected",
+    [
+        ("latest", "== 9.9", True),
+        ("0.85", "not a specifier", True),
+        ("0.85.3", ">= 0.85, < 0.86", True),
+        ("0.85.3", "== 0.85.2", False),
+        ("0.85", ">= 0.85, < 0.86", True),
+        ("0.85", ">= 0.85.4", True),
+        ("0.85", "== 0.85.99", True),
+        ("0.85", ">= 0.86", False),
+    ],
+)
+def test_image_tag_satisfies(tag, constraint, expected):
+    result = gen.image_tag_satisfies(tag, constraint)
+
+    assert result is expected
 
 
 @pytest.mark.parametrize("docs_dir", ["/abs/path", "a/../b"])

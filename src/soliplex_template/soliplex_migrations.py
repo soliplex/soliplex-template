@@ -129,9 +129,9 @@ class ImageTooOld(SoliplexMigrationsError):
         minimum = ".".join(str(part) for part in MIN_VERSION)
         super().__init__(
             f"the {SERVICE} image has soliplex {version}, which predates "
-            f"'soliplex-cli database' ({minimum}); raise the pin in "
-            f"backend/constraints.txt and rebuild it first: "
-            f"docker compose build {SERVICE}"
+            f"'soliplex-cli database' ({minimum}); raise the soliplex "
+            f"image tag in backend/Dockerfile and rebuild it first: "
+            f"docker compose build --pull {SERVICE}"
         )
 
 

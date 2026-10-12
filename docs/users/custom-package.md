@@ -161,8 +161,8 @@ docker compose up -d backend
   package the backend image does not already have, the import fails at
   runtime — and `docker compose up -d backend` will not fix it, because the
   dependency has to be baked into the image. Add it to
-  `backend/constraints.txt` and the `uv add` line in `backend/Dockerfile`,
-  then `docker compose build backend`; see [Backend image &
+  `backend/requirements.txt`, then `docker compose build backend`; see
+  [Backend image &
   dependencies](architecture/backend.md). `src_projects.py` checks this for
   you and says which of the three cases you are in.
 - **The mount is read-only**, and the container runs as the `PUID:PGID` from

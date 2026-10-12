@@ -373,7 +373,7 @@ def t_ingester_dockerfile(text: str) -> str:
     # The ingester image tag is a parameter because it is not free to choose:
     # the pinned soliplex release constrains 'haiku.rag-slim' as a dependency,
     # and the ingester writes the LanceDB the backend reads, so the image has
-    # to satisfy the range 'soliplex_backend_constraint' implies.
+    # to satisfy the range the 'soliplex_image_tag' release implies.
     new, n = re.subn(
         r"(?m)^FROM ghcr\.io/ggozad/haiku\.rag-slim:.*$",
         "FROM ghcr.io/ggozad/haiku.rag-slim:${haiku_rag_version}",
@@ -387,25 +387,31 @@ def t_ingester_dockerfile(text: str) -> str:
     return new
 
 
-def t_backend_constraints(text: str) -> str:
-    new, n = re.subn(
-        r"(?m)^soliplex .*$", "soliplex ${soliplex_backend_constraint}", text
-    )
-    require(
-        n == 1,
-        f"expected one 'soliplex ...' line in backend constraints, got {n}",
-    )
-    return new
+def _soliplex_from(image: str, text: str) -> str:
+    """Point the one ``FROM ghcr.io/soliplex/<image>:<tag>`` line at the
+    ``soliplex_image_tag`` parameter. The backend and TUI images share it, so
+    the two services always run the same soliplex release.
+
+    Everything else is wrapped in ``<%text>``, as in ``t_nginx_dockerfile``:
+    Mako would otherwise consume each backslash-newline continuation and try
+    to expand the shell's ``${PUID}`` / ``${PGID}``."""
+    pattern = rf"(?m)^(FROM ghcr\.io/soliplex/{re.escape(image)}:)\S+$"
+    n = len(re.findall(pattern, text))
+    require(n == 1, f"expected one {image} FROM line, got {n}")
+    # Keep the trailing newline outside the <%text> block, so the .mako file
+    # ends with one (see t_nginx_dockerfile).
+    stripped = text.rstrip("\n")
+    trailing = text[len(stripped) :]
+    body = re.sub(pattern, r"\1</%text>${soliplex_image_tag}<%text>", stripped)
+    return "<%text>" + body + "</%text>" + trailing
 
 
-def t_tui_constraints(text: str) -> str:
-    new, n = re.subn(
-        r"(?m)^soliplex .*$", "soliplex ${soliplex_tui_constraint}", text
-    )
-    require(
-        n == 1, f"expected one 'soliplex ...' line in tui constraints, got {n}"
-    )
-    return new
+def t_backend_dockerfile(text: str) -> str:
+    return _soliplex_from("soliplex-postgres", text)
+
+
+def t_tui_dockerfile(text: str) -> str:
+    return _soliplex_from("soliplex-tui", text)
 
 
 def t_nginx_conf(text: str) -> str:
@@ -669,19 +675,21 @@ def t_agents(text: str) -> str:
             # parameters or the generated AGENTS.md goes stale the moment a
             # project picks different ones.
             (
-                "`soliplex >= 0.85, < 0.86`",
-                "`soliplex ${soliplex_backend_constraint}`",
+                "`FROM ghcr.io/soliplex/soliplex-postgres:0.85`",
+                "`FROM ghcr.io/soliplex/soliplex-postgres:"
+                "${soliplex_image_tag}`",
             ),
             (
                 "haiku.rag-slim:0.96.1",
                 "haiku.rag-slim:${haiku_rag_version}",
             ),
-            # tui/constraints.txt only exists in a project that took the TUI.
+            # tui/Dockerfile only exists in a project that took the TUI.
             (
-                " (The opt-in TUI pins the same package separately, in"
-                " `tui/constraints.txt`.)",
-                '${" (The opt-in TUI pins the same package separately, in'
-                ' `tui/constraints.txt`.)" if include_tui else ""}',
+                " (The opt-in TUI's `tui/Dockerfile` builds on"
+                " `ghcr.io/soliplex/soliplex-tui` at the same tag.)",
+                "${\" (The opt-in TUI's `tui/Dockerfile` builds on"
+                ' `ghcr.io/soliplex/soliplex-tui` at the same tag.)"'
+                ' if include_tui else ""}',
             ),
         ],
     )
@@ -709,8 +717,8 @@ DERIVED = {
     "backend/environment/haiku.rag.yaml": t_backend_haiku,
     "haiku.rag/haiku.rag.yaml": t_ingester_haiku,
     "haiku.rag/Dockerfile": t_ingester_dockerfile,
-    "backend/constraints.txt": t_backend_constraints,
-    "tui/constraints.txt": t_tui_constraints,
+    "backend/Dockerfile": t_backend_dockerfile,
+    "tui/Dockerfile": t_tui_dockerfile,
     "nginx/nginx.conf": t_nginx_conf,
     "nginx/Dockerfile": t_nginx_dockerfile,
     "postgres/config/init.sh": t_init_sh,
@@ -788,8 +796,8 @@ USER_DOC_PARAMS = {
     ],
     "architecture/backend.md": [
         (
-            "soliplex >= 0.85, < 0.86",
-            "soliplex ${soliplex_backend_constraint}",
+            "FROM ghcr.io/soliplex/soliplex-postgres:0.85\n",
+            "FROM ghcr.io/soliplex/soliplex-postgres:${soliplex_image_tag}\n",
         ),
     ],
     "operations/rag.md": [
@@ -934,12 +942,11 @@ version = "0.1.0"
 requires-python = ">=3.13"
 # Host-side dependencies for driving *the stack* -- e.g. running
 # `soliplex-cli` against the Postgres backing store. The container images
-# install their own pinned deps; this file is for host-side use:
+# carry their own soliplex release (and system libpq); this file is for
+# host-side use, so it takes the self-contained 'psycopg[binary]' driver:
 #   uv sync                 # create/refresh the dev environment
 dependencies = [
-    "soliplex ${soliplex_backend_constraint}",
-    "psycopg[binary]",
-    "asyncpg",
+    "soliplex[postgres-binary] ${soliplex_dev_constraint}",
 ]
 
 # Nothing at the stack root is importable, so there is nothing to build here.
@@ -975,7 +982,7 @@ requires-python = ">=3.13"
 #   uv run pytest           # run this project's tests
 #   uv pip install -e .     # or a plain editable install
 dependencies = [
-    "soliplex ${soliplex_backend_constraint}",
+    "soliplex ${soliplex_dev_constraint}",
 ]
 
 [dependency-groups]
@@ -1224,8 +1231,8 @@ PROBE = dict(
     chunk_size=1,
     agui_db="db",
     authz_db="db2",
-    soliplex_backend_constraint="c",
-    soliplex_tui_constraint="c",
+    soliplex_image_tag="t",
+    soliplex_dev_constraint="c",
     haiku_rag_version="v",
     frontend_release_path="latest",
     docs_dir="d",
@@ -1237,12 +1244,27 @@ PROBE = dict(
 
 
 def tracked_files() -> list[str]:
+    """The working tree's files, tracked or not (minus ignored ones).
+
+    Rendering the working tree rather than the index lets a refresh pick up
+    work not yet staged: new files, and deletions (which ``--cached`` would
+    still list until they are staged)."""
     out = subprocess.check_output(
-        ["git", "ls-files", "-z", "--", ".", *EXCLUDE_PATHSPECS],
+        [
+            "git",
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "--",
+            ".",
+            *EXCLUDE_PATHSPECS,
+        ],
         cwd=REPO,
         text=True,
     )
-    return [p for p in out.split("\0") if p]
+    return sorted({p for p in out.split("\0") if p and (REPO / p).is_file()})
 
 
 def render_check(root: pathlib.Path) -> int:

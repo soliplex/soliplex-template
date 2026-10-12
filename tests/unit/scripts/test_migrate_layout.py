@@ -328,6 +328,20 @@ def test_plan_project_pyproject_uses_the_manifest(old_stack):
     ]
 
 
+def test_plan_project_pyproject_prefers_the_dev_constraint(tmp_path):
+    _write(
+        tmp_path / "pyproject.toml",
+        "[tool.soliplex-template.params]\n"
+        'soliplex_backend_constraint = ">= 0.79, < 0.80"\n'
+        'soliplex_dev_constraint = ">= 0.85, < 0.86"\n',
+    )
+
+    result = migrate_layout.plan_project_pyproject(tmp_path, "acme_widgets")
+
+    deps = tomllib.loads(result)["project"]["dependencies"]
+    assert deps == ["soliplex >= 0.85, < 0.86"]
+
+
 def test_plan_project_pyproject_defaults_without_a_manifest(tmp_path):
     result = migrate_layout.plan_project_pyproject(tmp_path, "acme_widgets")
 

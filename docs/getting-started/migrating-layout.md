@@ -142,9 +142,7 @@ version = "0.1.0"
 requires-python = ">=3.13"
 # Host-side dependencies for driving *the stack*.
 dependencies = [
-    "soliplex >= 0.85, < 0.86",
-    "psycopg[binary]",
-    "asyncpg",
+    "soliplex[postgres-binary] >= 0.85, < 0.86",
 ]
 
 # Nothing at the stack root is importable, so there is nothing to build here.
