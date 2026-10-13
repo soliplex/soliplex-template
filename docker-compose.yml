@@ -53,7 +53,12 @@ services:
     # No host port mapping: the TUI is reached only through nginx so that the
     # '--public-url' baked into the served HTML (used for static assets and
     # the websocket) stays consistent with what the browser sees.
-    command: "/app/.venv/bin/soliplex-tui-serve --backend-url http://backend:8000 --host 0.0.0.0 --port 8002 --public-url https://localhost:9443/tui"
+    command: >-
+      /app/.venv/bin/soliplex-tui-serve
+      --backend-url http://backend:8000
+      --host 0.0.0.0
+      --port 8002
+      --public-url https://localhost:9443/tui
 
   backend:
 
@@ -122,7 +127,14 @@ services:
       - "8000:8000"
 
     # Temporary: run with '--no-auth-mode'
-    command: "/app/.venv/bin/soliplex-cli serve --no-auth-mode --reload=config --host=0.0.0.0 --proxy-headers --forwarded-allow-ips=* /environment"
+    command: >-
+      /app/.venv/bin/soliplex-cli serve
+      --no-auth-mode
+      --reload=config
+      --host=0.0.0.0
+      --proxy-headers
+      --forwarded-allow-ips=*
+      /environment
 
   # One-shot dev task runner. 'profiles' keeps it out of 'docker compose up';
   # it exists for commands that need the stack's config, secrets and databases

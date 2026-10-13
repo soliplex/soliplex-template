@@ -153,14 +153,11 @@ with. (`skill_version` may be empty.)
     ```
 
     Ignore its closing advice to `docker compose up -d backend`: the stack
-    stays down until the end of the section. `remove` leaves the serve
-    command's reload mode alone, so set it back by hand, changing
-    `--reload=python` or `--reload=both` to `--reload=config` on the
-    backend's `command:` line:
-
-    ```bash
-    grep -n -- --reload= docker-compose.yml
-    ```
+    stays down until the end of the section. `remove` also takes the
+    checkout off the backend's watch list (its `--reload-dirs`), and settles
+    an older reload mode: `--reload=both` becomes `--reload=config`, while
+    `--reload=python` stays, being what turns reload on without watching the
+    config (`--reload=config` would work as well).
 
     The checkout's code would otherwise override the soliplex the rebuilt
     image installs, and the migrations would ask the wrong release. Putting
@@ -505,7 +502,7 @@ would pick up step 5's edit on the old image.
           retries: 4
     ```
 
-    It takes effect when step 10 recreates the container.
+    It takes effect when step 11 recreates the container.
 
 7. **The TUI**, if `tui/Dockerfile` exists: replace it with the one below,
    built `FROM ghcr.io/soliplex/soliplex-tui` at the same tag as the
@@ -550,7 +547,20 @@ would pick up step 5's edit on the old image.
     with `scripts/build_skill.py` gets one, stamped with the checkout's
     `HEAD`, which does not cover changes not yet committed there.
 
-10. **Tag the current backend image, then rebuild with `--pull`**, so Docker
+10. **Watch your own package.** A stack generated before the backend
+    watched its package carries no `--reload-dirs`, so an edit under
+    `src/<package>/` needs a restart. Have it watched, as a newly generated
+    stack's is:
+
+    ```bash
+    uv run <skill>/scripts/src_projects.py add <package>
+    ```
+
+    Its `PYTHONPATH` entry is already there (`unchanged`); `add` adds the
+    matching `--reload-dirs=/app/src/<package>/src` to the serve command.
+    Ignore its advice to bring the backend up: step 11 does that.
+
+11. **Tag the current backend image, then rebuild with `--pull`**, so Docker
     fetches the release image, and bring the stack up:
 
     ```bash
@@ -565,7 +575,8 @@ would pick up step 5's edit on the old image.
 
 ## 3. Dev mode
 
-A stack that ran a `soliplex` checkout in dev mode can put it back now.
+A stack that ran a `soliplex` checkout in dev mode can put it back now;
+`add` puts it on the path and watches it, like any other project.
 Check out the release the image runs first: the checkout supplies only
 soliplex's *code*, and its dependencies still come from the image, so a
 checkout far from the image's release fails at import time.
@@ -573,7 +584,7 @@ checkout far from the image's release fails at import time.
 ```bash
 docker compose run --rm --no-deps backend soliplex-cli --version
 git -C src/soliplex checkout v0.85.3     # the version reported above
-uv run <skill>/scripts/src_projects.py add soliplex --reload-python
+uv run <skill>/scripts/src_projects.py add soliplex
 docker compose up -d backend
 ```
 

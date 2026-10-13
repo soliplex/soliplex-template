@@ -588,8 +588,9 @@ uv run scripts/src_projects.py remove <name>         # off the path; checkout un
 `clone` picks the directory name from the URL (`--name` overrides), then
 appends the checkout's package directory to the backend's `PYTHONPATH` in
 `docker-compose.yml` — with the trailing `/src` only when the checkout uses a
-`src/` layout, which it detects. Nothing is needed for git: `.gitignore`
-already ignores everything under `src/` except the stack's own project.
+`src/` layout, which it detects — and a matching `--reload-dirs` to the
+backend's serve command. Nothing is needed for git: `.gitignore` already
+ignores everything under `src/` except the stack's own project.
 
 **It then checks the checkout's dependencies.** `PYTHONPATH` makes source
 importable; it does not install anything. So `add`/`clone` read the checkout's
@@ -604,13 +605,18 @@ reporting one of three outcomes:
 - not checkable (no docker, or the image is not built) → it says so and lists
   what the checkout declares, rather than guessing.
 
-**Dev-mode (#75).** A checkout that provides the `soliplex` package is the one
-case where the backend's `--reload=python` earns its keep: it watches
-`soliplex.__path__`, which is then the checkout. `add`/`clone` notice this and
-say so; pass `--reload-python` to act on it, switching the serve command to
-`--reload=both` so edits to the checkout restart the server. It is honoured
-even when the path entry was already there, so a re-run can set just the
-reload mode.
+**Hot reload (#209).** The backend's serve command carries one `--reload-dirs`
+per `PYTHONPATH` entry — the stack's own package from generation — and
+`add`/`clone`/`remove` keep the two in step, so editing any project on the path
+restarts the server; `list` shows a `watched` column. A `soliplex` checkout
+(dev mode) is no special case. Re-running `add` on an entry already on the path
+adds a missing `--reload-dirs`: that is how a stack generated before this gets
+its own package watched (`add <package>`). They also settle an older reload
+mode: `--reload=both` becomes `--reload=config`, with a warning;
+`--reload=python` is kept, being what turns reload on without watching the
+config, with a note that `--reload=config` works too. A backend serving with no
+`--reload` at all watches nothing: they edit only `PYTHONPATH`, and say so —
+never turn reload on themselves.
 
 Pass `--no-dep-check` to skip that container round-trip, `--dry-run` to report
 without writing, and `--no-path` to `clone` when the user wants the checkout

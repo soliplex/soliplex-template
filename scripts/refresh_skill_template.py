@@ -159,9 +159,27 @@ def t_compose(text: str) -> str:
                 "--public-url https://localhost:9443/tui",
                 "--public-url https://${server_name}:${nginx_https}/tui",
             ),
+            # The serve command is a folded ('>-') scalar, one flag per line,
+            # so auth mode drops the whole '--no-auth-mode' line. The control
+            # lines are consumed by Mako: a no-auth stack renders exactly the
+            # exemplar.
             (
-                "soliplex-cli serve --no-auth-mode --reload=config",
-                "soliplex-cli serve ${backend_auth_flag}--reload=config",
+                "      /app/.venv/bin/soliplex-cli serve\n"
+                "      --no-auth-mode\n",
+                "      /app/.venv/bin/soliplex-cli serve\n"
+                "% if backend_auth_flag:\n"
+                "      --no-auth-mode\n"
+                "% endif\n",
+            ),
+            # Watch this project's own package as well as the config, so an
+            # edit to its tools or views restarts the server. One
+            # '--reload-dirs' line per PYTHONPATH entry (injected below):
+            # src_projects.py adds and removes the lines for further project
+            # directories along with their PYTHONPATH entries.
+            (
+                "      --reload=config\n",
+                "      --reload=config\n"
+                "      --reload-dirs=/app/src/${package_name}/src\n",
             ),
             # Same parameter as the ingester Dockerfile's FROM: compose tags
             # the locally built image with this name, so the two must agree.
