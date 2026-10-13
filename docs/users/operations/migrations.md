@@ -10,6 +10,13 @@ icon: lucide/database-backup
     project ships its own copy of this page without this note.
 <!-- endsite-only -->
 
+<!-- site-only -->
+!!! tip "Upgrading across template releases"
+    These migrations are one step of bringing an older stack up to date;
+    [Upgrading an existing stack](../../getting-started/upgrading-stack.md)
+    lists the by-hand changes to its files that go with them.
+<!-- endsite-only -->
+
 ## The Soliplex databases (Postgres)
 
 The backend keeps two databases, `soliplex_agui` (thread persistence) and

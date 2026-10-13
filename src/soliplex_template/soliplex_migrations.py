@@ -59,6 +59,12 @@ BOOTSTRAP_URL = (
 )
 # Where the fetched bootstrap script lands inside the throwaway container.
 BOOTSTRAP_PATH = "/tmp/bootstrap_alembic_version.py"
+# Fetches it with the image's own Python: the soliplex release image carries
+# no curl. 'urlretrieve' raises on an HTTP error, so a bad tag fails the step.
+FETCH_SCRIPT = (
+    "import sys, urllib.request; "
+    "urllib.request.urlretrieve(sys.argv[1], sys.argv[2])"
+)
 # The two writing steps, as named in failure messages.
 BOOTSTRAP_STEP = "bootstrap_alembic_version.py"
 UPGRADE_STEP = "soliplex-cli database upgrade"
@@ -354,7 +360,7 @@ def bootstrap_argv(
     """
     script = (
         'url="$1"; shift; '
-        f'curl -fsSL "$url" -o {BOOTSTRAP_PATH} && '
+        f"{PYTHON} -c '{FETCH_SCRIPT}' \"$url\" {BOOTSTRAP_PATH} && "
         f'exec {PYTHON} {BOOTSTRAP_PATH} "$@"'
     )
     args = ["--installation-path", INSTALLATION_PATH]

@@ -351,6 +351,9 @@ def test_bootstrap_argv(docker, tmp_path, dry_run, tail):
     sh, dash_c, script, arg0, url, *rest = argv[len(prefix) :]
     assert (sh, dash_c, arg0) == ("sh", "-c", "bootstrap")
     assert "0.82.1" not in script
+    # Fetched with the image's Python: the release image has no curl.
+    assert f"{sm.PYTHON} -c '{sm.FETCH_SCRIPT}'" in script
+    assert "curl" not in script
     assert url == (
         "https://raw.githubusercontent.com/soliplex/soliplex/"
         "v0.82.1/scripts/bootstrap_alembic_version.py"

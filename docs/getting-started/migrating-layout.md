@@ -33,6 +33,11 @@ Nothing forces an existing stack to convert — the old layout keeps working.
 Convert when you want to clone a second repo (a `soliplex` checkout, a
 third-party dependency) into the stack without ignore rules per clone.
 
+!!! note "Not the only upgrade"
+    This page covers the `src/` layout alone. For the dependency and image
+    changes in later template releases, see
+    [Upgrading an existing stack](upgrading-stack.md).
+
 ## Use the script
 
 Do not do this by hand. The skill ships `scripts/migrate_layout.py`, which
