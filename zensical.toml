@@ -117,6 +117,14 @@ pygments_lang_class = true
 [project.markdown_extensions.pymdownx.magiclink]
 [project.markdown_extensions.pymdownx.mark]
 [project.markdown_extensions.pymdownx.smartsymbols]
+# Lets a repo-only page include a repo file verbatim, e.g. a code block of
+# '--8<-- "backend/Dockerfile"', so the page cannot drift from the file;
+# check_paths makes a missing file fail the build. Not for docs/users/: those
+# pages are also derived into generated stacks, which would ship the literal
+# '--8<--' line.
+[project.markdown_extensions.pymdownx.snippets]
+base_path = ["."]
+check_paths = true
 [project.markdown_extensions.pymdownx.superfences]
 custom_fences = [
   { name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" },
