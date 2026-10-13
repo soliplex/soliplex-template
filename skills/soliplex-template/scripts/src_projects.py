@@ -29,8 +29,8 @@ trailing ``/src`` for the checkout's layout. This does both::
 ``PYTHONPATH`` makes a checkout's *source* importable; it does not install
 its dependencies, which the backend image resolves at build time. So ``add``
 and ``clone`` read the checkout's declared runtime dependencies and check them
-against what the backend image actually has, reporting any that would fail at
-import time and what to do about them.
+against what the backend image actually has -- missing, or installed at a
+version the checkout does not accept -- reporting what to do about each.
 
 Each project on the path is also watched: the backend's serve command carries
 one ``--reload-dirs`` flag per ``PYTHONPATH`` entry, which ``add``, ``clone``
@@ -40,6 +40,7 @@ and ``remove`` keep in step, so editing any of them restarts the server.
 from __future__ import annotations
 
 import argparse
+import enum
 import json
 import pathlib
 import re
@@ -47,6 +48,7 @@ import shutil
 import subprocess
 import sys
 import tomllib
+import typing
 
 from soliplex_plumber import rooms
 
@@ -162,21 +164,30 @@ def container_path(project: pathlib.Path, name: str) -> str:
 # --------------------------------------------------------------------------
 # Dependency check: PYTHONPATH makes source importable, not installed
 # --------------------------------------------------------------------------
-# The leading distribution name of a PEP 508 requirement ("httpx[http2]>=0.27",
-# "pkg ; python_version < '3.13'", "pkg @ https://..." all yield "pkg").
-_REQ_NAME = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
+class DependencyStatus(enum.StrEnum):
+    """How the backend image meets one of a checkout's requirements."""
+
+    SATISFIED = enum.auto()  # installed, at a version the requirement accepts
+    MISSING = enum.auto()  # not installed at all
+    CONFLICT = enum.auto()  # installed, at a version the requirement rejects
 
 
-def _normalize(name: str) -> str:
-    """PEP 503 normalization, so 'Foo_Bar' and 'foo-bar' compare equal."""
-    return re.sub(r"[-_.]+", "-", name).lower()
+class DependencyCheck(typing.NamedTuple):
+    requirement: str
+    status: DependencyStatus
+    installed: str | None  # the image's version; None when MISSING
 
 
 def declared_dependencies(project: pathlib.Path, name: str) -> list[str]:
-    """Runtime distribution names declared by the checkout at ``src/<name>``.
+    """The runtime requirements declared by the checkout at ``src/<name>``.
 
     Only ``[project].dependencies`` -- dependency *groups* are the checkout's
-    own dev tooling, which the backend never imports.
+    own dev tooling, which the backend never imports. Only these *direct*
+    requirements are checked: a conflict deeper in the checkout's tree shows
+    up when it is imported. To catch one before the backend does, import the
+    checkout in the backend's environment: see "Checking it in the backend's
+    environment" in the stack's docs/custom-package.md, or
+    https://soliplex.github.io/soliplex-template/users/custom-package/#checking-it-in-the-backends-environment
     """
     pyproject = project / "src" / name / "pyproject.toml"
     if not pyproject.is_file():
@@ -185,25 +196,51 @@ def declared_dependencies(project: pathlib.Path, name: str) -> list[str]:
         data = tomllib.loads(pyproject.read_text())
     except tomllib.TOMLDecodeError:
         return []
-    names = []
-    for dep in data.get("project", {}).get("dependencies", []):
-        match = _REQ_NAME.match(dep) if isinstance(dep, str) else None
-        if match:
-            names.append(match.group(1))
-    return names
+    return [
+        dep.strip()
+        for dep in data.get("project", {}).get("dependencies", [])
+        if isinstance(dep, str) and dep.strip()
+    ]
 
 
-# Listing the backend image's own distributions, from inside it. '--no-deps'
-# keeps postgres and friends out of it; this is a read-only one-off container,
-# the same shape soliplex_config.py and rag_db.py use.
-_LIST_DISTS = (
-    "import importlib.metadata as m, json; "
-    "print(json.dumps(sorted(d.name for d in m.distributions() if d.name)))"
-)
+# Run inside the backend image, which is where the requirements have to hold:
+# each one's environment marker is evaluated for the image's Python, and its
+# specifier against the version the image has installed. 'packaging' is one of
+# soliplex's own dependencies, so the image always has it. A requirement it
+# cannot parse is left out, as is one whose marker excludes this environment.
+# Prints one '[requirement, status, installed version]' record per requirement.
+_CHECK_DEPS = """\
+import importlib.metadata as metadata, json, sys
+from packaging import requirements
+records = []
+for text in json.loads(sys.argv[1]):
+    try:
+        req = requirements.Requirement(text)
+    except requirements.InvalidRequirement:
+        continue
+    if req.marker is not None and not req.marker.evaluate({"extra": ""}):
+        continue
+    try:
+        version = metadata.version(req.name)
+    except metadata.PackageNotFoundError:
+        records.append([text, "missing", None])
+        continue
+    ok = req.specifier.contains(version, prereleases=True)
+    records.append([text, "satisfied" if ok else "conflict", version])
+print(json.dumps(records))
+"""
 
 
-def backend_distributions(project: pathlib.Path) -> set[str] | None:
-    """Return what the backend image has installed, or None if unknowable."""
+def backend_check(
+    project: pathlib.Path, requirements: list[str]
+) -> list[DependencyCheck] | None:
+    """Check ``requirements`` inside the backend image; None if unknowable.
+
+    A one-off container ('--no-deps' keeps postgres and friends out of it),
+    the same shape soliplex_config.py and rag_db.py use. No docker, an image
+    that is not built, or one that cannot run the check all come back as
+    None, never as a guess.
+    """
     if shutil.which("docker") is None:
         return None
     result = subprocess.run(
@@ -216,7 +253,8 @@ def backend_distributions(project: pathlib.Path) -> set[str] | None:
             "backend",
             "/app/.venv/bin/python",
             "-c",
-            _LIST_DISTS,
+            _CHECK_DEPS,
+            json.dumps(requirements),
         ],
         cwd=project,
         capture_output=True,
@@ -228,28 +266,28 @@ def backend_distributions(project: pathlib.Path) -> set[str] | None:
     if not lines:
         return None
     try:
-        names = json.loads(lines[-1])
+        records = json.loads(lines[-1])
     except json.JSONDecodeError:
         return None
-    return {_normalize(name) for name in names}
+    return [
+        DependencyCheck(text, DependencyStatus(status), installed)
+        for text, status, installed in records
+    ]
 
 
-def unsatisfied_dependencies(
+def check_dependencies(
     project: pathlib.Path, name: str
-) -> tuple[list[str], bool]:
-    """Return ``(names the backend image lacks, whether it could be checked)``.
+) -> tuple[list[str], list[DependencyCheck] | None]:
+    """Return ``(declared requirements, their checks or None)`` for a checkout.
 
-    An unverifiable check (no docker, image not built, compose refused) is
-    reported as such rather than guessed at: the caller lists the declared
-    dependencies instead of claiming they are missing.
+    The checks are None when the backend image could not be asked; the caller
+    then lists what the checkout declares rather than claiming anything is
+    missing.
     """
     declared = declared_dependencies(project, name)
     if not declared:
-        return [], True
-    installed = backend_distributions(project)
-    if installed is None:
-        return declared, False
-    return [dep for dep in declared if _normalize(dep) not in installed], True
+        return [], []
+    return declared, backend_check(project, declared)
 
 
 # --------------------------------------------------------------------------
@@ -478,6 +516,9 @@ def _add_entry(
     return path, verb, notes, changed
 
 
+_INDENT = " " * 16
+
+
 def _report_dependencies(project: pathlib.Path, name: str, skip: bool) -> bool:
     """Report the checkout's dependencies against the backend image.
 
@@ -487,34 +528,59 @@ def _report_dependencies(project: pathlib.Path, name: str, skip: bool) -> bool:
     if skip:
         return False
 
-    missing, checked = unsatisfied_dependencies(project, name)
+    declared, checks = check_dependencies(project, name)
 
-    if checked and not missing:
-        print(
-            f"  dependencies: every runtime dependency src/{name} declares is "
-            "already\n                in the backend image."
-        )
-        return False
-
-    if not checked:
+    if checks is None:
         print(
             "  dependencies: could not check against the backend image "
-            "(no docker, or\n                the image is not built). "
+            f"(no docker, or\n{_INDENT}the image is not built). "
             f"src/{name} declares:\n"
-            + "".join(f"                  - {dep}\n" for dep in missing)
-            + "                Make sure the backend image has these before "
+            + "".join(f"{_INDENT}  - {dep}\n" for dep in declared)
+            + f"{_INDENT}Make sure the backend image has these before "
             "importing it."
         )
         return False
 
-    print(
-        "  dependencies: the backend image is MISSING these, which "
-        f"src/{name}\n                declares and will fail to import:\n"
-        + "".join(f"                  - {dep}\n" for dep in missing)
-        + "                PYTHONPATH does not install anything, so this "
-        "needs a rebuild."
-    )
-    return True
+    def having(status: DependencyStatus) -> list[DependencyCheck]:
+        return [check for check in checks if check.status is status]
+
+    missing = having(DependencyStatus.MISSING)
+    conflicts = having(DependencyStatus.CONFLICT)
+
+    if not missing and not conflicts:
+        print(
+            f"  dependencies: every runtime dependency src/{name} declares is "
+            f"already\n{_INDENT}in the backend image, at a version it accepts."
+        )
+        return False
+
+    if missing:
+        print(
+            "  dependencies: the backend image is MISSING these, which "
+            f"src/{name}\n{_INDENT}declares and will fail to import:\n"
+            + "".join(f"{_INDENT}  - {c.requirement}\n" for c in missing)
+            + f"{_INDENT}PYTHONPATH does not install anything, so this "
+            "needs a rebuild."
+        )
+    if conflicts:
+        print(
+            f"  dependencies: CONFLICT: src/{name} rejects the version the "
+            f"backend\n{_INDENT}image has of these:\n"
+            + "".join(
+                f"{_INDENT}  - {c.requirement} (the image has {c.installed})\n"
+                for c in conflicts
+            )
+            + f"{_INDENT}backend/requirements.txt cannot fix this: the "
+            f"image's own\n{_INDENT}versions are frozen as constraints. "
+            f"Instead:\n"
+            f"{_INDENT}  1. adapt src/{name} to the image's versions "
+            f"(relax its\n{_INDENT}     requirement, port its code);\n"
+            f"{_INDENT}  2. pick a soliplex image tag whose release has "
+            f"versions it\n{_INDENT}     accepts (the FROM line in "
+            "backend/Dockerfile);\n"
+            f"{_INDENT}  3. customize backend/Dockerfile."
+        )
+    return bool(missing)
 
 
 def _report_added(

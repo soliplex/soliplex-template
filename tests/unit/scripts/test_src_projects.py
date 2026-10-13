@@ -15,6 +15,7 @@ import importlib.util
 import json
 import pathlib
 import subprocess
+import sys
 
 import pytest
 import yaml
@@ -129,16 +130,27 @@ def no_docker(monkeypatch):
     monkeypatch.setattr(src_projects.shutil, "which", lambda _name: None)
 
 
-def _stub_dists(monkeypatch, names):
-    """Stub the one-off backend container to report ``names`` installed."""
+def _stub_check(monkeypatch, records):
+    """Stub the one-off backend container to print ``records``."""
     monkeypatch.setattr(src_projects.shutil, "which", lambda _n: "/bin/docker")
 
     def fake_run(*_args, **_kwargs):
         return subprocess.CompletedProcess(
-            [], 0, stdout=json.dumps(names) + "\n", stderr=""
+            [], 0, stdout=json.dumps(records) + "\n", stderr=""
         )
 
     monkeypatch.setattr(src_projects.subprocess, "run", fake_run)
+
+
+def _stub_compose(monkeypatch, returncode, stdout):
+    monkeypatch.setattr(src_projects.shutil, "which", lambda _n: "/d")
+    monkeypatch.setattr(
+        src_projects.subprocess,
+        "run",
+        lambda *a, **k: subprocess.CompletedProcess(
+            [], returncode, stdout, ""
+        ),
+    )
 
 
 # --------------------------------------------------------------------------
@@ -199,28 +211,26 @@ def test_container_path_for_a_flat_layout_checkout(stack):
 
 
 # --------------------------------------------------------------------------
-# Dependency inspection
+# Dependency inspection: soliplex-template#210
 # --------------------------------------------------------------------------
 @pytest.mark.parametrize(
-    "requirement,expected",
+    "requirement",
     [
-        ("httpx", "httpx"),
-        ("httpx[http2]>=0.27", "httpx"),
-        ("pkg ; python_version < '3.13'", "pkg"),
-        ("pkg @ https://example.com/pkg.whl", "pkg"),
+        "httpx",
+        "httpx[http2]>=0.27",
+        "pkg ; python_version < '3.13'",
+        "pkg @ https://example.com/pkg.whl",
     ],
 )
-def test_declared_dependencies_parses_requirement_forms(
-    stack, requirement, expected
-):
+def test_declared_dependencies_keeps_whole_requirements(stack, requirement):
     _write(
         stack / "src/dep/pyproject.toml",
-        f'[project]\nname = "dep"\ndependencies = ["{requirement}"]\n',
+        f'[project]\nname = "dep"\ndependencies = ["  {requirement} "]\n',
     )
 
     result = src_projects.declared_dependencies(stack, "dep")
 
-    assert result == [expected]
+    assert result == [requirement]
 
 
 def test_declared_dependencies_without_a_pyproject(stack):
@@ -239,10 +249,10 @@ def test_declared_dependencies_with_unparseable_toml(stack):
     assert result == []
 
 
-def test_declared_dependencies_skips_non_string_entries(stack):
+def test_declared_dependencies_skips_non_string_and_blank_entries(stack):
     _write(
         stack / "src/odd/pyproject.toml",
-        '[project]\nname = "odd"\ndependencies = ["httpx", 3]\n',
+        '[project]\nname = "odd"\ndependencies = ["httpx", 3, "  "]\n',
     )
 
     result = src_projects.declared_dependencies(stack, "odd")
@@ -250,87 +260,115 @@ def test_declared_dependencies_skips_non_string_entries(stack):
     assert result == ["httpx"]
 
 
-def test_backend_distributions_without_docker(stack, no_docker):
-    result = src_projects.backend_distributions(stack)
+def test_dependency_status_values_are_the_wire_format():
+    result = [str(status) for status in src_projects.DependencyStatus]
 
-    assert result is None
-
-
-def test_backend_distributions_normalizes_names(stack, monkeypatch):
-    _stub_dists(monkeypatch, ["Foo_Bar", "httpx"])
-
-    result = src_projects.backend_distributions(stack)
-
-    assert result == {"foo-bar", "httpx"}
+    assert result == ["satisfied", "missing", "conflict"]
 
 
-def test_backend_distributions_when_compose_fails(stack, monkeypatch):
-    monkeypatch.setattr(src_projects.shutil, "which", lambda _n: "/d")
-    monkeypatch.setattr(
-        src_projects.subprocess,
-        "run",
-        lambda *a, **k: subprocess.CompletedProcess([], 1, "", "boom"),
+# The container-side script, run here with this environment's own Python
+# (which has 'packaging', and 'pytest' installed): the real classification
+# logic, not a stub of it.
+@pytest.mark.parametrize(
+    "requirement, expected",
+    [
+        ("pytest", "satisfied"),
+        ("PyTest>=1", "satisfied"),
+        ("pytest<1", "conflict"),
+        ("no-such-dist-for-soliplex-template-tests", "missing"),
+        # Left out: a marker excluding this environment, an extra-only
+        # requirement, and one that does not parse.
+        ("pytest ; python_version < '3'", None),
+        ("pytest ; extra == 'dev'", None),
+        ("not a requirement!!", None),
+    ],
+)
+def test_check_script_classifies_each_requirement(requirement, expected):
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            src_projects._CHECK_DEPS,
+            json.dumps([requirement]),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
     )
 
-    result = src_projects.backend_distributions(stack)
-
-    assert result is None
-
-
-def test_backend_distributions_with_no_output(stack, monkeypatch):
-    monkeypatch.setattr(src_projects.shutil, "which", lambda _n: "/d")
-    monkeypatch.setattr(
-        src_projects.subprocess,
-        "run",
-        lambda *a, **k: subprocess.CompletedProcess([], 0, "\n", ""),
+    records = json.loads(result.stdout)
+    assert [status for _req, status, _installed in records] == (
+        [expected] if expected else []
     )
 
-    result = src_projects.backend_distributions(stack)
+
+def test_backend_check_without_docker(stack, no_docker):
+    result = src_projects.backend_check(stack, ["httpx"])
 
     assert result is None
 
 
-def test_backend_distributions_with_unparseable_output(stack, monkeypatch):
-    monkeypatch.setattr(src_projects.shutil, "which", lambda _n: "/d")
-    monkeypatch.setattr(
-        src_projects.subprocess,
-        "run",
-        lambda *a, **k: subprocess.CompletedProcess([], 0, "not json\n", ""),
+@pytest.mark.parametrize(
+    "returncode, stdout",
+    [(1, ""), (0, "\n"), (0, "not json\n")],
+    ids=["compose-fails", "no-output", "unparseable"],
+)
+def test_backend_check_unknowable(stack, monkeypatch, returncode, stdout):
+    _stub_compose(monkeypatch, returncode, stdout)
+
+    result = src_projects.backend_check(stack, ["httpx"])
+
+    assert result is None
+
+
+def test_backend_check_reads_the_records(stack, monkeypatch):
+    _stub_check(
+        monkeypatch,
+        [
+            ["httpx>=0.27", "satisfied", "0.28.1"],
+            ["pydantic<2", "conflict", "2.13.4"],
+        ],
     )
 
-    result = src_projects.backend_distributions(stack)
+    result = src_projects.backend_check(stack, ["httpx>=0.27", "pydantic<2"])
 
-    assert result is None
+    assert result == [
+        src_projects.DependencyCheck(
+            "httpx>=0.27", src_projects.DependencyStatus.SATISFIED, "0.28.1"
+        ),
+        src_projects.DependencyCheck(
+            "pydantic<2", src_projects.DependencyStatus.CONFLICT, "2.13.4"
+        ),
+    ]
 
 
-def test_unsatisfied_dependencies_none_declared(stack):
+def test_check_dependencies_none_declared(stack):
     (stack / "src/bare").mkdir()
 
-    result = src_projects.unsatisfied_dependencies(stack, "bare")
+    result = src_projects.check_dependencies(stack, "bare")
 
-    assert result == ([], True)
-
-
-def test_unsatisfied_dependencies_all_present(checkout, monkeypatch):
-    _stub_dists(monkeypatch, ["httpx"])
-
-    result = src_projects.unsatisfied_dependencies(checkout, "widgetlib")
-
-    assert result == ([], True)
+    assert result == ([], [])
 
 
-def test_unsatisfied_dependencies_reports_the_gap(checkout, monkeypatch):
-    _stub_dists(monkeypatch, ["soliplex"])
+def test_check_dependencies_uncheckable(checkout, no_docker):
+    result = src_projects.check_dependencies(checkout, "widgetlib")
 
-    result = src_projects.unsatisfied_dependencies(checkout, "widgetlib")
-
-    assert result == (["httpx>=0.27".split(">")[0]], True)
+    assert result == (["httpx>=0.27"], None)
 
 
-def test_unsatisfied_dependencies_uncheckable(checkout, no_docker):
-    result = src_projects.unsatisfied_dependencies(checkout, "widgetlib")
+def test_check_dependencies_checked(checkout, monkeypatch):
+    _stub_check(monkeypatch, [["httpx>=0.27", "missing", None]])
 
-    assert result == (["httpx"], False)
+    result = src_projects.check_dependencies(checkout, "widgetlib")
+
+    assert result == (
+        ["httpx>=0.27"],
+        [
+            src_projects.DependencyCheck(
+                "httpx>=0.27", src_projects.DependencyStatus.MISSING, None
+            )
+        ],
+    )
 
 
 # --------------------------------------------------------------------------
@@ -598,7 +636,7 @@ def test_add_requires_the_directory(stack):
 def test_add_reports_missing_dependencies_and_a_rebuild(
     checkout, monkeypatch, capsys
 ):
-    _stub_dists(monkeypatch, ["soliplex"])
+    _stub_check(monkeypatch, [["httpx>=0.27", "missing", None]])
 
     result = src_projects.main(
         ["add", "widgetlib", "--project-dir", str(checkout)]
@@ -607,12 +645,12 @@ def test_add_reports_missing_dependencies_and_a_rebuild(
     assert result == 0
     out = capsys.readouterr().out
     assert "MISSING" in out
-    assert "- httpx" in out
+    assert "- httpx>=0.27" in out
     assert "docker compose build backend" in out
 
 
-def test_add_reports_satisfied_dependencies(checkout, monkeypatch, capsys):
-    _stub_dists(monkeypatch, ["httpx"])
+def test_add_reports_a_conflict_and_its_fixes(checkout, monkeypatch, capsys):
+    _stub_check(monkeypatch, [["httpx>=0.27", "conflict", "0.20.0"]])
 
     result = src_projects.main(
         ["add", "widgetlib", "--project-dir", str(checkout)]
@@ -620,7 +658,45 @@ def test_add_reports_satisfied_dependencies(checkout, monkeypatch, capsys):
 
     assert result == 0
     out = capsys.readouterr().out
-    assert "already" in out
+    assert "CONFLICT" in out
+    assert "- httpx>=0.27 (the image has 0.20.0)" in out
+    assert "cannot fix this" in out
+    assert "1. adapt src/widgetlib" in out
+    # Adding to requirements.txt and rebuilding is not the fix for this.
+    assert "docker compose build backend" not in out
+
+
+def test_add_reports_missing_and_conflicting_together(
+    checkout, monkeypatch, capsys
+):
+    _stub_check(
+        monkeypatch,
+        [
+            ["httpx>=0.27", "missing", None],
+            ["pydantic<2", "conflict", "2.13.4"],
+        ],
+    )
+
+    result = src_projects.main(
+        ["add", "widgetlib", "--project-dir", str(checkout)]
+    )
+
+    assert result == 0
+    out = capsys.readouterr().out
+    assert out.index("MISSING") < out.index("CONFLICT")
+    assert "docker compose build backend" in out
+
+
+def test_add_reports_satisfied_dependencies(checkout, monkeypatch, capsys):
+    _stub_check(monkeypatch, [["httpx>=0.27", "satisfied", "0.28.1"]])
+
+    result = src_projects.main(
+        ["add", "widgetlib", "--project-dir", str(checkout)]
+    )
+
+    assert result == 0
+    out = capsys.readouterr().out
+    assert "at a version it accepts" in out
     assert "docker compose build backend" not in out
 
 
@@ -632,7 +708,7 @@ def test_add_reports_an_unverifiable_check(checkout, no_docker, capsys):
     assert result == 0
     out = capsys.readouterr().out
     assert "could not check" in out
-    assert "- httpx" in out
+    assert "- httpx>=0.27" in out
 
 
 # --------------------------------------------------------------------------
