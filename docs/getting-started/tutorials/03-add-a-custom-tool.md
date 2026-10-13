@@ -43,9 +43,11 @@ tools:
   - tool_name: "<package>.tools.farewell"
 ```
 
-The backend runs with `--reload=config`, so saving this config change restarts
-it — which also re-imports your edited `tools.py`, picking up `farewell`. (If it
-doesn't appear, `docker compose restart backend`.)
+The backend watches both its config (`--reload=config`) and your package (a
+`--reload-dirs` flag on its serve command), so saving either file restarts it,
+picking up `farewell`. (If it doesn't appear, `docker compose restart backend`.
+A stack generated before the backend watched its package needs
+`uv run <skill>/scripts/src_projects.py add <package>` once to start.)
 
 ## 3. Test it in the room
 

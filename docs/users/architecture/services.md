@@ -34,7 +34,10 @@ Terminates TLS on host port 9443 with a self-signed cert.
 
 Runs `soliplex-cli serve /environment`, from an image built on the published
 soliplex release image (see [Backend image & dependencies](backend.md)). The `--reload=config`
-flag means edits under `backend/environment/` take effect without a rebuild.
+flag means edits under `backend/environment/` take effect without a rebuild,
+and one `--reload-dirs` flag per project on its `PYTHONPATH` (this project's
+own package, plus any added with `src_projects.py`) restarts it when their
+code changes.
 
 ## soliplex-dev
 

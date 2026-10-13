@@ -171,6 +171,16 @@ def t_compose(text: str) -> str:
                 "      --no-auth-mode\n"
                 "% endif\n",
             ),
+            # Watch this project's own package as well as the config, so an
+            # edit to its tools or views restarts the server. One
+            # '--reload-dirs' line per PYTHONPATH entry (injected below):
+            # src_projects.py adds and removes the lines for further project
+            # directories along with their PYTHONPATH entries.
+            (
+                "      --reload=config\n",
+                "      --reload=config\n"
+                "      --reload-dirs=/app/src/${package_name}/src\n",
+            ),
             # Same parameter as the ingester Dockerfile's FROM: compose tags
             # the locally built image with this name, so the two must agree.
             (

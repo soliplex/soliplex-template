@@ -6,7 +6,7 @@ icon: lucide/refresh-cw
 
 Run your stack against a **checkout** of Soliplex itself instead of the pinned
 release, so an edit to the backend source restarts the server the way an edit
-under `backend/environment/` already does. This builds on the core walkthroughs
+to your own package or under `backend/environment/` already does. This builds on the core walkthroughs
 — [First steps](01-first-steps.md) through
 [Add a custom tool](03-add-a-custom-tool.md) — so have a stack you have brought
 up at least once.
@@ -15,8 +15,10 @@ up at least once.
 
 - A generated stack, up and working (the three core tutorials).
 - A `soliplex-template` skill build of **v0.16 or later** — that release
-  introduced both the `src/` project layout and `src_projects.py`. Ask your
-  agent to upgrade it, or:
+  introduced both the `src/` project layout and `src_projects.py` — and
+  recent enough to watch every project on the path: its
+  `src_projects.py list` shows a `watched` column. Ask your agent to upgrade
+  it, or:
 
     ```bash
     uv run <skill>/scripts/skill_versions.py list
@@ -52,31 +54,31 @@ up at least once.
 
 Every entry under a stack's `src/` is a project directory, and the checkout
 becomes a sibling of your own project. Ask your agent to *"clone the soliplex
-backend into this stack's `src/` and turn on Python reload"*. The skill runs:
+backend into this stack's `src/`"*. The skill runs:
 
 ```bash
-uv run <skill>/scripts/src_projects.py clone \
-    --reload-python https://github.com/soliplex/soliplex
+uv run <skill>/scripts/src_projects.py clone https://github.com/soliplex/soliplex
 ```
 
 That does three things: clones the repo to `src/soliplex/`, appends
 `/app/src/soliplex/src` to the backend's `PYTHONPATH` in `docker-compose.yml`,
-and switches the serve command from `--reload=config` to `--reload=both`. It
-reports what it did:
+and adds a matching `--reload-dirs=/app/src/soliplex/src` to the backend's
+serve command. It reports what it did:
 
 ```text
 cloned https://github.com/soliplex/soliplex into src/soliplex
 added: /app/src/soliplex/src
   dependencies: every runtime dependency src/soliplex declares is already
                 in the backend image.
-  reload: backend serve flag '--reload=config' -> '--reload=both'; edits under
-          the checkout now restart the server.
+  reload: watching /app/src/soliplex/src ('--reload-dirs')
 ```
 
-`--reload=python` watches `soliplex.__path__`, which is why the flag only earns
-its keep once a checkout is on the path. Without `--reload-python` the script
-notices the checkout provides `soliplex` and offers the switch rather than
-making it for you.
+Every project on the backend's path is watched the same way, your own package
+from the start, so nothing here is specific to Soliplex. On an older stack it
+also settles the reload mode: `--reload=both` becomes `--reload=config`, since
+the checkout's `--reload-dirs` now does what `both` added; `--reload=python`
+stays, being what turns reload on without watching the config, and the script
+notes that `--reload=config` would work as well.
 
 Nothing is needed for git: `.gitignore` already ignores everything under `src/`
 except the stack's own project, so the checkout stays part of its own repo.
@@ -124,8 +126,9 @@ docker compose logs -f backend
 ```
 
 Then edit any module under `src/soliplex/src/soliplex/` on the host. The
-reloader notices the change and restarts the server, and the next request runs
-your edited code — no rebuild, no `docker compose up`.
+reloader, watching the checkout through its `--reload-dirs`, notices the change
+and restarts the server, and the next request runs your edited code — no
+rebuild, no `docker compose up`.
 
 The mount is read-only for the backend and the container runs as the
 `PUID:PGID` from `.env`, so edit on the host; the backend only reads.
@@ -189,21 +192,19 @@ image & dependencies](../../users/architecture/backend.md).
 
 ## 7. Going back to the release
 
-Take the checkout off the import path — it leaves the clone itself untouched:
+Take the checkout off the import path and the watch list — it leaves the
+clone itself untouched:
 
 ```bash
 uv run <skill>/scripts/src_projects.py remove soliplex
 ```
 
-Then set the serve command in `docker-compose.yml` back to `--reload=config`
-(nothing does that for you) and `docker compose up -d backend`. At any point,
-`src_projects.py list` shows which projects are under `src/` and which are on
-the path.
+Then `docker compose up -d backend`. At any point, `src_projects.py list` shows
+which projects are under `src/`, which are on the path, and which are watched.
 
 ## Where next
 
 The same mechanism works for any repo, not just Soliplex — a library you depend
-on, a tool you are patching — minus the reload flag, which is specific to the
-`soliplex` package. See
+on, a tool you are patching — hot reload included. See
 [Custom Python package](../../users/custom-package.md) for that, and
 [Next steps](04-next-steps.md) for the other walkthroughs.

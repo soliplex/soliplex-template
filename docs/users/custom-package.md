@@ -46,7 +46,10 @@ The Soliplex backend bind-mounts `./src` (read-only) into its container as
 `/app/src` and puts **this project's package directory** on `PYTHONPATH` as
 `/app/src/myproject/src` (see `docker-compose.yml`), so anything you define
 here is importable by **dotted name** from the Soliplex config under
-`backend/environment/` — no image rebuild needed to edit your code.
+`backend/environment/` — no image rebuild needed to edit your code. The
+backend watches it too: its serve command carries
+`--reload-dirs=/app/src/myproject/src`, so saving a change to your code
+restarts the server.
 
 Because only the package directories named in `PYTHONPATH` are import roots,
 `/app/src` itself is not one: a repo you clone next to this project is
@@ -132,6 +135,15 @@ By hand, append its package directory to the backend's `PYTHONPATH` in
       PYTHONPATH: /app/src/myproject/src:/app/src/<other>/src
 ```
 
+and, so edits to it restart the server, a matching `--reload-dirs` line to
+the backend's serve command, after this project's own:
+
+```yaml
+      --reload=config
+      --reload-dirs=/app/src/myproject/src
+      --reload-dirs=/app/src/<other>/src
+```
+
 The trailing `/src` is right for a checkout that uses a `src/` layout (most
 modern projects, including this one). For a flat-layout repo — packages
 sitting at the repo root — use `/app/src/<other>` instead. Point at the
@@ -152,10 +164,10 @@ docker compose up -d backend
   site-packages, so a `soliplex` checkout listed there wins over the
   `soliplex` installed in the image. That is what makes a backend dev-mode
   checkout work — and what makes an accidental name collision confusing.
-  For that case, `src_projects.py --reload-python` also switches the backend's
-  serve command to `--reload=both`, so editing the checkout restarts the
-  server; it offers this as a hint when it notices a checkout providing the
-  `soliplex` package, and only acts when you ask.
+- **Every project on it is watched.** The backend's serve command carries one
+  `--reload-dirs` per `PYTHONPATH` entry, which `src_projects.py` keeps in
+  step, so editing any of them restarts the server: a `soliplex` checkout is
+  no special case. `src_projects.py list` shows which are watched.
 - **It does not install anything.** The checkout's own dependencies are *not*
   resolved: only its source becomes importable. If it imports a third-party
   package the backend image does not already have, the import fails at

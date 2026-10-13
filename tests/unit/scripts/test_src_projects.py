@@ -17,6 +17,7 @@ import pathlib
 import subprocess
 
 import pytest
+import yaml
 
 _MODULE_PATH = (
     pathlib.Path(__file__).resolve().parents[3]
@@ -30,27 +31,41 @@ src_projects = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(src_projects)
 
 
-_COMPOSE = """\
+_FOLDED_SERVE = """\
+    command: >-
+      /app/.venv/bin/soliplex-cli serve
+      --no-auth-mode
+      --reload=config
+      --reload-dirs=/app/src/acme_widgets/src
+      --host=0.0.0.0
+      /environment
+"""
+
+# A generated stack: the serve command folded one flag per line, watching
+# the stack's own package.
+_COMPOSE = f"""\
 services:
   backend:
     environment: &backend_environment
       OLLAMA_BASE_URL: http://h:11434
       # Append ':/app/src/<other>/src' for each further project directory.
       PYTHONPATH: /app/src/acme_widgets/src
-    command: "$SERVE"
-
+{_FOLDED_SERVE}
   soliplex-dev:
     profiles: ["devmode"]
     environment: *backend_environment
 """
 
-# A generated stack keeps the serve command on one (long) line; build it
-# here so the fixture stays faithful without a 100-column source line.
-_SERVE = (
+# A stack generated before the fold keeps the serve command on one quoted
+# line, with no '--reload-dirs'; build it here so the fixture stays faithful
+# without a 100-column source line.
+_ONE_LINE_SERVE = (
     "/app/.venv/bin/soliplex-cli serve --no-auth-mode --reload=config"
     " --host=0.0.0.0 /environment"
 )
-_COMPOSE = _COMPOSE.replace("$SERVE", _SERVE)
+_COMPOSE_ONE_LINE = _COMPOSE.replace(
+    _FOLDED_SERVE, f'    command: "{_ONE_LINE_SERVE}"\n'
+)
 
 _MANIFEST = """\
 [project]
@@ -88,6 +103,24 @@ def checkout(stack):
     )
     (stack / "src/widgetlib/src/widgetlib").mkdir(parents=True)
     return stack
+
+
+@pytest.fixture
+def one_line_checkout(checkout):
+    """The checkout beside a stack whose serve command is on one line."""
+    (checkout / "docker-compose.yml").write_text(_COMPOSE_ONE_LINE)
+    return checkout
+
+
+def _serve(stack: pathlib.Path) -> str:
+    """The backend's serve command, as compose reads it."""
+    compose = yaml.safe_load((stack / "docker-compose.yml").read_text())
+    return compose["services"]["backend"]["command"]
+
+
+def _set_serve(stack: pathlib.Path, old: str, new: str) -> None:
+    compose = stack / "docker-compose.yml"
+    compose.write_text(compose.read_text().replace(old, new))
 
 
 @pytest.fixture
@@ -335,12 +368,13 @@ def test_list_reports_each_project(checkout, capsys):
     result = src_projects.main(["list", "--project-dir", str(checkout)])
 
     assert result == 0
-    out = capsys.readouterr().out
-    assert "*acme_widgets" in out
-    assert "* this stack's own project" in out
-    # The sibling exists but is not yet on the path.
-    assert "widgetlib" in out
-    assert out.rstrip().endswith("own project")
+    rows = {
+        line.split()[0]: line.split()[2:]
+        for line in capsys.readouterr().out.splitlines()
+        if line.strip().lstrip("*").startswith(("acme_widgets", "widgetlib"))
+    }
+    # Own project: on the path and watched; the sibling: neither, yet.
+    assert rows == {"*acme_widgets": ["yes", "yes"], "widgetlib": ["no", "no"]}
 
 
 def test_list_without_any_project_directories(stack, capsys):
@@ -365,6 +399,22 @@ def test_list_omits_the_legend_without_an_own_project(checkout, capsys):
     out = capsys.readouterr().out
     assert "widgetlib" in out
     assert "this stack's own project" not in out
+
+
+def test_list_ends_with_the_legend(checkout, capsys):
+    result = src_projects.main(["list", "--project-dir", str(checkout)])
+
+    assert result == 0
+    assert capsys.readouterr().out.rstrip().endswith("own project")
+
+
+def test_list_notes_that_nothing_is_watched_without_reload(stack, capsys):
+    _set_serve(stack, "      --reload=config\n", "")
+
+    result = src_projects.main(["list", "--project-dir", str(stack)])
+
+    assert result == 0
+    assert "nothing is watched" in capsys.readouterr().out
 
 
 def test_list_flags_a_path_entry_with_no_directory(stack, capsys):
@@ -395,20 +445,115 @@ def test_add_puts_the_checkout_on_the_path(checkout, capsys):
         "PYTHONPATH: /app/src/acme_widgets/src:/app/src/widgetlib/src"
         in compose
     )
-    assert "added: /app/src/widgetlib/src" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "added: /app/src/widgetlib/src" in out
+    assert "watching /app/src/widgetlib/src" in out
 
 
-def test_add_is_idempotent(checkout, capsys):
-    src_projects.main(
+@pytest.mark.parametrize(
+    "fixture, expected",
+    [
+        # Folded: the new flag follows the stack's own, line by line.
+        (
+            "checkout",
+            "--reload=config --reload-dirs=/app/src/acme_widgets/src "
+            "--reload-dirs=/app/src/widgetlib/src --host=0.0.0.0",
+        ),
+        # One line: it follows the '--reload' flag.
+        (
+            "one_line_checkout",
+            "--reload=config --reload-dirs=/app/src/widgetlib/src "
+            "--host=0.0.0.0",
+        ),
+    ],
+)
+def test_add_watches_the_checkout(request, fixture, expected):
+    stack = request.getfixturevalue(fixture)
+
+    result = src_projects.main(
+        ["add", "widgetlib", "--project-dir", str(stack), "--no-dep-check"]
+    )
+
+    assert result == 0
+    assert expected in _serve(stack)
+
+
+def test_add_watches_an_entry_already_on_the_path(one_line_checkout, capsys):
+    # How an older stack gets its own package watched: re-run 'add'.
+    result = src_projects.main(
+        [
+            "add",
+            "acme_widgets",
+            "--project-dir",
+            str(one_line_checkout),
+            "--no-dep-check",
+        ]
+    )
+
+    assert result == 0
+    assert "--reload-dirs=/app/src/acme_widgets/src" in _serve(
+        one_line_checkout
+    )
+    out = capsys.readouterr().out
+    assert "unchanged" in out
+    assert "watching /app/src/acme_widgets/src" in out
+    assert "docker compose up -d backend" in out
+
+
+def test_add_without_a_reload_flag_still_edits_the_path(checkout, capsys):
+    _set_serve(checkout, "      --reload=config\n", "")
+
+    result = src_projects.main(
         ["add", "widgetlib", "--project-dir", str(checkout), "--no-dep-check"]
     )
+
+    # No error, and no half-applied change: the path entry is written, and
+    # no flag is added that nothing would read.
+    assert result == 0
+    compose = (checkout / "docker-compose.yml").read_text()
+    assert "/app/src/acme_widgets/src:/app/src/widgetlib/src" in compose
+    assert "--reload-dirs=/app/src/widgetlib/src" not in compose
+    assert "serves without '--reload'" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "mode, expected_mode, note",
+    [
+        ("both", "--reload=config", "'--reload=both' -> '--reload=config'"),
+        ("python", "--reload=python", "keeping '--reload=python'"),
+    ],
+)
+def test_add_settles_an_older_reload_mode(
+    checkout, capsys, mode, expected_mode, note
+):
+    _set_serve(checkout, "--reload=config", f"--reload={mode}")
 
     result = src_projects.main(
         ["add", "widgetlib", "--project-dir", str(checkout), "--no-dep-check"]
     )
 
     assert result == 0
-    assert "unchanged" in capsys.readouterr().out
+    serve = _serve(checkout)
+    assert expected_mode in serve
+    assert "--reload-dirs=/app/src/widgetlib/src" in serve
+    assert note in capsys.readouterr().out
+
+
+def test_add_is_idempotent(checkout, capsys):
+    src_projects.main(
+        ["add", "widgetlib", "--project-dir", str(checkout), "--no-dep-check"]
+    )
+    capsys.readouterr()  # only the second run's output is under test
+
+    result = src_projects.main(
+        ["add", "widgetlib", "--project-dir", str(checkout), "--no-dep-check"]
+    )
+
+    assert result == 0
+    out = capsys.readouterr().out
+    assert "unchanged" in out
+    assert "watching" not in out
+    assert "Next:" not in out
 
 
 def test_add_dry_run_writes_nothing(checkout, capsys):
@@ -420,7 +565,9 @@ def test_add_dry_run_writes_nothing(checkout, capsys):
 
     assert result == 0
     assert (checkout / "docker-compose.yml").read_text() == before
-    assert "(dry run: nothing written)" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "watching /app/src/widgetlib/src" in out
+    assert "(dry run: nothing written)" in out
 
 
 @pytest.mark.parametrize(
@@ -489,154 +636,104 @@ def test_add_reports_an_unverifiable_check(checkout, no_docker, capsys):
 
 
 # --------------------------------------------------------------------------
-# --reload=both (dev-mode): soliplex-template#75
+# The serve command's reload flags: soliplex-template#209
 # --------------------------------------------------------------------------
-@pytest.fixture
-def soliplex_checkout(stack):
-    """A checkout under src/ that provides the 'soliplex' package."""
-    _write(
-        stack / "src/soliplex/pyproject.toml",
-        '[project]\nname = "soliplex"\ndependencies = []\n',
-    )
-    (stack / "src/soliplex/src/soliplex").mkdir(parents=True)
-    return stack
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        (_COMPOSE, "config"),
+        (_COMPOSE_ONE_LINE, "config"),
+        ("services:\n", None),
+    ],
+)
+def test_read_reload(text, expected):
+    result = src_projects.read_reload(text)
+
+    assert result == expected
 
 
-def test_read_reload(tmp_path):
-    result = src_projects.read_reload(_COMPOSE, tmp_path / "c.yml")
+@pytest.mark.parametrize("text", [_COMPOSE, _COMPOSE_ONE_LINE])
+def test_write_reload_keeps_the_flag_in_place(text):
+    result = src_projects.write_reload(text, "both")
 
-    assert result == "config"
-
-
-def test_read_reload_requires_the_flag(tmp_path):
-    with pytest.raises(src_projects.ReloadFlagMissing, match="--reload="):
-        src_projects.read_reload("services:\n", tmp_path / "c.yml")
+    assert result == text.replace("--reload=config", "--reload=both")
 
 
-def test_write_reload():
-    result = src_projects.write_reload(_COMPOSE, "both")
+@pytest.mark.parametrize(
+    "text, expected",
+    [(_COMPOSE, ["/app/src/acme_widgets/src"]), (_COMPOSE_ONE_LINE, [])],
+)
+def test_read_reload_dirs(text, expected):
+    result = src_projects.read_reload_dirs(text)
 
-    assert "--reload=both" in result
-    assert "--reload=config" not in result
-
-
-def test_provides_soliplex_true(soliplex_checkout):
-    result = src_projects.provides_soliplex(soliplex_checkout, "soliplex")
-
-    assert result is True
+    assert result == expected
 
 
-def test_provides_soliplex_false_for_another_checkout(checkout):
-    result = src_projects.provides_soliplex(checkout, "widgetlib")
+def test_add_reload_dir_takes_a_line_of_its_own_when_folded():
+    result = src_projects.add_reload_dir(_COMPOSE, "/app/src/widgetlib/src")
 
-    assert result is False
-
-
-def test_add_hints_at_reload_without_acting(soliplex_checkout, capsys):
-    result = src_projects.main(
-        [
-            "add",
-            "soliplex",
-            "--project-dir",
-            str(soliplex_checkout),
-            "--no-dep-check",
-        ]
-    )
-
-    assert result == 0
-    assert "Pass --reload-python" in capsys.readouterr().out
-    compose = (soliplex_checkout / "docker-compose.yml").read_text()
-    assert "--reload=config" in compose
-
-
-def test_add_with_reload_python_switches_the_serve_flag(
-    soliplex_checkout, capsys
-):
-    result = src_projects.main(
-        [
-            "add",
-            "soliplex",
-            "--project-dir",
-            str(soliplex_checkout),
-            "--no-dep-check",
-            "--reload-python",
-        ]
-    )
-
-    assert result == 0
     assert (
-        "--reload=both"
-        in (soliplex_checkout / "docker-compose.yml").read_text()
-    )
-    assert "'--reload=both'" in capsys.readouterr().out
+        "      --reload-dirs=/app/src/acme_widgets/src\n"
+        "      --reload-dirs=/app/src/widgetlib/src\n"
+        "      --host=0.0.0.0\n"
+    ) in result
 
 
-def test_reload_python_is_honoured_on_an_already_added_checkout(
-    soliplex_checkout, capsys
-):
-    src_projects.main(
-        [
-            "add",
-            "soliplex",
-            "--project-dir",
-            str(soliplex_checkout),
-            "--no-dep-check",
-        ]
+def test_add_reload_dir_follows_the_reload_flag_on_one_line():
+    result = src_projects.add_reload_dir(
+        _COMPOSE_ONE_LINE, "/app/src/widgetlib/src"
     )
 
-    result = src_projects.main(
-        [
-            "add",
-            "soliplex",
-            "--project-dir",
-            str(soliplex_checkout),
-            "--no-dep-check",
-            "--reload-python",
-        ]
-    )
-
-    assert result == 0
     assert (
-        "--reload=both"
-        in (soliplex_checkout / "docker-compose.yml").read_text()
-    )
-    assert "unchanged" in capsys.readouterr().out
-
-
-def test_reload_python_is_idempotent(soliplex_checkout, capsys):
-    src_projects.main(
-        [
-            "add",
-            "soliplex",
-            "--project-dir",
-            str(soliplex_checkout),
-            "--no-dep-check",
-            "--reload-python",
-        ]
+        "--reload=config --reload-dirs=/app/src/widgetlib/src --host" in result
     )
 
-    result = src_projects.main(
-        [
-            "add",
-            "soliplex",
-            "--project-dir",
-            str(soliplex_checkout),
-            "--no-dep-check",
-            "--reload-python",
-        ]
-    )
 
-    assert result == 0
-    assert "already serves with '--reload=both'" in capsys.readouterr().out
+@pytest.mark.parametrize("text", [_COMPOSE, _COMPOSE_ONE_LINE])
+def test_remove_reload_dir_undoes_add_reload_dir(text):
+    added = src_projects.add_reload_dir(text, "/app/src/widgetlib/src")
+
+    result = src_projects.remove_reload_dir(added, "/app/src/widgetlib/src")
+
+    assert result == text
 
 
-def test_add_of_a_plain_checkout_says_nothing_about_reload(checkout, capsys):
-    result = src_projects.main(
-        ["add", "widgetlib", "--project-dir", str(checkout), "--no-dep-check"]
-    )
+_LIB = "/app/src/widgetlib/src"
 
-    assert result == 0
-    assert "reload" not in capsys.readouterr().out
+
+@pytest.mark.parametrize(
+    "mode, watch, dirs_before, mode_after, dirs_after, notes",
+    [
+        ("config", True, [], "config", [_LIB], ["watching"]),
+        ("config", True, [_LIB], "config", [_LIB], []),
+        ("config", False, [_LIB], "config", [], ["no longer watching"]),
+        ("config", False, [], "config", [], []),
+        (
+            "both",
+            True,
+            [],
+            "config",
+            [_LIB],
+            ["-> '--reload=config'", "watching"],
+        ),
+        ("python", True, [], "python", [_LIB], ["keeping", "watching"]),
+        # A mode this script does not know still turns reload on.
+        ("explicit", True, [], "explicit", [_LIB], ["watching"]),
+        (None, True, [], None, [], ["without '--reload'"]),
+    ],
+)
+def test_sync_reload(mode, watch, dirs_before, mode_after, dirs_after, notes):
+    flags = [f"--reload={mode}"] if mode else []
+    flags += [f"--reload-dirs={d}" for d in dirs_before]
+    text = "    command: serve " + " ".join([*flags, "/environment"]) + "\n"
+
+    result, printed = src_projects.sync_reload(text, _LIB, watch=watch)
+
+    assert src_projects.read_reload(result) == mode_after
+    assert src_projects.read_reload_dirs(result) == dirs_after
+    assert len(printed) == len(notes)
+    for line, fragment in zip(printed, notes, strict=True):
+        assert fragment in line
 
 
 # --------------------------------------------------------------------------
@@ -693,6 +790,7 @@ def test_clone_fetches_and_wires_it_up(stack, origin, capsys):
     assert result == 0
     assert (stack / "src/flatpkg/pyproject.toml").is_file()
     assert "/app/src/flatpkg/src" in (stack / "docker-compose.yml").read_text()
+    assert "--reload-dirs=/app/src/flatpkg/src" in _serve(stack)
     assert "cloned" in capsys.readouterr().out
 
 
@@ -793,8 +891,10 @@ def test_remove_takes_it_off_the_path(checkout, capsys):
 
     assert result == 0
     compose = (checkout / "docker-compose.yml").read_text()
-    assert "PYTHONPATH: /app/src/acme_widgets/src\n" in compose
-    assert "untouched" in capsys.readouterr().out
+    assert compose == _COMPOSE
+    out = capsys.readouterr().out
+    assert "no longer watching /app/src/widgetlib/src" in out
+    assert "untouched" in out
 
 
 def test_remove_dry_run_writes_nothing(checkout, capsys):
@@ -810,6 +910,25 @@ def test_remove_dry_run_writes_nothing(checkout, capsys):
     assert result == 0
     assert (checkout / "docker-compose.yml").read_text() == before
     assert "(dry run: nothing written)" in capsys.readouterr().out
+
+
+def test_remove_drops_a_stale_watch(checkout, capsys):
+    # Watched, but not on PYTHONPATH (a hand edit): 'remove' still tidies it.
+    _set_serve(
+        checkout,
+        "      --host=0.0.0.0\n",
+        "      --reload-dirs=/app/src/widgetlib/src\n      --host=0.0.0.0\n",
+    )
+
+    result = src_projects.main(
+        ["remove", "widgetlib", "--project-dir", str(checkout)]
+    )
+
+    assert result == 0
+    assert (checkout / "docker-compose.yml").read_text() == _COMPOSE
+    out = capsys.readouterr().out
+    assert "was not on the backend's PYTHONPATH" in out
+    assert "no longer watching" in out
 
 
 def test_remove_of_an_absent_entry_is_a_no_op(checkout, capsys):
@@ -835,6 +954,7 @@ def test_remove_forced_drops_the_stacks_own_project(stack, capsys):
 
     assert result == 0
     assert "PYTHONPATH: \n" in (stack / "docker-compose.yml").read_text()
+    assert "--reload-dirs" not in _serve(stack)
     assert "removed" in capsys.readouterr().out
 
 

@@ -166,6 +166,7 @@ def test_t_compose():
         "      --no-auth-mode\n"
         "% endif\n"
         "      --reload=config\n"
+        "      --reload-dirs=/app/src/${package_name}/src\n"
     ) in out
     assert '- "${ingester_port}:8765"' in out
     assert (

@@ -31,6 +31,10 @@ its dependencies, which the backend image resolves at build time. So ``add``
 and ``clone`` read the checkout's declared runtime dependencies and check them
 against what the backend image actually has, reporting any that would fail at
 import time and what to do about them.
+
+Each project on the path is also watched: the backend's serve command carries
+one ``--reload-dirs`` flag per ``PYTHONPATH`` entry, which ``add``, ``clone``
+and ``remove`` keep in step, so editing any of them restarts the server.
 """
 
 from __future__ import annotations
@@ -269,40 +273,123 @@ def write_entries(text: str, entries: list[str]) -> str:
 # --------------------------------------------------------------------------
 # Subcommands
 # --------------------------------------------------------------------------
-# The backend's 'soliplex-cli serve --reload=<mode>' flag. 'python' watches
-# 'soliplex.__path__', so it only earns its keep when a checkout providing the
-# 'soliplex' package is on PYTHONPATH -- which is exactly what this script
-# arranges. One line in a generated stack.
-_RELOAD = re.compile(r"--reload=(?P<mode>config|python|both)")
+# The serve command's reload flags.
+#
+# 'soliplex-cli serve' reloads only when given a '--reload=<mode>':
+# - 'config' watches backend/environment/
+# - 'python' watches 'soliplex.__path__'
+# - 'both' watches the two.
+#
+# Any mode counts as reload on, including ones this script does not know:
+# for instance, soliplex#1442 proposes a new 'explicit' mode that watches
+# only explicitly-passed '--reload-dirs'.
+#
+# Each '--reload-dirs=<dir>' adds a directory to whatever the mode watches
+# (for uvicorn's default '*.py' pattern), and does nothing without a mode.
+#
+# This script keeps one '--reload-dirs' per PYTHONPATH entry, so editing any
+# project on the path restarts the server.
+# --------------------------------------------------------------------------
+
+# A generated stack folds the serve command ('>-'), one flag per line;
+# older stacks keep it on one quoted line.
+# Both patterns capture the separator before their flag -- a newline and
+# indent, or spaces -- so a flag added after one takes the same form.
+_RELOAD = re.compile(
+    r"(?P<sep>\n[ \t]*|[ \t]+)--reload=(?P<mode>[A-Za-z][\w-]*)"
+)
+_RELOAD_DIR = re.compile(
+    r"(?P<sep>\n[ \t]*|[ \t]+)--reload-dirs=(?P<dir>[^\s\"']+)"
+)
 
 
-class ReloadFlagMissing(SrcProjectError):
-    def __init__(self, compose: pathlib.Path):
-        super().__init__(
-            f"{compose}: no '--reload=' flag found on the backend's serve "
-            "command; set the reload mode by hand."
-        )
-
-
-def read_reload(text: str, compose: pathlib.Path) -> str:
+def read_reload(text: str) -> str | None:
+    """The serve command's reload mode, or None without a '--reload'."""
     match = _RELOAD.search(text)
-    _require(match is not None, ReloadFlagMissing(compose))
-    return match.group("mode")
+    return match.group("mode") if match else None
 
 
 def write_reload(text: str, mode: str) -> str:
-    return _RELOAD.sub(f"--reload={mode}", text, count=1)
+    return _RELOAD.sub(
+        lambda m: f"{m.group('sep')}--reload={mode}", text, count=1
+    )
 
 
-def provides_soliplex(project: pathlib.Path, name: str) -> bool:
-    """True when ``src/<name>``'s import root holds a ``soliplex`` package.
+def read_reload_dirs(text: str) -> list[str]:
+    return [m.group("dir") for m in _RELOAD_DIR.finditer(text)]
 
-    That is the case dev-mode cares about: the backend then imports soliplex
-    from the checkout, and '--reload=python' can restart the server when it
-    is edited.
+
+def add_reload_dir(text: str, path: str) -> str:
+    """Add '--reload-dirs=<path>' after the last one, else after '--reload'.
+
+    The caller has checked that the command has a '--reload' flag. The new
+    flag copies the separator of the one it follows.
     """
-    root = container_path(project, name).removeprefix(f"{CONTAINER_SRC}/")
-    return (project / "src" / root / "soliplex").is_dir()
+    anchor = ([*_RELOAD_DIR.finditer(text)] or [_RELOAD.search(text)])[-1]
+    flag = f"{anchor.group('sep')}--reload-dirs={path}"
+    return text[: anchor.end()] + flag + text[anchor.end() :]
+
+
+def remove_reload_dir(text: str, path: str) -> str:
+    return _RELOAD_DIR.sub(
+        lambda m: "" if m.group("dir") == path else m.group(0), text
+    )
+
+
+_BOTH_NOTE = (
+    "  reload: '--reload=both' -> '--reload=config':\n"
+    "         each project on the path is (or can be) watched through its\n"
+    "         own '--reload-dirs', so the 'python' half (soliplex.__path__)\n"
+    "         is no longer needed."
+)
+_PYTHON_NOTE = (
+    "  reload: keeping '--reload=python':\n"
+    "         it turns reload on, which the '--reload-dirs' flags need,\n"
+    "         without watching backend/environment/.\n"
+    "         '--reload=config' would work as well, and also restart on\n"
+    "         config edits."
+)
+_OFF_NOTE = (
+    "  reload: the backend serves without '--reload', so nothing is watched:\n"
+    "         restart it to pick up edits, or add '--reload=config' to its\n"
+    "         serve command and re-run 'add' to watch them."
+)
+
+
+def sync_reload(text: str, path: str, *, watch: bool) -> tuple[str, list[str]]:
+    """Bring the reload flags in line with ``path`` on (or off) the path.
+
+    Returns the updated compose text and the lines to print.
+
+    - '--reload=both' becomes '--reload=config' (the 'python' half is
+      what '--reload-dirs' now does).
+
+    - '--reload=python' is kept, enabling reload without watching the config;
+
+    - Any other mode is left as it is.
+
+    - A config without any '--reload' means nothing is watched, so no
+      '--reload-dirs' flag is added -- the caller still edits PYTHONPATH.
+    """
+    notes = []
+    mode = read_reload(text)
+    if mode == "both":
+        text = write_reload(text, "config")
+        notes.append(_BOTH_NOTE)
+    elif mode == "python":
+        notes.append(_PYTHON_NOTE)
+
+    watched = path in read_reload_dirs(text)
+    if watch and not watched:
+        if mode is None:
+            notes.append(_OFF_NOTE)
+        else:
+            text = add_reload_dir(text, path)
+            notes.append(f"  reload: watching {path} ('--reload-dirs')")
+    elif not watch and watched:
+        text = remove_reload_dir(text, path)
+        notes.append(f"  reload: no longer watching {path}")
+    return text, notes
 
 
 def _compose_path(project: pathlib.Path) -> pathlib.Path:
@@ -312,7 +399,9 @@ def _compose_path(project: pathlib.Path) -> pathlib.Path:
 def do_list(args: argparse.Namespace) -> int:
     project = rooms.resolve_project(args.project_dir)
     compose = _compose_path(project)
-    entries = read_entries(compose.read_text(), compose)
+    text = compose.read_text()
+    entries = read_entries(text, compose)
+    watched = read_reload_dirs(text)
     mine = own_package(project)
 
     names = project_dirs(project)
@@ -320,12 +409,17 @@ def do_list(args: argparse.Namespace) -> int:
         print("no project directories under src/")
         return 0
 
-    print(f"{'project':<24} {'import root':<36} on PYTHONPATH")
+    def yes(cond: bool) -> str:
+        return "yes" if cond else "no"
+
+    print(f"{'project':<24} {'import root':<36} {'on PYTHONPATH':<14} watched")
     for name in names:
         path = container_path(project, name)
-        flag = "yes" if path in entries else "no"
         mark = "*" if name == mine else " "
-        print(f"{mark}{name:<23} {path:<36} {flag}")
+        print(
+            f"{mark}{name:<23} {path:<36} {yes(path in entries):<14} "
+            f"{yes(path in watched)}"
+        )
 
     unknown = [
         e
@@ -333,18 +427,16 @@ def do_list(args: argparse.Namespace) -> int:
         if e not in {container_path(project, n) for n in names}
     ]
     for entry in unknown:
-        print(f" {'(no such directory)':<23} {entry:<36} yes")
+        print(
+            f" {'(no such directory)':<23} {entry:<36} {'yes':<14} "
+            f"{yes(entry in watched)}"
+        )
 
     if mine in names:
         print("\n* this stack's own project")
+    if read_reload(text) is None:
+        print("\n(the backend serves without '--reload': nothing is watched)")
     return 0
-
-
-def _apply(project: pathlib.Path, entries: list[str], dry_run: bool) -> None:
-    compose = _compose_path(project)
-    updated = write_entries(compose.read_text(), entries)
-    if not dry_run:
-        compose.write_text(updated)
 
 
 # A clone URL rather than a directory name: 'scheme://...' or the scp-like
@@ -354,22 +446,36 @@ _URL_LIKE = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://|^[^/\s]+@[^/\s]+:")
 
 def _add_entry(
     project: pathlib.Path, name: str, dry_run: bool
-) -> tuple[str, str]:
-    """Put ``src/<name>`` on the backend's PYTHONPATH; return (path, verb)."""
+) -> tuple[str, str, list[str], bool]:
+    """Put ``src/<name>`` on the backend's PYTHONPATH, and watch it.
+
+    Returns (path, verb, reload notes, whether the compose file changed).
+    Every check runs before the one write, so a refusal leaves the file as
+    it was. An entry already on the path still gets its '--reload-dirs', so
+    re-running 'add' brings an older stack's watch list into step.
+    """
     _require(not _URL_LIKE.search(name), UrlPassedToAdd(name))
     _require(
         (project / "src" / name).is_dir(),
         ProjectMissing(project / "src" / name),
     )
     compose = _compose_path(project)
-    entries = read_entries(compose.read_text(), compose)
+    before = compose.read_text()
+    entries = read_entries(before, compose)
     path = container_path(project, name)
 
-    if path in entries:
-        return path, "unchanged"
+    fresh = path not in entries
+    text = write_entries(before, [*entries, path]) if fresh else before
+    text, notes = sync_reload(text, path, watch=True)
 
-    _apply(project, [*entries, path], dry_run)
-    return path, "would add" if dry_run else "added"
+    changed = text != before
+    if changed and not dry_run:
+        compose.write_text(text)
+    if not fresh:
+        verb = "unchanged"
+    else:
+        verb = "would add" if dry_run else "added"
+    return path, verb, notes, changed
 
 
 def _report_dependencies(project: pathlib.Path, name: str, skip: bool) -> bool:
@@ -411,54 +517,23 @@ def _report_dependencies(project: pathlib.Path, name: str, skip: bool) -> bool:
     return True
 
 
-def _apply_reload(
-    project: pathlib.Path, name: str, requested: bool
-) -> str | None:
-    """Switch the backend to '--reload=both', or hint that it could be.
-
-    Returns a line to print, or None when the checkout has nothing to do with
-    reloading. Only acts when asked: silently rewriting the serve command
-    because of what a checkout happens to contain would be too much magic.
-    """
-    compose = _compose_path(project)
-    text = compose.read_text()
-
-    if not requested:
-        if (
-            provides_soliplex(project, name)
-            and read_reload(text, compose) == "config"
-        ):
-            return (
-                f"  reload: src/{name} provides the 'soliplex' package. Pass "
-                "--reload-python to have\n          the backend restart when "
-                "you edit it ('--reload=both')."
-            )
-        return None
-
-    mode = read_reload(text, compose)
-    if mode == "both":
-        return "  reload: the backend already serves with '--reload=both'"
-    compose.write_text(write_reload(text, "both"))
-    return (
-        f"  reload: backend serve flag '--reload={mode}' -> '--reload=both'; "
-        "edits under\n          the checkout now restart the server."
-    )
-
-
 def _report_added(
     project: pathlib.Path,
     name: str,
     path: str,
     verb: str,
+    notes: list[str],
+    changed: bool,
     dry_run: bool,
     skip_deps: bool,
-    reload_python: bool = False,
 ) -> None:
     print(f"{verb}: {path}")
     fresh = verb != "unchanged"
     if not fresh:
         print(f"  src/{name} was already on the backend's PYTHONPATH")
     if dry_run:
+        for line in notes:
+            print(line)
         print("\n(dry run: nothing written)")
         return
 
@@ -467,15 +542,10 @@ def _report_added(
     rebuild = (
         _report_dependencies(project, name, skip_deps) if fresh else False
     )
+    for line in notes:
+        print(line)
 
-    # --reload-python is an explicit request, so honour it even when the path
-    # entry was already there: re-running purely to change the reload mode is
-    # a reasonable thing to do, and silently ignoring the flag would not be.
-    reload_line = _apply_reload(project, name, reload_python)
-    if reload_line:
-        print(reload_line)
-
-    if not fresh and not reload_python:
+    if not changed:
         return
 
     steps = []
@@ -502,15 +572,16 @@ def _report_added(
 
 def do_add(args: argparse.Namespace) -> int:
     project = rooms.resolve_project(args.project_dir)
-    path, verb = _add_entry(project, args.name, args.dry_run)
+    path, verb, notes, changed = _add_entry(project, args.name, args.dry_run)
     _report_added(
         project,
         args.name,
         path,
         verb,
+        notes,
+        changed,
         args.dry_run,
         args.no_dep_check,
-        args.reload_python,
     )
     return 0
 
@@ -545,15 +616,16 @@ def do_clone(args: argparse.Namespace) -> int:
         print("  (left off the backend's PYTHONPATH, as asked)")
         return 0
 
-    path, verb = _add_entry(project, name, dry_run=False)
+    path, verb, notes, changed = _add_entry(project, name, dry_run=False)
     _report_added(
         project,
         name,
         path,
         verb,
+        notes,
+        changed,
         False,
         args.no_dep_check,
-        args.reload_python,
     )
     return 0
 
@@ -561,7 +633,8 @@ def do_clone(args: argparse.Namespace) -> int:
 def do_remove(args: argparse.Namespace) -> int:
     project = rooms.resolve_project(args.project_dir)
     compose = _compose_path(project)
-    entries = read_entries(compose.read_text(), compose)
+    before = compose.read_text()
+    entries = read_entries(before, compose)
     path = container_path(project, args.name)
 
     if not args.force:
@@ -570,20 +643,34 @@ def do_remove(args: argparse.Namespace) -> int:
             RefusingOwnProject(args.name),
         )
 
-    if path not in entries:
+    on_path = path in entries
+    text = (
+        write_entries(before, [e for e in entries if e != path])
+        if on_path
+        else before
+    )
+    text, notes = sync_reload(text, path, watch=False)
+
+    if text == before:
         print(f"unchanged: src/{args.name} is not on the backend's PYTHONPATH")
         return 0
 
-    _apply(project, [e for e in entries if e != path], args.dry_run)
-    verb = "would remove" if args.dry_run else "removed"
-    print(f"{verb}: {path}")
+    if on_path:
+        print(f"{'would remove' if args.dry_run else 'removed'}: {path}")
+    else:
+        print(f"src/{args.name} was not on the backend's PYTHONPATH")
+    for line in notes:
+        print(line)
     if args.dry_run:
         print("\n(dry run: nothing written)")
-    else:
-        print(
-            f"\nThe checkout at src/{args.name} is untouched; only the import "
-            "path changed.\nRun 'docker compose up -d backend' to apply it."
-        )
+        return 0
+
+    compose.write_text(text)
+    print(
+        f"\nThe checkout at src/{args.name} is untouched; only the backend's "
+        "import path\nand watch list changed. Run 'docker compose up -d "
+        "backend' to apply it."
+    )
     return 0
 
 
@@ -598,17 +685,6 @@ def build_parser() -> argparse.ArgumentParser:
         )
     )
     subs = parser.add_subparsers(dest="command", required=True)
-
-    def _reload_flag(sub):
-        sub.add_argument(
-            "--reload-python",
-            action="store_true",
-            help=(
-                "also switch the backend's serve command to '--reload=both', "
-                "so edits to a checkout providing the 'soliplex' package "
-                "restart the server"
-            ),
-        )
 
     def _dep_check_flag(sub):
         sub.add_argument(
@@ -651,7 +727,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="clone only; leave the backend's PYTHONPATH alone",
     )
     _dep_check_flag(clone)
-    _reload_flag(clone)
     clone.set_defaults(func=do_clone)
 
     add = common(
@@ -662,7 +737,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="directory name under src/ (not a clone URL -- see 'clone')",
     )
     _dep_check_flag(add)
-    _reload_flag(add)
     add.set_defaults(func=do_add)
 
     remove = common(
