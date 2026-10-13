@@ -171,24 +171,41 @@ docker compose run --rm -w /app/src/soliplex soliplex-dev \
 `PYTHONPATH` makes source importable; it does not install anything. If the
 checkout imports a distribution the backend image lacks, the import fails at
 runtime and `docker compose up -d backend` will not fix it. `clone`/`add`
-check for this and say which of three cases you are in — all satisfied, some
-**MISSING** (it names them), or not checkable (no Docker, or the image is not
-built).
+check each requirement the checkout declares inside the backend image, and
+report it as satisfied, **MISSING** (not installed), or **CONFLICT**
+(installed, at a version the checkout rejects); without Docker, or before the
+image is built, they say they could not check.
 
-The check is by distribution *name*, so a checkout needing a **newer version**
-of something already in the image passes it and still fails at runtime. A
-missing distribution goes in `backend/requirements.txt`, then
+A missing distribution goes in `backend/requirements.txt`, then
 
 ```bash
 docker compose build backend
 docker compose up -d backend
 ```
 
-A newer version cannot come that way when the soliplex release itself pins the
-package: the build freezes the image's own versions as constraints, and fails
-rather than move one. The checkout then needs a soliplex image tag (the `FROM`
-line in `backend/Dockerfile`) whose release carries that version. See [Backend
-image & dependencies](../../users/architecture/backend.md).
+A conflict cannot be fixed that way: the build freezes the image's own versions
+as constraints, and fails rather than move one. A checkout of `main` that has
+moved a dependency ahead of the latest release is the usual case. In order of
+preference:
+
+1. adapt the checkout to the image's versions — relax its requirement, and port
+   any code that needs the newer one; you cloned it to work on it;
+2. pick a soliplex image tag (the `FROM` line in `backend/Dockerfile`) whose
+   release has versions it accepts;
+3. customize `backend/Dockerfile`.
+
+See [Backend image & dependencies](../../users/architecture/backend.md).
+
+The check covers the checkout's *direct* requirements only. To catch a problem
+deeper in its tree, import it in the backend's environment:
+
+```bash
+docker compose run --rm --no-deps soliplex-dev \
+    /app/.venv/bin/python -c "import soliplex.main"
+```
+
+An `ImportError` names what the image lacks or has at the wrong version; see
+[Checking it in the backend's environment](../../users/custom-package.md#checking-it-in-the-backends-environment).
 
 ## 7. Going back to the release
 

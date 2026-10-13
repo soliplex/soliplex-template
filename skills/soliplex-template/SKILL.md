@@ -594,16 +594,29 @@ ignores everything under `src/` except the stack's own project.
 
 **It then checks the checkout's dependencies.** `PYTHONPATH` makes source
 importable; it does not install anything. So `add`/`clone` read the checkout's
-`[project].dependencies` and compare them against what the backend image
-actually has (via a one-off `docker compose run --rm --no-deps backend`),
-reporting one of three outcomes:
+`[project].dependencies` and check each requirement inside the backend image
+(a one-off `docker compose run --rm --no-deps backend`, using the image's own
+`packaging`): its environment marker against the image's Python, its version
+specifier against what the image has installed. The outcomes:
 
 - all satisfied → the next step is just `docker compose up -d backend`;
 - some **MISSING** → it names them and leads with `docker compose build
   backend`, because `up` alone will not fix an `ImportError`. Add them to
   `backend/requirements.txt` first;
+- some **CONFLICT** — installed, at a version the checkout rejects → it names
+  the requirement and the image's version. `requirements.txt` cannot fix
+  this (the image's own versions are frozen as constraints), so offer, in
+  this order: adapt the checkout to the image's versions (relax its
+  requirement, port its code — the user cloned it to work on it); pick a
+  soliplex image tag whose release has versions it accepts; customize
+  `backend/Dockerfile`;
 - not checkable (no docker, or the image is not built) → it says so and lists
   what the checkout declares, rather than guessing.
+
+Only the checkout's *direct* requirements are checked. To catch a problem
+deeper in its tree, import it in the backend's environment:
+`docker compose run --rm --no-deps soliplex-dev /app/.venv/bin/python -c
+"import <package>"`. An `ImportError` names what the image lacks.
 
 **Hot reload (#209).** The backend's serve command carries one `--reload-dirs`
 per `PYTHONPATH` entry — the stack's own package from generation — and

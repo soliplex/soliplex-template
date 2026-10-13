@@ -175,7 +175,37 @@ docker compose up -d backend
   dependency has to be baked into the image. Add it to
   `backend/requirements.txt`, then `docker compose build backend`; see
   [Backend image &
-  dependencies](architecture/backend.md). `src_projects.py` checks this for
-  you and says which of the three cases you are in.
+  dependencies](architecture/backend.md). `src_projects.py` checks the
+  project's direct requirements for you, reporting each as satisfied,
+  **MISSING**, or **CONFLICT**: installed, at a version the project rejects.
+  `requirements.txt` cannot fix a conflict, since the image's own versions
+  are frozen as constraints; adapt the project to the image's versions, pick
+  a soliplex image tag that has versions it accepts, or customize
+  `backend/Dockerfile`. For what lies deeper than the direct requirements,
+  see [Checking it in the backend's environment](#checking-it-in-the-backends-environment).
 - **The mount is read-only**, and the container runs as the `PUID:PGID` from
   `.env`. Edit the checkout on the host; the backend only reads it.
+
+## Checking it in the backend's environment
+
+`uv run pytest` in a project directory runs against that project's own
+`uv.lock`, which is not what the backend has: the backend imports the
+project's code alongside the soliplex image's own versions. When
+`src_projects.py` adds a project, it checks the *direct* requirements in its
+`pyproject.toml` against the image, but not the requirements of those
+requirements.
+
+To check the code itself against the image, import it in the dev-mode
+`soliplex-dev` service, which runs the backend's image with the very same
+`PYTHONPATH` (`--no-deps`: the check needs no database):
+
+```bash
+docker compose run --rm --no-deps soliplex-dev /app/.venv/bin/python -c "import myproject.tools, myproject.views"
+```
+
+For another project on the path, import its own package instead. A silent
+exit means everything its modules import is there; an `ImportError`, or a
+version error raised on import, names what the image lacks or has at the
+wrong version, however deep in the tree. It does not run the project's
+tests, so code that imports cleanly but needs a newer API still fails only
+when it runs.

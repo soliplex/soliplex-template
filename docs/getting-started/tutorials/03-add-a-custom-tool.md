@@ -88,6 +88,10 @@ so your new test is collected and passes. (Run these from the project
 directory, not the stack root — the root `pyproject.toml` is for stack
 tooling.)
 
+That run uses the project's own lock file, not the versions the backend has.
+To check your code against what the backend actually imports it with, see
+[Checking it in the backend's environment](../../users/custom-package.md#checking-it-in-the-backends-environment).
+
 ## 5. Commit it
 
 From the stack root again:

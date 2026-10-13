@@ -840,6 +840,10 @@ USER_DOC_PARAMS = {
         ("`myproject.tools.greeting`", "`${package_name}.tools.greeting`"),
         ("`myproject.views.router`", "`${package_name}.views.router`"),
         ("`myproject.*`", "`${package_name}.*`"),
+        (
+            '"import myproject.tools, myproject.views"',
+            '"import ${package_name}.tools, ${package_name}.views"',
+        ),
     ],
 }
 
