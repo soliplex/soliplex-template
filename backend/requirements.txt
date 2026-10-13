@@ -1,0 +1,16 @@
+# Extra PyPI dependencies for this stack's backend image, one requirement per
+# line (pip requirements syntax), e.g.:
+#
+#   cowsay
+#   httpx-retries >= 0.4
+#
+# backend/Dockerfile installs them into the soliplex image's '/app/.venv',
+# with every package the image already holds frozen as a constraint: an extra
+# may add packages, but one that needs a different version of something the
+# soliplex release pinned fails the build rather than moving it.
+#
+# Rebuild after editing: 'docker compose build backend' (add 'soliplex-dev'
+# if you use dev mode, which builds its own copy of this image).
+#
+# Local projects under src/ are not installed from here; they are mounted
+# and put on PYTHONPATH (see docs/users/custom-package.md).

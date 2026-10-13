@@ -3,8 +3,8 @@
 A Docker Compose template that assembles a full Soliplex stack — a self-hosted
 RAG / AI system — from a backend, a Flutter web frontend, a document-ingest
 pipeline, and Postgres. This repository is configuration and Dockerfiles, not
-application source: the backend is installed from the published `soliplex`
-package and the frontend from a release build.
+application source: the backend is built on the published `soliplex` release
+image and the frontend from a release build.
 
 There are two ways to use it: run this repository directly as a reference stack
 to try Soliplex now, or generate your own tailored stack from it (for a real

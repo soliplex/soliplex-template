@@ -83,8 +83,12 @@ services:
       - postgres
 
     healthcheck:
-
-      test: ["CMD-SHELL", "curl -f http://localhost:8000/api/ok || exit 1"]
+      # The soliplex image has no curl; use the venv's stdlib instead.
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/ok', timeout=5).status == 200 else 1)"
       interval: 30s
       timeout: 10s
       retries: 4

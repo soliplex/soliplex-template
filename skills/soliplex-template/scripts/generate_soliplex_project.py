@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["mako", "skills-ref==0.1.1", "soliplex-template>=0.12"]
+# dependencies = [
+#   "mako",
+#   "packaging",
+#   "skills-ref==0.1.1",
+#   "soliplex-template>=0.12",
+# ]
 # ///
 """Scaffold a new Soliplex Docker Compose project from the embedded template.
 
@@ -35,6 +40,7 @@ import urllib.parse
 import skills_ref
 from mako import exceptions as mako_exceptions
 from mako import template
+from packaging import specifiers
 
 from soliplex_template.secrets import generate_secrets
 
@@ -94,12 +100,19 @@ DEFAULTS: dict[str, object] = {
     "puid": None,  # derived from os.getuid() if unset
     "pgid": None,  # derived from os.getgid() if unset
     # Version pins
-    "soliplex_backend_constraint": ">= 0.85, < 0.86",
-    "soliplex_tui_constraint": ">= 0.85, < 0.86",
+    # Tag of the published soliplex images the backend
+    # (ghcr.io/soliplex/soliplex-postgres) and TUI
+    # (ghcr.io/soliplex/soliplex-tui) build on: "latest", a moving
+    # "<major>.<minor>" (follows patch releases on 'docker compose build
+    # --pull'), or an exact "<major>.<minor>.<patch>".
+    "soliplex_image_tag": "0.85",
+    # The 'soliplex' requirement in the stack's host-side pyproject.toml files
+    # (dev mode, and src/<package>/). Must admit the image tag's release.
+    "soliplex_dev_constraint": ">= 0.85, < 0.86",
     # haiku-ingester image tag (ghcr.io/ggozad/haiku.rag-slim). Not a free
-    # choice: the pinned soliplex release constrains 'haiku.rag-slim' as a
+    # choice: the soliplex release constrains 'haiku.rag-slim' as a
     # dependency, and the ingester writes the LanceDB the backend reads, so
-    # this has to satisfy the range 'soliplex_backend_constraint' implies.
+    # this has to satisfy the range the 'soliplex_image_tag' release implies.
     "haiku_rag_version": "0.96.1",
     # Frontend: "latest" (newest soliplex/frontend release, the historical
     # behavior) or a specific soliplex/frontend release tag to pin.
@@ -111,7 +124,7 @@ DEFAULTS: dict[str, object] = {
     "include_gitea": False,
     # TUI service (opt-in): include the textual-serve-backed `tui` service
     # (web TUI at /tui/) plus the tui/ build context. Omitted entirely when
-    # false; soliplex_tui_constraint only applies when this is true.
+    # false. Its image shares soliplex_image_tag with the backend's.
     "include_tui": False,
     # Sandbox (opt-in): let the 'bubble-sandbox' skill run code, by lifting
     # the backend container's seccomp / AppArmor / '/proc' restrictions that
@@ -145,6 +158,19 @@ RESERVED_PACKAGE_NAMES = frozenset({"soliplex"})
 # API path (/releases/tags/<tag>) in nginx/Dockerfile, which accepts a raw
 # '+'; nginx is built (not pulled by tag), so the value is never a Docker tag.
 FRONTEND_VERSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
+# Tags the soliplex image workflow publishes: "latest", a moving
+# "<major>.<minor>", or an exact "<major>.<minor>.<patch>".
+IMAGE_TAG_RE = re.compile(r"^(latest|\d+\.\d+(\.\d+)?)$")
+# How many patch releases of a moving "<major>.<minor>" tag to check against
+# soliplex_dev_constraint: far more than any series has had.
+_SERIES_PATCHES = 100
+# Parameters an older params.json may still carry, with what replaced them.
+RENAMED_PARAMS = {
+    "soliplex_backend_constraint": (
+        "soliplex_image_tag, soliplex_dev_constraint"
+    ),
+    "soliplex_tui_constraint": "soliplex_image_tag",
+}
 
 
 class GenError(Exception):
@@ -172,7 +198,12 @@ class ParamsNotObject(GenError):
 class UnknownParams(GenError):
     def __init__(self, names):
         self.names = names
-        joined = ", ".join(sorted(names))
+        joined = ", ".join(
+            f"{name} (now {RENAMED_PARAMS[name]})"
+            if name in RENAMED_PARAMS
+            else name
+            for name in sorted(names)
+        )
         super().__init__(f"unknown parameter(s) in --params: {joined}")
 
 
@@ -282,6 +313,27 @@ class EmptyConstraint(GenError):
     def __init__(self, key):
         self.key = key
         super().__init__(f"{key} must not be empty")
+
+
+class BadImageTag(GenError):
+    def __init__(self, value):
+        self.value = value
+        super().__init__(
+            f"soliplex_image_tag={value!r} must be 'latest', "
+            "'<major>.<minor>', or '<major>.<minor>.<patch>'"
+        )
+
+
+class ImageTagOutsideConstraint(GenError):
+    def __init__(self, tag, constraint):
+        self.tag = tag
+        self.constraint = constraint
+        super().__init__(
+            f"soliplex_image_tag={tag!r} is outside "
+            f"soliplex_dev_constraint={constraint!r}: the host-side "
+            "projects would pin a different soliplex release than the "
+            "images run"
+        )
 
 
 class BadDocsDir(GenError):
@@ -479,6 +531,24 @@ def coerce_and_derive(params: dict[str, object]) -> dict[str, object]:
     return params
 
 
+def image_tag_satisfies(tag: str, constraint: str) -> bool:
+    """Can the release ``tag`` names satisfy ``constraint``?
+
+    ``latest`` names no fixed release, and a constraint ``packaging`` cannot
+    parse is left for the resolver to report, so both pass. An exact
+    ``X.Y.Z`` must be in the range; a moving ``X.Y`` passes when any of its
+    patch releases is."""
+    if tag == "latest":
+        return True
+    try:
+        spec = specifiers.SpecifierSet(constraint)
+    except specifiers.InvalidSpecifier:
+        return True
+    if tag.count(".") == 2:
+        return tag in spec
+    return any(f"{tag}.{patch}" in spec for patch in range(_SERIES_PATCHES))
+
+
 def validate(params: dict[str, object]) -> None:
     if not str(params.get("ollama_base_url") or "").strip():
         raise OllamaRequired()
@@ -513,9 +583,15 @@ def validate(params: dict[str, object]) -> None:
     if params["auth_mode"] not in ("no-auth", "auth"):
         raise BadAuthMode(params["auth_mode"])
 
-    for key in ("soliplex_backend_constraint", "soliplex_tui_constraint"):
-        if not str(params[key]).strip():
-            raise EmptyConstraint(key)
+    constraint = str(params["soliplex_dev_constraint"])
+    if not constraint.strip():
+        raise EmptyConstraint("soliplex_dev_constraint")
+
+    tag = str(params["soliplex_image_tag"])
+    if not IMAGE_TAG_RE.match(tag):
+        raise BadImageTag(tag)
+    if not image_tag_satisfies(tag, constraint):
+        raise ImageTagOutsideConstraint(tag, constraint)
 
     frontend_version = str(params["frontend_version"])
     if not FRONTEND_VERSION_RE.match(frontend_version):

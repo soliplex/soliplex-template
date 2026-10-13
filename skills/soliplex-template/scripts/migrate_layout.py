@@ -314,8 +314,10 @@ def plan_project_pyproject(project: pathlib.Path, package: str) -> str:
     return _PROJECT_PYPROJECT.format(
         project_name=params.get("project_name", package),
         package=package,
+        # Manifests written before #206 carry the backend constraint.
         constraint=params.get(
-            "soliplex_backend_constraint", ">= 0.85, < 0.86"
+            "soliplex_dev_constraint",
+            params.get("soliplex_backend_constraint", ">= 0.85, < 0.86"),
         ),
     )
 

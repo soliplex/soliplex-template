@@ -393,6 +393,7 @@ source = { editable = "." }
 dev = [
     { name = "coverage" },
     { name = "mako" },
+    { name = "packaging" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "pyyaml" },
@@ -409,6 +410,7 @@ dev = [
 dev = [
     { name = "coverage" },
     { name = "mako" },
+    { name = "packaging" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "pyyaml" },

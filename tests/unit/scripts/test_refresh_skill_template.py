@@ -21,6 +21,7 @@ import pathlib
 from unittest import mock
 
 import pytest
+from mako import template
 
 _MODULE_PATH = (
     pathlib.Path(__file__).resolve().parents[3]
@@ -252,26 +253,71 @@ def test_t_ingester_dockerfile_no_match_raises():
         rst.t_ingester_dockerfile("FROM python:3.13\n")
 
 
-def test_t_backend_constraints():
-    out = rst.t_backend_constraints("soliplex >= 0.85, < 0.86\nother==1\n")
-
-    assert out == "soliplex ${soliplex_backend_constraint}\nother==1\n"
-
-
-def test_t_backend_constraints_no_match_raises():
-    with pytest.raises(rst.RefreshError, match="backend constraints"):
-        rst.t_backend_constraints("nothing here\n")
-
-
-def test_t_tui_constraints():
-    out = rst.t_tui_constraints("soliplex >= 0.85, < 0.86\n")
-
-    assert out == "soliplex ${soliplex_tui_constraint}\n"
+# A Dockerfile carrying what the soliplex transforms must pass through: a
+# second (non-soliplex) FROM, a shell ${...} and a backslash continuation.
+def _soliplex_dockerfile(image: str) -> str:
+    return (
+        "FROM ghcr.io/astral-sh/uv:0.12.18 AS uv\n"
+        f"FROM ghcr.io/soliplex/{image}:0.85\n"
+        "RUN useradd -u ${PUID} soliplex && \\\n"
+        "    true\n"
+    )
 
 
-def test_t_tui_constraints_no_match_raises():
-    with pytest.raises(rst.RefreshError, match="tui constraints"):
-        rst.t_tui_constraints("nothing here\n")
+_SOLIPLEX_DOCKERFILE_TRANSFORMS = [
+    pytest.param(rst.t_backend_dockerfile, "soliplex-postgres", id="backend"),
+    pytest.param(rst.t_tui_dockerfile, "soliplex-tui", id="tui"),
+]
+
+
+@pytest.mark.parametrize("transform, image", _SOLIPLEX_DOCKERFILE_TRANSFORMS)
+def test_t_soliplex_dockerfile(transform, image):
+    text = _soliplex_dockerfile(image)
+
+    out = transform(text)
+
+    assert out == (
+        "<%text>FROM ghcr.io/astral-sh/uv:0.12.18 AS uv\n"
+        f"FROM ghcr.io/soliplex/{image}:</%text>"
+        "${soliplex_image_tag}"
+        "<%text>\n"
+        "RUN useradd -u ${PUID} soliplex && \\\n"
+        "    true</%text>\n"
+    )
+
+
+# Mako consumes a bare backslash-newline and expands ${PUID}: the rendered
+# Dockerfile must come back byte-identical at the exemplar's own tag.
+@pytest.mark.parametrize("transform, image", _SOLIPLEX_DOCKERFILE_TRANSFORMS)
+def test_t_soliplex_dockerfile_renders_the_exemplar(transform, image):
+    text = _soliplex_dockerfile(image)
+    mako = template.Template(transform(text), strict_undefined=True)
+
+    out = mako.render(soliplex_image_tag="0.85")
+
+    assert out == text
+
+
+@pytest.mark.parametrize(
+    "transform, text, count",
+    [
+        pytest.param(
+            rst.t_backend_dockerfile,
+            "FROM ghcr.io/soliplex/soliplex:0.85\n",
+            0,
+            id="backend-wrong-image",
+        ),
+        pytest.param(
+            rst.t_tui_dockerfile,
+            "FROM ghcr.io/soliplex/soliplex-tui:0.85\n" * 2,
+            2,
+            id="tui-two-froms",
+        ),
+    ],
+)
+def test_t_soliplex_dockerfile_wrong_from_count_raises(transform, text, count):
+    with pytest.raises(rst.RefreshError, match=f"FROM line, got {count}"):
+        transform(text)
 
 
 def test_t_nginx_conf():
@@ -505,13 +551,30 @@ def test_t_user_doc_missing_anchor_raises():
 # --------------------------------------------------------------------------
 # tracked_files
 # --------------------------------------------------------------------------
-def test_tracked_files_splits_and_filters(check_output):
-    check_output.return_value = "a/b.txt\0c.txt\0\0"
+def test_tracked_files_splits_and_filters(repo, check_output):
+    root, _ = repo
+    (root / "a").mkdir()
+    (root / "a" / "b.txt").write_text("b")
+    (root / "c.txt").write_text("c")
+    # 'gone.txt' is a deletion not yet staged: still in the index, not on disk.
+    check_output.return_value = "c.txt\0gone.txt\0a/b.txt\0\0"
 
-    assert rst.tracked_files() == ["a/b.txt", "c.txt"]
+    files = rst.tracked_files()
+
+    assert files == ["a/b.txt", "c.txt"]
     check_output.assert_called_once_with(
-        ["git", "ls-files", "-z", "--", ".", *rst.EXCLUDE_PATHSPECS],
-        cwd=rst.REPO,
+        [
+            "git",
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "--",
+            ".",
+            *rst.EXCLUDE_PATHSPECS,
+        ],
+        cwd=root,
         text=True,
     )
 

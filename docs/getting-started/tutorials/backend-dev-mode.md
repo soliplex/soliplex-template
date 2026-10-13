@@ -173,16 +173,19 @@ check for this and say which of three cases you are in — all satisfied, some
 built).
 
 The check is by distribution *name*, so a checkout needing a **newer version**
-of something already in the image passes it and still fails at runtime. Either
-way the fix is the same: add or bump the pin in `backend/constraints.txt` and
-the `uv add` line in `backend/Dockerfile`, then
+of something already in the image passes it and still fails at runtime. A
+missing distribution goes in `backend/requirements.txt`, then
 
 ```bash
 docker compose build backend
 docker compose up -d backend
 ```
 
-See [Backend image & dependencies](../../users/architecture/backend.md).
+A newer version cannot come that way when the soliplex release itself pins the
+package: the build freezes the image's own versions as constraints, and fails
+rather than move one. The checkout then needs a soliplex image tag (the `FROM`
+line in `backend/Dockerfile`) whose release carries that version. See [Backend
+image & dependencies](../../users/architecture/backend.md).
 
 ## 7. Going back to the release
 

@@ -33,6 +33,11 @@ Nothing forces an existing stack to convert — the old layout keeps working.
 Convert when you want to clone a second repo (a `soliplex` checkout, a
 third-party dependency) into the stack without ignore rules per clone.
 
+!!! note "Not the only upgrade"
+    This page covers the `src/` layout alone. For the dependency and image
+    changes in later template releases, see
+    [Upgrading an existing stack](upgrading-stack.md).
+
 ## Use the script
 
 Do not do this by hand. The skill ships `scripts/migrate_layout.py`, which
@@ -142,9 +147,7 @@ version = "0.1.0"
 requires-python = ">=3.13"
 # Host-side dependencies for driving *the stack*.
 dependencies = [
-    "soliplex >= 0.85, < 0.86",
-    "psycopg[binary]",
-    "asyncpg",
+    "soliplex[postgres-binary] >= 0.85, < 0.86",
 ]
 
 # Nothing at the stack root is importable, so there is nothing to build here.

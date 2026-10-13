@@ -10,6 +10,13 @@ icon: lucide/database-backup
     project ships its own copy of this page without this note.
 <!-- endsite-only -->
 
+<!-- site-only -->
+!!! tip "Upgrading across template releases"
+    These migrations are one step of bringing an older stack up to date;
+    [Upgrading an existing stack](../../getting-started/upgrading-stack.md)
+    lists the by-hand changes to its files that go with them.
+<!-- endsite-only -->
+
 ## The Soliplex databases (Postgres)
 
 The backend keeps two databases, `soliplex_agui` (thread persistence) and
@@ -37,11 +44,11 @@ databases are created, and never needs it.
 ### Ask, rather than assume
 
 `scripts/migrate_soliplex_dbs.py` puts the question to the *backend image*,
-so raise the pin in `backend/constraints.txt` and rebuild first — the script
-refuses an image too old to answer:
+so raise the soliplex image tag in `backend/Dockerfile` and rebuild first —
+the script refuses an image too old to answer:
 
 ```bash
-docker compose build backend
+docker compose build --pull backend
 uv run scripts/migrate_soliplex_dbs.py --check
 ```
 

@@ -32,8 +32,8 @@ Terminates TLS on host port 9443 with a self-signed cert.
 
 ## backend
 
-Runs `soliplex-cli serve /environment`, installed from the pinned `soliplex`
-package (see [Backend image & dependencies](backend.md)). The `--reload=config`
+Runs `soliplex-cli serve /environment`, from an image built on the published
+soliplex release image (see [Backend image & dependencies](backend.md)). The `--reload=config`
 flag means edits under `backend/environment/` take effect without a rebuild.
 
 ## soliplex-dev

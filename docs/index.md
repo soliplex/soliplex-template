@@ -13,7 +13,7 @@ A Docker Compose template that assembles a running **Soliplex** stack:
 - **postgres** — thread persistence and authorization policy.
 
 This repository is **configuration + Dockerfiles**, not application source: the
-Soliplex backend is installed from the published `soliplex` Python package, the
+Soliplex backend is built on the published `soliplex` release image, the
 frontend is fetched from a `soliplex/frontend` GitHub release at image-build
 time, and `haiku-rag` / `docling-serve` use upstream images.
 
