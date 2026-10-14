@@ -208,4 +208,33 @@ exit means everything its modules import is there; an `ImportError`, or a
 version error raised on import, names what the image lacks or has at the
 wrong version, however deep in the tree. It does not run the project's
 tests, so code that imports cleanly but needs a newer API still fails only
-when it runs.
+when it runs — which is what the tests are for.
+
+### Running its tests there
+
+`soliplex-dev` is built with every `src/` project's `dev` dependency group
+(pytest and the like) installed on top of the backend's image, with the
+image's own versions frozen, so a project's tests run there against the very
+versions the backend imports it with:
+
+```bash
+docker compose run --rm --no-deps -w /app/src/myproject soliplex-dev /app/.venv/bin/python -m pytest
+```
+
+For another project, pass its own directory to `-w`. The dev groups are
+listed in `soliplex-dev/requirements-dev.txt`, which `src_projects.py`
+regenerates whenever it adds or clones a project. Every project directory
+under `src/` contributes, whether or not it is on `PYTHONPATH`, so taking one
+off the path (`src_projects.py remove`) leaves the file as it is. After
+changing a project's `dev` group yourself, or deleting a project's directory
+from `src/`, regenerate the file and rebuild:
+
+```bash
+uv run <skill>/scripts/src_projects.py dev-requirements
+docker compose build soliplex-dev
+```
+
+Commit the regenerated file: a change to it is a change to what the tests
+run against. A dev requirement that needs a different version of something
+the backend image has fails that build, as one in `backend/requirements.txt`
+does; adapt the project's dev group to the image's versions.

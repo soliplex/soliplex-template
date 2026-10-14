@@ -46,10 +46,14 @@ keeps it out of `docker compose up`. It exists for commands that need the
 stack's config, secrets and databases *and* write access to the project
 directories under `src/`.
 
-It is built from the backend image and mirrors that service's secrets, mounts
-and environment — the same `/app/src` paths, and the very same `PYTHONPATH`
-(a YAML alias, so the two cannot drift). So an audit run here sees exactly
-what the backend sees:
+It is built on the backend's own image (`soliplex-dev/Dockerfile`, with
+compose passing the backend's image in as `service:backend`), plus every
+`src/` project's `dev` dependency group, so a project's tests run here against
+the backend's versions (see
+[Custom Python package](../custom-package.md#running-its-tests-there)). It
+mirrors the backend's secrets, mounts and environment — the same `/app/src`
+paths, and the very same `PYTHONPATH` (a YAML alias, so the two cannot
+drift). So an audit run here sees exactly what the backend sees:
 
 ```bash
 docker compose run --rm soliplex-dev \

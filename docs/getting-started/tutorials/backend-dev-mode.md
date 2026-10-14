@@ -136,7 +136,7 @@ The mount is read-only for the backend and the container runs as the
 ## 5. Run backend tasks against the stack
 
 `soliplex-dev` is a one-shot task runner (held out of `docker compose up` by
-`profiles: ["devmode"]`) built from the backend image, with the stack's config,
+`profiles: ["devmode"]`) built on the backend's image, with the stack's config,
 secrets and databases — and `src/` mounted **read-write**. Validate the
 installation the backend actually serves:
 
@@ -156,6 +156,20 @@ docker compose run --rm soliplex-dev \
 ```
 
 (`database status` in place of `upgrade` reports without changing anything.)
+
+`soliplex-dev` also carries every `src/` project's `dev` dependency group, so
+the checkout's own test suite runs against the backend's versions. Cloning it
+added its group to `soliplex-dev/requirements-dev.txt`; rebuild, then run it
+from the checkout's root:
+
+```bash
+docker compose build soliplex-dev
+docker compose run --rm --no-deps -w /app/src/soliplex soliplex-dev \
+    /app/.venv/bin/python -m pytest
+```
+
+A dev requirement that needs a different version of something the image has
+fails that build, the same conflict step 6 describes, met in the dev group.
 Generate new revisions with `alembic` itself, from the checkout's own root
 (`alembic` writes into `versions/` and prepends `.` to `sys.path`, so the `-w`
 matters):

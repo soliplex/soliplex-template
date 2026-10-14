@@ -1035,6 +1035,280 @@ def test_remove_forced_drops_the_stacks_own_project(stack, capsys):
 
 
 # --------------------------------------------------------------------------
+# The soliplex-dev service's dev requirements: soliplex-template#213
+# --------------------------------------------------------------------------
+_DEV_FILE = "soliplex-dev/requirements-dev.txt"
+
+
+@pytest.fixture
+def dev_stack(checkout):
+    """The checkout's stack with a soliplex-dev/ build context, up to date."""
+    _write(checkout / _DEV_FILE, src_projects.DEV_REQUIREMENTS_HEADER)
+    return checkout
+
+
+def _dev_group(stack, name, groups):
+    _write(
+        stack / f"src/{name}/pyproject.toml",
+        f'[project]\nname = "{name}"\n[dependency-groups]\n{groups}',
+    )
+
+
+def test_exemplar_requirements_dev_is_the_bare_header():
+    # The repo's own src/ has no project with a dev group, so its committed
+    # file is exactly what this script writes for it: the header.
+    exemplar = _MODULE_PATH.parents[3] / _DEV_FILE
+
+    result = exemplar.read_text()
+
+    assert result == src_projects.DEV_REQUIREMENTS_HEADER
+
+
+@pytest.mark.parametrize(
+    "groups, expected",
+    [
+        ({"dev": ["pytest", "coverage>=7"]}, ["pytest", "coverage>=7"]),
+        # PEP 735 includes expand in place, recursively.
+        (
+            {
+                "dev": ["ruff", {"include-group": "test"}],
+                "test": ["pytest", {"include-group": "cov"}],
+                "cov": ["coverage"],
+            },
+            ["ruff", "pytest", "coverage"],
+        ),
+        # Group names normalize like distribution names.
+        (
+            {"Dev": [{"include-group": "Test_Extra"}], "test-extra": ["x"]},
+            ["x"],
+        ),
+        # Entries that are neither a string nor an include are left out.
+        ({"dev": ["pytest", 3, {"other": "key"}]}, ["pytest"]),
+        # No 'dev' group at all: nothing to install.
+        ({"test": ["pytest"]}, []),
+    ],
+)
+def test_group_requirements(groups, expected):
+    result = src_projects.group_requirements(groups, "dev")
+
+    assert result == expected
+
+
+@pytest.mark.parametrize(
+    "groups, error",
+    [
+        (
+            {
+                "dev": [{"include-group": "test"}],
+                "test": [{"include-group": "dev"}],
+            },
+            src_projects.GroupIncludesItself,
+        ),
+        (
+            {"dev": [{"include-group": "absent"}]},
+            src_projects.IncludedGroupMissing,
+        ),
+    ],
+)
+def test_group_requirements_refuses_a_malformed_group(groups, error):
+    with pytest.raises(error):
+        src_projects.group_requirements(groups, "dev")
+
+
+def test_collect_dev_requirements(stack):
+    _dev_group(
+        stack,
+        "acme",
+        'dev = ["pytest", {include-group = "lint"}]\nlint = ["ruff"]\n',
+    )
+    _write(stack / "src/bare/pyproject.toml", '[project]\nname = "bare"\n')
+    _write(stack / "src/broken/pyproject.toml", "not = = toml\n")
+    _dev_group(stack, "loopy", 'dev = [{include-group = "dev"}]\n')
+
+    result = src_projects.collect_dev_requirements(stack)
+
+    header = src_projects.DEV_REQUIREMENTS_HEADER
+    assert result.startswith(header)
+    acme, pytest_, ruff, broken, loopy = result[len(header) :].splitlines()
+    assert [acme, pytest_, ruff] == ["# src/acme", "pytest", "ruff"]
+    # The parser's wording varies across Python releases; the reason is there.
+    assert broken.startswith("# src/broken: skipped (")
+    assert loopy == (
+        "# src/loopy: skipped (dependency group 'dev' includes itself)"
+    )
+
+
+def test_sync_dev_requirements_without_soliplex_dev(checkout):
+    result = src_projects.sync_dev_requirements(checkout, dry_run=False)
+
+    assert result is None
+    assert not (checkout / "soliplex-dev").exists()
+
+
+@pytest.mark.parametrize(
+    "dry_run, written",
+    [(False, True), (True, False)],
+    ids=["writes", "dry-run"],
+)
+def test_sync_dev_requirements_updates_the_file(dev_stack, dry_run, written):
+    _dev_group(dev_stack, "widgetlib", 'dev = ["pytest"]\n')
+
+    result = src_projects.sync_dev_requirements(dev_stack, dry_run=dry_run)
+
+    assert result is True
+    assert (
+        "# src/widgetlib\npytest\n" in (dev_stack / _DEV_FILE).read_text()
+    ) is written
+
+
+def test_sync_dev_requirements_leaves_an_up_to_date_file(dev_stack):
+    result = src_projects.sync_dev_requirements(dev_stack, dry_run=False)
+
+    assert result is False
+
+
+def test_dev_requirements_needs_soliplex_dev(checkout):
+    with pytest.raises(src_projects.NoSoliplexDev, match="no soliplex-dev/"):
+        src_projects.main(["dev-requirements", "--project-dir", str(checkout)])
+
+
+def test_dev_requirements_regenerates_the_file(dev_stack, capsys):
+    _dev_group(dev_stack, "widgetlib", 'dev = ["pytest"]\n')
+
+    result = src_projects.main(
+        ["dev-requirements", "--project-dir", str(dev_stack)]
+    )
+
+    assert result == 0
+    assert (
+        (dev_stack / _DEV_FILE)
+        .read_text()
+        .endswith("# src/widgetlib\npytest\n")
+    )
+    out = capsys.readouterr().out
+    assert f"updated: {_DEV_FILE}" in out
+    assert "docker compose build soliplex-dev" in out
+
+
+def test_dev_requirements_dry_run_writes_nothing(dev_stack, capsys):
+    _dev_group(dev_stack, "widgetlib", 'dev = ["pytest"]\n')
+
+    result = src_projects.main(
+        ["dev-requirements", "--project-dir", str(dev_stack), "--dry-run"]
+    )
+
+    assert result == 0
+    assert (dev_stack / _DEV_FILE).read_text() == (
+        src_projects.DEV_REQUIREMENTS_HEADER
+    )
+    out = capsys.readouterr().out
+    assert f"would update: {_DEV_FILE}" in out
+    assert "(dry run: nothing written)" in out
+
+
+def test_dev_requirements_when_up_to_date(dev_stack, capsys):
+    result = src_projects.main(
+        ["dev-requirements", "--project-dir", str(dev_stack)]
+    )
+
+    assert result == 0
+    assert f"unchanged: {_DEV_FILE}" in capsys.readouterr().out
+
+
+def test_dev_requirements_check_when_up_to_date(dev_stack, capsys):
+    result = src_projects.main(
+        ["dev-requirements", "--check", "--project-dir", str(dev_stack)]
+    )
+
+    assert result == 0
+    assert f"up to date: {_DEV_FILE}" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("present", [True, False], ids=["stale", "absent"])
+def test_dev_requirements_check_when_stale(dev_stack, capsys, present):
+    _dev_group(dev_stack, "widgetlib", 'dev = ["pytest"]\n')
+    if not present:
+        (dev_stack / _DEV_FILE).unlink()
+
+    result = src_projects.main(
+        ["dev-requirements", "--check", "--project-dir", str(dev_stack)]
+    )
+
+    assert result == 1
+    assert f"stale: {_DEV_FILE}" in capsys.readouterr().out
+    assert (dev_stack / _DEV_FILE).exists() is present
+
+
+def test_add_regenerates_the_dev_requirements(dev_stack, capsys):
+    _dev_group(dev_stack, "widgetlib", 'dev = ["pytest"]\n')
+
+    result = src_projects.main(
+        ["add", "widgetlib", "--project-dir", str(dev_stack), "--no-dep-check"]
+    )
+
+    assert result == 0
+    assert (
+        (dev_stack / _DEV_FILE)
+        .read_text()
+        .endswith("# src/widgetlib\npytest\n")
+    )
+    out = capsys.readouterr().out
+    assert f"dev requirements: updated {_DEV_FILE}" in out
+    assert "docker compose build soliplex-dev" in out
+
+
+def test_add_says_nothing_of_unchanged_dev_requirements(dev_stack, capsys):
+    result = src_projects.main(
+        ["add", "widgetlib", "--project-dir", str(dev_stack), "--no-dep-check"]
+    )
+
+    assert result == 0
+    out = capsys.readouterr().out
+    assert "dev requirements" not in out
+    assert "docker compose build soliplex-dev" not in out
+
+
+def test_add_rebuilds_soliplex_dev_for_an_entry_already_on_the_path(
+    dev_stack, capsys
+):
+    # Only the dev group changed: the compose file is left alone, so the
+    # next step is the soliplex-dev rebuild, not a backend restart.
+    _dev_group(dev_stack, "acme_widgets", 'dev = ["pytest"]\n')
+
+    result = src_projects.main(
+        [
+            "add",
+            "acme_widgets",
+            "--project-dir",
+            str(dev_stack),
+            "--no-dep-check",
+        ]
+    )
+
+    assert result == 0
+    out = capsys.readouterr().out
+    assert "docker compose build soliplex-dev" in out
+    assert "docker compose up -d backend" not in out
+
+
+def test_add_dry_run_reports_the_dev_requirements(dev_stack, capsys):
+    _dev_group(dev_stack, "widgetlib", 'dev = ["pytest"]\n')
+
+    result = src_projects.main(
+        ["add", "widgetlib", "--project-dir", str(dev_stack), "--dry-run"]
+    )
+
+    assert result == 0
+    assert (dev_stack / _DEV_FILE).read_text() == (
+        src_projects.DEV_REQUIREMENTS_HEADER
+    )
+    assert (
+        f"dev requirements: would update {_DEV_FILE}"
+        in capsys.readouterr().out
+    )
+
+
+# --------------------------------------------------------------------------
 # CLI plumbing
 # --------------------------------------------------------------------------
 def test_parse_args_defaults_the_project_dir():

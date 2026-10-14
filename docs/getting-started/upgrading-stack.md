@@ -502,7 +502,7 @@ would pick up step 5's edit on the old image.
           retries: 4
     ```
 
-    It takes effect when step 11 recreates the container.
+    It takes effect when step 12 recreates the container.
 
 7. **The TUI**, if `tui/Dockerfile` exists: replace it with the one below,
    built `FROM ghcr.io/soliplex/soliplex-tui` at the same tag as the
@@ -558,9 +558,38 @@ would pick up step 5's edit on the old image.
 
     Its `PYTHONPATH` entry is already there (`unchanged`); `add` adds the
     matching `--reload-dirs=/app/src/<package>/src` to the serve command.
-    Ignore its advice to bring the backend up: step 11 does that.
+    Ignore its advice to bring the backend up: step 12 does that.
 
-11. **Tag the current backend image, then rebuild with `--pull`**, so Docker
+11. **Give `soliplex-dev` a build of its own** (stacks whose
+    `docker-compose.yml` has a `soliplex-dev` service). It now builds on the
+    backend's image plus every `src/` project's `dev` dependency group, so
+    a project's tests run there against the backend's versions, without the
+    backend image carrying them. Make a `soliplex-dev/` directory, save the
+    template's Dockerfile into it as `soliplex-dev/Dockerfile`:
+
+    ```dockerfile
+    --8<-- "soliplex-dev/Dockerfile"
+    ```
+
+    then generate its requirements file from the projects' dev groups:
+
+    ```bash
+    uv run <skill>/scripts/src_projects.py dev-requirements
+    ```
+
+    and point the service's `build:` at it, in place of its
+    `context: backend`, `dockerfile: Dockerfile` and `args:`:
+
+    ```yaml
+        build:
+          context: soliplex-dev
+          additional_contexts:
+            backend: "service:backend"
+    ```
+
+    Commit both files. Step 12 builds it.
+
+12. **Tag the current backend image, then rebuild with `--pull`**, so Docker
     fetches the release image, and bring the stack up:
 
     ```bash
@@ -570,8 +599,8 @@ would pick up step 5's edit on the old image.
     ```
 
     Tag and rebuild `tui` the same way if the stack has it, and add
-    `soliplex-dev` to the build if the stack has that (it builds its own
-    copy of the backend image). Then [check it](#check-it), and commit.
+    `soliplex-dev` to the build if the stack has that (it builds on the
+    backend's image). Then [check it](#check-it), and commit.
 
 ## 3. Dev mode
 
