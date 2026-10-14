@@ -1,30 +1,11 @@
-FROM ghcr.io/cirruslabs/flutter:3.38.4 AS builder
-
-RUN \
-  latest=$(curl -s -L https://api.github.com/repos/soliplex/frontend/releases/latest -H "Accept: application/json" | jq -r ".tarball_url") && \
-  cd /tmp/ && \
-  curl -L $latest -o soliplex-frontend-latest.tgz && \
-  topdir=$(tar tf soliplex-frontend-latest.tgz | head -1) && \
-  tar xf soliplex-frontend-latest.tgz && \
-  mv $topdir /app && \
-  wo_prefix=${topdir#soliplex-frontend-} && \
-  release_hash=${wo_prefix%/} && \
-  echo $release_hash > /tmp/soliplex-frontend-release-hash
-
-# Copy post-build cache busting script (needed before flutter build completes)
-COPY ./post-build-cache-bust.sh /tmp/post-build-cache-bust.sh
-
-RUN chmod +x /tmp/post-build-cache-bust.sh
-
-WORKDIR /app
-
-RUN \
-    flutter --disable-analytics && \
-    flutter clean && \
-    flutter pub get && \
-    flutter build web --release --no-tree-shake-icons --no-web-resources-cdn --pwa-strategy=none && \
-    RELEASE_HASH=$(cat /tmp/soliplex-frontend-release-hash) \
-    /tmp/post-build-cache-bust.sh
+# The built Soliplex web client, published by soliplex/frontend as an image
+# holding only 'build/web', already cache-busted: everything but index.html,
+# the manifest, favicon and icons sits under a 'v<release-tag>/' directory,
+# with relative URLs, so the same tree serves under any '<base href>'. Its tag
+# picks the release: a moving '<major>.<minor>' tag follows patch releases on
+# 'docker compose build --pull nginx'; an exact '<major>.<minor>.<patch>' (or
+# '<major>.<minor>.<patch>-<build>') pins one.
+FROM ghcr.io/soliplex/frontend-web:0.110 AS frontend
 
 FROM debian:trixie
 
@@ -60,8 +41,8 @@ ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 ENV SSL_CERT_DIR=/etc/ssl/certs
 ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
 
-# Copy built flutter web app to nginx html directory
-COPY --from=builder /app/build/web /app/build/web
+# The built web client, served from here (see nginx.conf)
+COPY --from=frontend /build/web /app/build/web
 
 # nginx configuration (nginx.conf, mime.types, error-pages) is bind-mounted
 # from the host at runtime (see docker-compose.yml), so edits don't require

@@ -26,9 +26,12 @@ graph LR
 
 ## nginx
 
-Serves the Flutter web frontend (built from a `soliplex/frontend` release in
-`nginx/Dockerfile`) and reverse-proxies `/api/` and `/mcp/` to `backend:8000`.
-Terminates TLS on host port 9443 with a self-signed cert.
+Serves the Flutter web frontend and reverse-proxies `/api/` and `/mcp/` to
+`backend:8000`. The web client is copied in `nginx/Dockerfile` from the
+published `ghcr.io/soliplex/frontend-web` image, whose tag picks the release; its assets
+sit under a `v<release-tag>/` directory, which `nginx/nginx.conf` caches for
+a year, while `index.html` is never cached, so a new release reaches browsers
+on their next load. Terminates TLS on host port 9443 with a self-signed cert.
 
 ## backend
 

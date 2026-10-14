@@ -212,7 +212,7 @@ def test_coerce_derives_defaults():
     assert result["tls_subject"].endswith("CN=soliplex-dojo.localhost")
     assert result["backend_auth_flag"] == "--no-auth-mode "
     assert result["nginx_http"] == 9000
-    assert result["frontend_release_path"] == "latest"
+    assert "frontend_release_path" not in result
 
 
 def test_coerce_int_error():
@@ -246,26 +246,6 @@ def test_coerce_derives_package_name_from_project_name():
     result = gen.coerce_and_derive(params)
 
     assert result["package_name"] == "my_cool_app"
-
-
-def test_coerce_derives_frontend_release_path_for_pinned_version():
-    params = dict(gen.DEFAULTS)
-    params["ollama_base_url"] = "http://x"
-    params["frontend_version"] = "v0.60.0"
-
-    result = gen.coerce_and_derive(params)
-
-    assert result["frontend_release_path"] == "tags/v0.60.0"
-
-
-def test_coerce_derives_frontend_release_path_with_build_metadata():
-    params = dict(gen.DEFAULTS)
-    params["ollama_base_url"] = "http://x"
-    params["frontend_version"] = "v0.87.1+56"
-
-    result = gen.coerce_and_derive(params)
-
-    assert result["frontend_release_path"] == "tags/v0.87.1+56"
 
 
 def test_coerce_derives_uid_gid_from_host(monkeypatch):
@@ -403,7 +383,10 @@ def test_validate_accepts_default_project_name():
     gen.validate(params)
 
 
-@pytest.mark.parametrize("frontend_version", ["", "v 1", 'has"quote'])
+@pytest.mark.parametrize(
+    "frontend_version",
+    ["", "v 1", 'has"quote', "0", "0.110.0+96", "0.110-96", "latest-ish"],
+)
 def test_validate_bad_frontend_version(frontend_version):
     params = _valid_params()
     params["frontend_version"] = frontend_version
@@ -412,16 +395,38 @@ def test_validate_bad_frontend_version(frontend_version):
         gen.validate(params)
 
 
-# Recent soliplex/frontend release tags carry semver build metadata, e.g.
-# "v0.87.1+56"; the '+' must pass validation (see issue #47).
+# A soliplex/frontend release tag -- what the parameter took before nginx
+# built from the published image -- is refused, naming the image tag to use.
 @pytest.mark.parametrize(
-    "frontend_version", ["latest", "v0.87.1+56", "v0.60.0"]
+    "frontend_version, image_tag",
+    [("v0.110.0+96", "'0.110.0-96'"), ("v0.110.0", "'0.110.0'")],
+)
+def test_validate_release_tag_names_the_image_tag(frontend_version, image_tag):
+    params = _valid_params()
+    params["frontend_version"] = frontend_version
+
+    with pytest.raises(gen.BadFrontendVersion) as exc_info:
+        gen.validate(params)
+
+    message = str(exc_info.value)
+    assert f"spells '+' as '-' ({image_tag})" in message
+    assert "only from 0.110 on" in message
+
+
+@pytest.mark.parametrize(
+    "frontend_version", ["latest", "0.110", "0.110.0", "0.110.0-96"]
 )
 def test_validate_accepts_frontend_version(frontend_version):
     params = _valid_params()
     params["frontend_version"] = frontend_version
 
     assert gen.validate(params) is None
+
+
+def test_default_frontend_version_is_a_moving_minor_tag():
+    result = gen.DEFAULTS["frontend_version"]
+
+    assert result == "0.110"
 
 
 def test_validate_dbs_must_differ():

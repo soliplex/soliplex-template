@@ -69,7 +69,7 @@ prompt (a command-line value would leak into shell history).
 | `soliplex_image_tag` | `0.85` | `latest`, `<major>.<minor>` (moving), or `<major>.<minor>.<patch>` (exact); the release must satisfy `soliplex_dev_constraint` | `FROM` in `backend/Dockerfile` (`ghcr.io/soliplex/soliplex-postgres`) and `tui/Dockerfile` (`ghcr.io/soliplex/soliplex-tui`); `AGENTS.md`, `docs/architecture/backend.md` |
 | `soliplex_dev_constraint` | `>= 0.85, < 0.86` | non-empty | the `soliplex` requirement in `pyproject.toml` and `src/<package>/pyproject.toml` (host-side and dev-mode work) |
 | `haiku_rag_version` | `0.96.1` | non-empty; must satisfy the `haiku.rag-slim` range the `soliplex_image_tag` release requires | `haiku.rag/Dockerfile` (`FROM`) and the `haiku-ingester` `image:` in `docker-compose.yml` |
-| `frontend_version` | `latest` | `latest` or a release tag (letters, digits, `.`, `_`, `-`) | `nginx/Dockerfile` frontend release fetched at image build |
+| `frontend_version` | `0.110` | `latest`, `<major>.<minor>` (moving), `<major>.<minor>.<patch>` or `<major>.<minor>.<patch>-<build>` (exact); a `v…` release tag is refused, with the image tag to use | `FROM` in `nginx/Dockerfile` (`ghcr.io/soliplex/frontend-web`, the published web client); `AGENTS.md` |
 | `auth_mode` | `no-auth` | `no-auth` or `auth` | backend `command` (`--no-auth-mode` present/absent) |
 | `include_gitea` | `false` | bool (`true`/`false`, or `yes`/`no`/`1`/`0`) | adds the opt-in gitea service (postgres-backed, nginx `/gitea/` on 9443, `gitea_db_password` secret) plus `scripts/init_gitea.py` (run after `up`; `--admin-user NAME` adds a web-UI login, `--push-to-gitea` sets `origin` to a Gitea repo over SSH and pushes the initial commit); omitted entirely when false |
 | `include_tui` | `false` | bool (`true`/`false`, or `yes`/`no`/`1`/`0`) | adds the opt-in `tui` service (web TUI proxied by nginx at `/tui/`) plus the `tui/` build context; omitted entirely when false |
@@ -89,10 +89,6 @@ prompt (a command-line value would leak into shell history).
 - `tls_subject` ← `/C=US/ST=State/L=City/O=Soliplex/CN=<server_name>` when not supplied.
 - `backend_auth_flag` ← `--no-auth-mode` plus a trailing space when `auth_mode == "no-auth"`, else empty
   (consumed by `docker-compose.yml.mako`).
-- `frontend_release_path` ← `latest` when `frontend_version == "latest"`, else `tags/<frontend_version>`.
-  Selects the GitHub releases API endpoint in `nginx/Dockerfile`
-  (`/releases/latest` vs `/releases/tags/<tag>`). Default `latest` keeps the
-  historical "newest release" behavior; pin a tag for reproducible builds.
 - `puid` / `pgid` ← the host operator's `os.getuid()` / `os.getgid()` when not
   supplied (an auto-detected `0`/root falls back to `1000`). These land in `.env`
   as `PUID` / `PGID`; Compose reads them for every built image's `build.args`, the

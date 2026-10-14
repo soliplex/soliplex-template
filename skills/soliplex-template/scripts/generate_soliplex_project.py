@@ -114,9 +114,11 @@ DEFAULTS: dict[str, object] = {
     # dependency, and the ingester writes the LanceDB the backend reads, so
     # this has to satisfy the range the 'soliplex_image_tag' release implies.
     "haiku_rag_version": "0.96.1",
-    # Frontend: "latest" (newest soliplex/frontend release, the historical
-    # behavior) or a specific soliplex/frontend release tag to pin.
-    "frontend_version": "latest",
+    # Tag of the published web-client image (ghcr.io/soliplex/frontend-web)
+    # nginx serves: a moving "<major>.<minor>" (follows patch releases on
+    # 'docker compose build --pull'), an exact "<major>.<minor>.<patch>" or
+    # "<major>.<minor>.<patch>-<build>", or "latest".
+    "frontend_version": "0.110",
     # Auth: "no-auth" | "auth"
     "auth_mode": "no-auth",
     # Gitea service (opt-in): include a local Gitea (postgres-backed,
@@ -152,12 +154,13 @@ IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 # soliplex.tools/soliplex.views subpackages, breaking every import beneath
 # them. src/soliplex/ is also where src_projects.py clones a dev-mode checkout.
 RESERVED_PACKAGE_NAMES = frozenset({"soliplex"})
-# "latest" or a soliplex/frontend release tag. Recent tags carry semver
-# build metadata (e.g. "v0.87.1+56"), so '+' is allowed alongside the usual
-# letters, digits, '.', '_', '-'. The tag is only ever used in the GitHub
-# API path (/releases/tags/<tag>) in nginx/Dockerfile, which accepts a raw
-# '+'; nginx is built (not pulled by tag), so the value is never a Docker tag.
-FRONTEND_VERSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
+# Tags the frontend-web image workflow publishes: "latest", a moving
+# "<major>.<minor>", or an exact "<major>.<minor>.<patch>" with an optional
+# "-<build>" (the release tag's "+<build>", which a Docker tag cannot carry).
+FRONTEND_VERSION_RE = re.compile(r"^(latest|\d+\.\d+(\.\d+(-\d+)?)?)$")
+# A soliplex/frontend *release* tag ("v0.110.0+96"), as the parameter took
+# before nginx built from the image: rejected, with the image tag to use.
+_FRONTEND_RELEASE_TAG_RE = re.compile(r"^v(\d+\.\d+\.\d+)(?:\+(\d+))?$")
 # Tags the soliplex image workflow publishes: "latest", a moving
 # "<major>.<minor>", or an exact "<major>.<minor>.<patch>".
 IMAGE_TAG_RE = re.compile(r"^(latest|\d+\.\d+(\.\d+)?)$")
@@ -256,11 +259,21 @@ class BadUID(GenError):
 class BadFrontendVersion(GenError):
     def __init__(self, value):
         self.value = value
-        super().__init__(
+        message = (
             f"frontend_version={value!r} must be 'latest' or a "
-            "soliplex/frontend release tag (letters, digits, '.', '_', "
-            "'-', '+')"
+            "ghcr.io/soliplex/frontend-web image tag: '<major>.<minor>', "
+            "'<major>.<minor>.<patch>', or '<major>.<minor>.<patch>-<build>'"
         )
+        release = _FRONTEND_RELEASE_TAG_RE.match(str(value))
+        if release:
+            version, build = release.groups()
+            tag = f"{version}-{build}" if build else version
+            message += (
+                f". That is a release tag: the image's tag drops the 'v' and "
+                f"spells '+' as '-' ({tag!r}), and images exist only from "
+                "0.110 on"
+            )
+        super().__init__(message)
 
 
 class BadPackageName(GenError):
@@ -469,15 +482,6 @@ def coerce_and_derive(params: dict[str, object]) -> dict[str, object]:
         params["tls_subject"] = (
             f"/C=US/ST=State/L=City/O=Soliplex/CN={params['server_name']}"
         )
-
-    # GitHub releases API path used by nginx/Dockerfile: "latest" stays on the
-    # /releases/latest endpoint; a pinned tag selects /releases/tags/<tag>.
-    frontend_version = str(params["frontend_version"])
-    params["frontend_release_path"] = (
-        "latest"
-        if frontend_version == "latest"
-        else f"tags/{frontend_version}"
-    )
 
     # Auth flag consumed by docker-compose.yml.mako (trailing space matters).
     auth_mode = str(params["auth_mode"])

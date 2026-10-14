@@ -13,8 +13,8 @@ project. To *create* a stack, see
 
 `soliplex-template` is **configuration + Dockerfiles**, not application source:
 the Soliplex backend is built on the published `soliplex` release image, the
-frontend from a `soliplex/frontend` release, and `haiku-rag` / `docling-serve`
-use upstream images.
+frontend on the published `soliplex/frontend` web image, and `haiku-rag` /
+`docling-serve` use upstream images.
 
 The repository also doubles as its own **exemplar** — the stack files at the
 repo root (`docker-compose.yml`, `backend/environment/`, `nginx/`, …) are a

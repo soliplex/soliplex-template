@@ -502,7 +502,7 @@ would pick up step 5's edit on the old image.
           retries: 4
     ```
 
-    It takes effect when step 12 recreates the container.
+    It takes effect when step 13 recreates the container.
 
 7. **The TUI**, if `tui/Dockerfile` exists: replace it with the one below,
    built `FROM ghcr.io/soliplex/soliplex-tui` at the same tag as the
@@ -558,7 +558,7 @@ would pick up step 5's edit on the old image.
 
     Its `PYTHONPATH` entry is already there (`unchanged`); `add` adds the
     matching `--reload-dirs=/app/src/<package>/src` to the serve command.
-    Ignore its advice to bring the backend up: step 12 does that.
+    Ignore its advice to bring the backend up: step 13 does that.
 
 11. **Give `soliplex-dev` a build of its own** (stacks whose
     `docker-compose.yml` has a `soliplex-dev` service). It now builds on the
@@ -587,14 +587,39 @@ would pick up step 5's edit on the old image.
             backend: "service:backend"
     ```
 
-    Commit both files. Step 12 builds it.
+    Commit both files. Step 13 builds it.
 
-12. **Tag the current backend image, then rebuild with `--pull`**, so Docker
+12. **Build nginx on the published web client.** Instead of building the
+    Flutter client from a release tarball, `nginx/Dockerfile` now copies it
+    from the `ghcr.io/soliplex/frontend-web` image, already cache-busted. Replace the
+    Dockerfile with the template's, keeping your own `-subj "…"` certificate
+    subject on its `openssl req` line:
+
+    ```dockerfile
+    --8<-- "nginx/Dockerfile"
+    ```
+
+    delete `nginx/post-build-cache-bust.sh`, which it no longer runs, and in
+    `nginx/nginx.conf` replace the hashed-asset locations — in **both**
+    `server` blocks, the HTTP one and the HTTPS one — with the one below. The
+    image names its asset directory for the release tag, build metadata
+    included (`v0.110.0+96/`), which the old pattern does not match, so
+    without this change the assets lose their long-lived caching:
+
+    ```nginx
+    --8<-- "nginx/nginx.conf:hashed-assets"
+    ```
+
+    Then, in the manifest, set `frontend_version` to the image tag (`0.110`
+    follows the 0.110 series) and drop `frontend_release_path`, which nothing
+    reads any more.
+
+13. **Tag the current backend image, then rebuild with `--pull`**, so Docker
     fetches the release image, and bring the stack up:
 
     ```bash
     docker tag <project>-backend:latest <project>-backend:pre-release-image
-    docker compose build --pull backend
+    docker compose build --pull backend nginx
     docker compose up -d
     ```
 

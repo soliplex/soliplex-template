@@ -390,6 +390,36 @@ def test_t_nginx_conf():
     assert out.count("server_name ${server_name};") == 2
 
 
+def test_t_nginx_conf_drops_snippet_markers():
+    text = (
+        "server { server_name localhost; }\n"
+        "server {\n"
+        "    server_name localhost;\n"
+        "    # --8<-- [start:hashed-assets]\n"
+        "    location ~ x { }\n"
+        "    # --8<-- [end:hashed-assets]\n"
+        "}\n"
+    )
+
+    out = rst.t_nginx_conf(text)
+
+    assert "--8<--" not in out
+    assert "    location ~ x { }\n}\n" in out
+
+
+# The upgrade page includes this section of the exemplar's nginx.conf by
+# name; snippets includes nothing, silently, for a section that is missing.
+def test_exemplar_nginx_conf_has_one_hashed_assets_section():
+    exemplar = (rst.REPO / "nginx" / "nginx.conf").read_text()
+
+    starts = exemplar.count("# --8<-- [start:hashed-assets]\n")
+    ends = exemplar.count("# --8<-- [end:hashed-assets]\n")
+
+    assert (starts, ends) == (1, 1)
+    section = exemplar.split("[start:hashed-assets]\n")[1].split("# --8<--")[0]
+    assert "immutable" in section
+
+
 def test_t_nginx_conf_wrong_count_raises():
     with pytest.raises(rst.RefreshError, match="two 'server_name localhost;'"):
         rst.t_nginx_conf("server_name localhost;\n")
@@ -397,20 +427,37 @@ def test_t_nginx_conf_wrong_count_raises():
 
 def test_t_nginx_dockerfile():
     text = (
-        "RUN curl https://api/repos/x/releases/latest -o x && \\\n"
-        '    openssl req -subj "/C=US/CN=localhost" -out cert\n'
+        "FROM ghcr.io/soliplex/frontend-web:0.110 AS frontend\n"
+        "FROM debian:trixie\n"
+        'RUN openssl req -subj "/C=US/CN=localhost" -out cert && \\\n'
+        "    chown -R ${PUID}:${PGID} /etc/nginx/ssl\n"
     )
 
     out = rst.t_nginx_dockerfile(text)
 
     assert out == (
-        "<%text>RUN curl https://api/repos/x/releases/</%text>"
-        "${frontend_release_path}"
-        "<%text> -o x && \\\n"
-        '    openssl req -subj "</%text>'
+        "<%text>FROM ghcr.io/soliplex/frontend-web:</%text>"
+        "${frontend_version}"
+        "<%text> AS frontend\n"
+        "FROM debian:trixie\n"
+        'RUN openssl req -subj "</%text>'
         "${tls_subject}"
-        '<%text>" -out cert</%text>\n'
+        '<%text>" -out cert && \\\n'
+        "    chown -R ${PUID}:${PGID} /etc/nginx/ssl</%text>\n"
     )
+
+
+def test_t_nginx_dockerfile_renders_the_exemplar():
+    text = (
+        "FROM ghcr.io/soliplex/frontend-web:0.110 AS frontend\n"
+        'RUN openssl req -subj "/CN=localhost" -out cert && \\\n'
+        "    chown ${PUID} cert\n"
+    )
+    mako = template.Template(rst.t_nginx_dockerfile(text))
+
+    out = mako.render(frontend_version="0.110", tls_subject="/CN=localhost")
+
+    assert out == text
 
 
 def test_t_nginx_dockerfile_no_subj_raises():
@@ -418,10 +465,10 @@ def test_t_nginx_dockerfile_no_subj_raises():
         rst.t_nginx_dockerfile("RUN echo hi\n")
 
 
-def test_t_nginx_dockerfile_no_release_url_raises():
+def test_t_nginx_dockerfile_no_frontend_image_raises():
     text = 'RUN openssl req -subj "/CN=x" -out cert\n'
 
-    with pytest.raises(rst.RefreshError, match="releases/latest"):
+    with pytest.raises(rst.RefreshError, match="one frontend-web FROM line"):
         rst.t_nginx_dockerfile(text)
 
 

@@ -204,17 +204,24 @@ from the user and invoke it.
    versions (below). Never present paired/coupled front-end+back-end
    combinations; the user picks one value on each axis.
 
-   For `frontend_version`, **offer the user real choices** instead of asking
-   them to recall a tag: list recent `soliplex/frontend` releases (newest
-   first) and present them alongside `latest` (the default):
+   For `frontend_version` (the tag of `ghcr.io/soliplex/frontend-web`, the published
+   web client `nginx/Dockerfile` copies from), **offer the user real
+   choices** instead of asking them to recall a tag: list the published tags
+   (oldest first) and present the most recent:
 
    ```bash
-   curl -s https://api.github.com/repos/soliplex/frontend/releases \
-     | jq -r '.[].tag_name' | head
+   TOKEN=$(curl -s "https://ghcr.io/token?scope=repository:soliplex/frontend-web:pull" | jq -r .token)
+   TAGS=https://ghcr.io/v2/soliplex/frontend-web/tags/list
+   curl -s -H "Authorization: Bearer $TOKEN" "$TAGS" | jq -r '.tags[]' | sort -V
    ```
 
-   Fall back to `latest` (or free-text tag entry) if the API is unreachable or
-   rate-limited; set `GITHUB_TOKEN`/`GH_TOKEN` to raise the rate limit.
+   Explain the kinds: a `<major>.<minor>` tag (e.g. `0.110`, the default)
+   moves, picking up patch releases on `docker compose build --pull nginx`;
+   an exact `<major>.<minor>.<patch>` or `<major>.<minor>.<patch>-<build>`
+   pins one; `latest` is also accepted. A `soliplex/frontend` *release* tag
+   (`v0.110.0+96`) is not an image tag, and the generator refuses it, naming
+   the image tag to use (`0.110.0-96`). Images exist only from 0.110 on.
+   Fall back to the default if GHCR is unreachable.
 
    For the backend `soliplex` release (`soliplex_image_tag`: the tag of
    `ghcr.io/soliplex/soliplex-postgres`, which `backend/Dockerfile` builds
