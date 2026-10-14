@@ -89,8 +89,17 @@ directory, not the stack root — the root `pyproject.toml` is for stack
 tooling.)
 
 That run uses the project's own lock file, not the versions the backend has.
-To check your code against what the backend actually imports it with, see
-[Checking it in the backend's environment](../../users/custom-package.md#checking-it-in-the-backends-environment).
+To run the same tests against what the backend actually imports your code
+with, run them in the dev-mode `soliplex-dev` service, which carries your
+project's dev dependencies on top of the backend's image:
+
+```bash
+docker compose run --rm --no-deps -w /app/src/<package> soliplex-dev \
+    /app/.venv/bin/python -m pytest
+```
+
+(The first run builds `soliplex-dev`.) See
+[Running its tests there](../../users/custom-package.md#running-its-tests-there).
 
 ## 5. Commit it
 

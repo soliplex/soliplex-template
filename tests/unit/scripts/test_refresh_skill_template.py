@@ -258,6 +258,55 @@ def test_t_ingester_dockerfile():
     assert out == "FROM ghcr.io/ggozad/haiku.rag-slim:${haiku_rag_version}\n"
 
 
+def test_t_soliplex_dev_requirements():
+    out = rst.t_soliplex_dev_requirements("# header\n#\n")
+
+    assert out == "# header\n#\n# src/${package_name}\npytest\n"
+
+
+# The stack's copy follows the authored project's dev group, whatever it is,
+# rather than repeating it.
+_PACKAGE_PYPROJECT = "src/__package__/pyproject.toml.mako"
+
+
+@pytest.mark.parametrize(
+    "dev, expected",
+    [
+        (
+            '["pytest", "coverage"]',
+            "# h\n# src/${package_name}\npytest\ncoverage\n",
+        ),
+        ("[]", "# h\n"),
+    ],
+)
+def test_t_soliplex_dev_requirements_follows_the_authored_group(
+    monkeypatch, dev, expected
+):
+    monkeypatch.setitem(
+        rst.AUTHORED, _PACKAGE_PYPROJECT, f"[dependency-groups]\ndev = {dev}\n"
+    )
+
+    out = rst.t_soliplex_dev_requirements("# h\n")
+
+    assert out == expected
+
+
+def test_t_soliplex_dev_requirements_refuses_an_authored_include(monkeypatch):
+    monkeypatch.setitem(
+        rst.AUTHORED,
+        _PACKAGE_PYPROJECT,
+        '[dependency-groups]\ndev = [{include-group = "t"}]\nt = ["x"]\n',
+    )
+
+    with pytest.raises(rst.RefreshError, match="plain requirements"):
+        rst.t_soliplex_dev_requirements("# h\n")
+
+
+def test_t_soliplex_dev_requirements_refuses_requirements():
+    with pytest.raises(rst.RefreshError, match="only the header"):
+        rst.t_soliplex_dev_requirements("# header\npytest\n")
+
+
 def test_t_ingester_dockerfile_no_match_raises():
     with pytest.raises(rst.RefreshError, match="ingester Dockerfile"):
         rst.t_ingester_dockerfile("FROM python:3.13\n")

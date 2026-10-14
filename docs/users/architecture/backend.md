@@ -37,8 +37,9 @@ docker compose build backend
 docker compose up -d backend
 ```
 
-The dev-mode `soliplex-dev` service builds its own copy of this image, so
-rebuild it too if you use it (`docker compose build backend soliplex-dev`).
+The dev-mode `soliplex-dev` service builds on this image, adding the `src/`
+projects' dev dependencies, so rebuild it too if you use it
+(`docker compose build backend soliplex-dev`).
 
 ## Choosing the soliplex release
 

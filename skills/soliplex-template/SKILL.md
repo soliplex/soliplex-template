@@ -583,6 +583,7 @@ uv run scripts/src_projects.py list                  # what is there, what is on
 uv run scripts/src_projects.py clone <url>           # clone into src/ and wire it up
 uv run scripts/src_projects.py add <name>            # a checkout cloned by hand
 uv run scripts/src_projects.py remove <name>         # off the path; checkout untouched
+uv run scripts/src_projects.py dev-requirements      # regenerate soliplex-dev's dev deps
 ```
 
 `clone` picks the directory name from the URL (`--name` overrides), then
@@ -630,6 +631,23 @@ mode: `--reload=both` becomes `--reload=config`, with a warning;
 config, with a note that `--reload=config` works too. A backend serving with no
 `--reload` at all watches nothing: they edit only `PYTHONPATH`, and say so —
 never turn reload on themselves.
+
+**Dev dependencies for tests (#213).** The `soliplex-dev` service is built on
+the backend's image (`soliplex-dev/Dockerfile`) plus every `src/` project's
+`dev` dependency group, so a project's tests run there against the backend's
+own versions: `docker compose run --rm --no-deps -w /app/src/<project>
+soliplex-dev /app/.venv/bin/python -m pytest`. The groups are listed in the
+committed `soliplex-dev/requirements-dev.txt`, which `add`/`clone` regenerate
+as they go and `dev-requirements` regenerates on demand: after a project's
+dev group changes, or after a project's directory is deleted from `src/`.
+Every directory under `src/` contributes, on `PYTHONPATH` or not, so `remove`
+(which only takes a project off the path and the watch list, leaving the
+checkout) does not change the file. `dev-requirements --check` reports
+whether it is up to date. When it changes, tell the user to rebuild (`docker compose build
+soliplex-dev`) and to commit the file. A dev requirement that conflicts with
+the image's versions fails that build; the fix is in the project's dev group.
+A stack without a `soliplex-dev/` directory predates this, and the command
+says so.
 
 Pass `--no-dep-check` to skip that container round-trip, `--dry-run` to report
 without writing, and `--no-path` to `clone` when the user wants the checkout

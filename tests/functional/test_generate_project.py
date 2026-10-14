@@ -556,6 +556,30 @@ def test_default_project_omits_tui_service(generated_project):
     assert "/tui/>" not in install_doc
 
 
+def test_soliplex_dev_requirements_match_what_src_projects_writes(
+    generated_project,
+):
+    # The refresh derives the stack's soliplex-dev/requirements-dev.txt
+    # instead of running src_projects.py; this keeps the two from drifting.
+    out, _params = generated_project
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(_SCRIPT.parent / "src_projects.py"),
+            "dev-requirements",
+            "--check",
+            "--project-dir",
+            str(out),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "up to date" in result.stdout
+
+
 def test_generated_package_is_importable(generated_project):
     out, _params = generated_project
     # Hermetic: the stdlib-only tool imports off PYTHONPATH with no install.

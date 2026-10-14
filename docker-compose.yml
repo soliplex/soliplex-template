@@ -161,12 +161,13 @@ services:
 
     profiles: ["devmode"]
 
+    # The backend's image plus every src/ project's 'dev' dependency group
+    # (see soliplex-dev/Dockerfile): 'service:backend' is the image compose
+    # builds for that service, so this one never drifts from it.
     build:
-      context: backend
-      dockerfile: Dockerfile
-      args:
-        PUID: ${PUID:-1000}
-        PGID: ${PGID:-1000}
+      context: soliplex-dev
+      additional_contexts:
+        backend: "service:backend"
 
     env_file: ".env"
     user: "${PUID:-1000}:${PGID:-1000}"

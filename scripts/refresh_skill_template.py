@@ -35,6 +35,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tomllib
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 TEMPLATE = REPO / "skills" / "soliplex-template" / "assets" / "template"
@@ -432,6 +433,30 @@ def t_tui_dockerfile(text: str) -> str:
     return _soliplex_from("soliplex-tui", text)
 
 
+def t_soliplex_dev_requirements(text: str) -> str:
+    # The exemplar's src/ holds no project with a dev group, so its file is
+    # the bare header src_projects.py writes. A generated stack's own project
+    # (src/${package_name}/, authored below) brings its own 'dev' group, so
+    # the stack's copy starts as src_projects.py would write it: that group,
+    # read from the authored pyproject.toml itself rather than repeated here.
+    require(
+        all(
+            line.startswith("#") or not line.strip()
+            for line in text.splitlines()
+        ),
+        "expected only the header in soliplex-dev/requirements-dev.txt",
+    )
+    authored = tomllib.loads(AUTHORED["src/__package__/pyproject.toml.mako"])
+    dev = authored.get("dependency-groups", {}).get("dev", [])
+    require(
+        all(isinstance(entry, str) for entry in dev),
+        "expected plain requirements in the authored project's dev group",
+    )
+    if not dev:
+        return text
+    return text + "# src/${package_name}\n" + "".join(f"{d}\n" for d in dev)
+
+
 def t_nginx_conf(text: str) -> str:
     require(
         text.count("server_name localhost;") == 2,
@@ -735,6 +760,7 @@ DERIVED = {
     "backend/environment/haiku.rag.yaml": t_backend_haiku,
     "haiku.rag/haiku.rag.yaml": t_ingester_haiku,
     "haiku.rag/Dockerfile": t_ingester_dockerfile,
+    "soliplex-dev/requirements-dev.txt": t_soliplex_dev_requirements,
     "backend/Dockerfile": t_backend_dockerfile,
     "tui/Dockerfile": t_tui_dockerfile,
     "nginx/nginx.conf": t_nginx_conf,
@@ -843,6 +869,10 @@ USER_DOC_PARAMS = {
         (
             '"import myproject.tools, myproject.views"',
             '"import ${package_name}.tools, ${package_name}.views"',
+        ),
+        (
+            "-w /app/src/myproject soliplex-dev",
+            "-w /app/src/${package_name} soliplex-dev",
         ),
     ],
 }
