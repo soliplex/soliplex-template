@@ -14,8 +14,8 @@ A Docker Compose template that assembles a running **Soliplex** stack:
 
 This repository is **configuration + Dockerfiles**, not application source: the
 Soliplex backend is built on the published `soliplex` release image, the
-frontend is fetched from a `soliplex/frontend` GitHub release at image-build
-time, and `haiku-rag` / `docling-serve` use upstream images.
+frontend is copied from the published `soliplex/frontend` web image, and
+`haiku-rag` / `docling-serve` use upstream images.
 
 You don't run this repository directly. You generate your **own** stack from it
 with the bundled `soliplex-template` Agent Skill (or the generator script), then

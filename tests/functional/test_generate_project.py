@@ -62,7 +62,7 @@ _PARAMS = {
     "docs_dir": "rag/inbox",
     # Pin a (fictional) frontend release tag to prove version selection lands
     # in nginx/Dockerfile as a /releases/tags/<tag> API URL.
-    "frontend_version": "v9.9.9-test",
+    "frontend_version": "0.110.0-96",
 }
 
 _GEN_TOOLS = ("git",)
@@ -241,8 +241,10 @@ def test_frontend_version_pinned_in_nginx_dockerfile(generated_project):
 
     dockerfile = _read(out, "nginx/Dockerfile")
 
-    assert f"releases/tags/{params['frontend_version']}" in dockerfile
-    assert "releases/latest" not in dockerfile
+    assert (
+        f"FROM ghcr.io/soliplex/frontend-web:{params['frontend_version']}"
+        " AS frontend\n"
+    ) in dockerfile
 
 
 def test_escaped_literals_survived(generated_project):

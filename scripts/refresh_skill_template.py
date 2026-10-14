@@ -406,23 +406,34 @@ def t_ingester_dockerfile(text: str) -> str:
     return new
 
 
-def _soliplex_from(image: str, text: str) -> str:
+def _image_from(text: str, image: str, param: str) -> str:
     """Point the one ``FROM ghcr.io/soliplex/<image>:<tag>`` line at the
-    ``soliplex_image_tag`` parameter. The backend and TUI images share it, so
-    the two services always run the same soliplex release.
+    ``param`` generator parameter.
 
-    Everything else is wrapped in ``<%text>``, as in ``t_nginx_dockerfile``:
-    Mako would otherwise consume each backslash-newline continuation and try
-    to expand the shell's ``${PUID}`` / ``${PGID}``."""
-    pattern = rf"(?m)^(FROM ghcr\.io/soliplex/{re.escape(image)}:)\S+$"
+    Everything else is wrapped in ``<%text>``: Mako would otherwise consume
+    each backslash-newline continuation and try to expand the shell's
+    ``${PUID}`` / ``${PGID}``. A stage name after the tag (``AS frontend``)
+    stays put."""
+    pattern = (
+        rf"(?m)^(FROM ghcr\.io/soliplex/{re.escape(image)}:)\S+"
+        r"(?P<stage>[ \t]+AS[ \t]+\S+)?$"
+    )
     n = len(re.findall(pattern, text))
     require(n == 1, f"expected one {image} FROM line, got {n}")
     # Keep the trailing newline outside the <%text> block, so the .mako file
-    # ends with one (see t_nginx_dockerfile).
+    # ends with one (keeps end-of-file-fixer happy and refresh idempotent).
     stripped = text.rstrip("\n")
     trailing = text[len(stripped) :]
-    body = re.sub(pattern, r"\1</%text>${soliplex_image_tag}<%text>", stripped)
+    body = re.sub(
+        pattern, rf"\1</%text>${{{param}}}<%text>\g<stage>", stripped
+    )
     return "<%text>" + body + "</%text>" + trailing
+
+
+def _soliplex_from(image: str, text: str) -> str:
+    # The backend and TUI images share one tag, so the two services always
+    # run the same soliplex release.
+    return _image_from(text, image, "soliplex_image_tag")
 
 
 def t_backend_dockerfile(text: str) -> str:
@@ -457,7 +468,14 @@ def t_soliplex_dev_requirements(text: str) -> str:
     return text + "# src/${package_name}\n" + "".join(f"{d}\n" for d in dev)
 
 
+# Snippet-section markers ('# --8<-- [start:name]' / '[end:name]') let a
+# repo-only docs page include part of a file verbatim; they mean nothing to a
+# generated stack, so its copy drops them.
+_SNIPPET_MARKER = re.compile(r"(?m)^[ \t]*# --8<-- \[(?:start|end):[\w-]+\]\n")
+
+
 def t_nginx_conf(text: str) -> str:
+    text = _SNIPPET_MARKER.sub("", text)
     require(
         text.count("server_name localhost;") == 2,
         "expected two 'server_name localhost;' in nginx.conf",
@@ -518,31 +536,15 @@ def t_nginx_conf(text: str) -> str:
 
 
 def t_nginx_dockerfile(text: str) -> str:
-    # Wrap everything literal in <%text> (preserves backslash-newlines and the
-    # builder's shell ${...} expansions); break out only for the two
-    # parameters: the GitHub releases API path (frontend version selection)
-    # and the self-signed cert subject.
+    # The web client comes from the published frontend-web image, whose tag
+    # is the 'frontend_version' parameter; the self-signed cert subject is the
+    # other parameter. Everything else stays literal (see _image_from).
     m = re.search(r'-subj "([^"]*)"', text)
     require(m is not None, 'expected a -subj "..." line in nginx/Dockerfile')
     subj = m.group(1)
     require(text.count(subj) == 1, f"cert subject {subj!r} is not unique")
-    require(
-        text.count("releases/latest") == 1,
-        "expected one 'releases/latest' frontend API URL in nginx/Dockerfile",
-    )
-    # Move any trailing newline outside the final <%text> block so the
-    # generated .mako file ends with a newline (keeps end-of-file-fixer happy
-    # and refresh idempotent) while the rendered Dockerfile stays identical
-    # for the default (frontend_release_path="latest").
-    stripped = text.rstrip("\n")
-    trailing = text[len(stripped) :]
-    body = "<%text>" + stripped + "</%text>"
-    body = body.replace(
-        "releases/latest",
-        "releases/</%text>${frontend_release_path}<%text>",
-    )
-    body = body.replace(subj, "</%text>${tls_subject}<%text>")
-    return body + trailing
+    body = _image_from(text, "frontend-web", "frontend_version")
+    return body.replace(subj, "</%text>${tls_subject}<%text>")
 
 
 def t_init_sh(text: str) -> str:
@@ -725,6 +727,10 @@ def t_agents(text: str) -> str:
             (
                 "haiku.rag-slim:0.96.1",
                 "haiku.rag-slim:${haiku_rag_version}",
+            ),
+            (
+                "`ghcr.io/soliplex/frontend-web:0.110`",
+                "`ghcr.io/soliplex/frontend-web:${frontend_version}`",
             ),
             # tui/Dockerfile only exists in a project that took the TUI.
             (
@@ -1286,7 +1292,7 @@ PROBE = dict(
     soliplex_image_tag="t",
     soliplex_dev_constraint="c",
     haiku_rag_version="v",
-    frontend_release_path="latest",
+    frontend_version="t",
     docs_dir="d",
     include_gitea=True,
     include_tui=True,
