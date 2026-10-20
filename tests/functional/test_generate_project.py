@@ -63,6 +63,10 @@ _PARAMS = {
     # Pin a (fictional) frontend release tag to prove version selection lands
     # in nginx/Dockerfile as a /releases/tags/<tag> API URL.
     "frontend_version": "0.110.0-96",
+    # Non-default embeddings and chunk size propagate.
+    "rag_embed_model": "not-qwen3-embedding:0.6b",
+    "rag_embed_dim": 1023,
+    "chunk_size": 511,
 }
 
 _GEN_TOOLS = ("git",)

@@ -73,6 +73,71 @@ layout leaves every LanceDB written before it needing a one-off upgrade before
 haiku.rag will open it. See [Database migrations](migrations.md) for how to
 ask which case a bump is.
 
+## Changing the embedding model
+
+The embedding model is set in **two** files, and they must agree:
+`haiku.rag/haiku.rag.yaml` configures the ingester (and the one-shot
+`haiku-rag` service), and `backend/environment/haiku.rag.yaml` configures the
+backend. Both open the same LanceDB, and a store records the vector dimension
+it was written with, so it refuses to open under a different one:
+
+```text
+Database configuration is incompatible with current settings:
+  - Stored (db) embedding vector dimension 2560 -> Environment
+    (current) embedding vector dimension 1024
+```
+
+When that check fails, the ingester crash-loops. Stacks generated before
+soliplex-template#218 was fixed are affected even if the model was never
+changed. In those stacks the ingester's file has no `embeddings:` section, so
+it fell back to haiku.rag's default (`qwen3-embedding:4b`, 2560 dimensions),
+whatever `rag_embed_model` said.
+
+To switch models, or to repair one of those stacks:
+
+1. Set the same `embeddings:` block in both files:
+
+    ```yaml
+    embeddings:
+      model:
+        name: qwen3-embedding:0.6b
+        provider: ollama
+        vector_dim: 1024
+    ```
+
+2. Stop the writer: `docker compose stop haiku-ingester`.
+3. Bring the store in line with the new model. Check whether it holds any
+   documents (`info` reports the row count of each table):
+
+    ```bash
+    docker compose run --rm --no-TTY haiku-rag info \
+        --db /data/haiku.rag.lancedb
+    ```
+
+    An **empty** store can just be moved aside, and the ingester creates a
+    fresh one on start:
+    `mv rag/db/haiku.rag.lancedb rag/db/haiku.rag.lancedb.old`.
+
+    A store **holding documents** needs its existing chunks re-embedded with
+    the new model. This drops and recreates the chunks table at the new
+    dimension, and does not re-convert the source documents:
+
+    ```bash
+    docker compose run --rm --no-TTY haiku-rag rebuild --embed-only \
+        --db /data/haiku.rag.lancedb
+    ```
+
+    Do the same for every other store under `rag/db/` that a room reads: one
+    query is embedded once, with one model.
+
+4. Restart: `docker compose start haiku-ingester`, then
+   `docker compose restart backend`.
+5. Jobs that failed under the old configuration, for example with a 404 for a
+   model the Ollama server doesn't have, sit in the dead-letter queue. List
+   them with `GET /dlq`, then retry each one with `POST /dlq/{id}/retry`, or
+   let the next source sweep queue them again. Both calls need the bearer
+   token; see [Ingester control plane](ingester.md).
+
 ## Searching several databases at once
 
 A room's RAG skill or `search_documents` tool can name more than one database
