@@ -365,17 +365,23 @@ def t_installation(text: str) -> str:
     )
 
 
+# Ensure that backend and ingester use the same embeddings.
+EMBEDDING_SUBS = [
+    ("name: qwen3-embedding:4b", "name: ${rag_embed_model}"),
+    ("vector_dim: 2560", "vector_dim: ${rag_embed_dim}"),
+]
+
+
 def t_backend_haiku(text: str) -> str:
     return repl(
         text,
         [
-            ("name: qwen3-embedding:4b", "name: ${rag_embed_model}"),
-            ("vector_dim: 2560", "vector_dim: ${rag_embed_dim}"),
             (
                 "qa:\n  model:\n    name: gpt-oss:latest",
                 "qa:\n  model:\n    name: ${rag_qa_model}",
             ),
             ("chunk_size: 256", "chunk_size: ${chunk_size}"),
+            *EMBEDDING_SUBS,
         ],
     )
 
@@ -385,7 +391,13 @@ def t_ingester_haiku(text: str) -> str:
     # reach the rendered file verbatim rather than being substituted by Mako
     # at generation time.
     text = esc(text, "${INGESTER_TOKEN}", "${INGESTER_DB_PASSWORD}")
-    return repl(text, [("chunk_size: 256", "chunk_size: ${chunk_size}")])
+    return repl(
+        text,
+        [
+            ("chunk_size: 256", "chunk_size: ${chunk_size}"),
+            *EMBEDDING_SUBS,
+        ],
+    )
 
 
 def t_ingester_dockerfile(text: str) -> str:

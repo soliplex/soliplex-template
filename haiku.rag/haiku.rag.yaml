@@ -50,6 +50,14 @@ processing:
   chunking_merge_peers: true
   chunking_use_markdown_tables: false
 
+# Match backend's 'backend/environment/haiku.rag.yaml', which
+# reads the same LanceDB.
+embeddings:
+  model:
+    name: qwen3-embedding:4b
+    provider: ollama
+    vector_dim: 2560
+
 providers:
   docling_serve:
     base_url: http://docling-serve:5001

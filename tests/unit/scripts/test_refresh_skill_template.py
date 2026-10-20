@@ -236,6 +236,8 @@ def test_t_ingester_haiku():
         "      auth_token: ${INGESTER_TOKEN}\n"
         "      dburi: postgresql://u:${INGESTER_DB_PASSWORD}@postgres/db\n"
         "  chunk_size: 256\n"
+        "  name: qwen3-embedding:4b\n"
+        "  vector_dim: 2560\n"
     )
 
     out = rst.t_ingester_haiku(text)
@@ -247,6 +249,8 @@ def test_t_ingester_haiku():
         "      dburi: postgresql://u:"
         "<%text>${INGESTER_DB_PASSWORD}</%text>@postgres/db\n"
         "  chunk_size: ${chunk_size}\n"
+        "  name: ${rag_embed_model}\n"
+        "  vector_dim: ${rag_embed_dim}\n"
     )
 
 

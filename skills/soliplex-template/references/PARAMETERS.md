@@ -60,8 +60,8 @@ prompt (a command-line value would leak into shell history).
 | `chat_model` | `gpt-oss:latest` | — | `installation.yaml` `default_chat` |
 | `chat_model_alt` | `gpt-oss:20b` | — | `installation.yaml` `alternate_chat` |
 | `title_model` | `gpt-oss:latest` | — | `installation.yaml` `title` |
-| `rag_embed_model` | `qwen3-embedding:4b` | — | `backend/environment/haiku.rag.yaml` |
-| `rag_embed_dim` | `2560` | int; must match the embedding model | `backend/environment/haiku.rag.yaml` |
+| `rag_embed_model` | `qwen3-embedding:4b` | — | both `haiku.rag.yaml` files |
+| `rag_embed_dim` | `2560` | int; must match the embedding model | both `haiku.rag.yaml` files |
 | `rag_qa_model` | `gpt-oss:latest` | — | `backend/environment/haiku.rag.yaml` |
 | `chunk_size` | `256` | int | both `haiku.rag.yaml` files |
 | `agui_db` | `soliplex_agui` | SQL identifier; ≠ `authz_db` | `installation.yaml` DB URIs, `postgres/config/init.sh` (role **and** database) |
