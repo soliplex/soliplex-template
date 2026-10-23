@@ -105,15 +105,15 @@ DEFAULTS: dict[str, object] = {
     # (ghcr.io/soliplex/soliplex-tui) build on: "latest", a moving
     # "<major>.<minor>" (follows patch releases on 'docker compose build
     # --pull'), or an exact "<major>.<minor>.<patch>".
-    "soliplex_image_tag": "0.85",
+    "soliplex_image_tag": "0.86.1",
     # The 'soliplex' requirement in the stack's host-side pyproject.toml files
     # (dev mode, and src/<package>/). Must admit the image tag's release.
-    "soliplex_dev_constraint": ">= 0.85, < 0.86",
+    "soliplex_dev_constraint": ">= 0.86.1, < 0.87",
     # haiku-ingester image tag (ghcr.io/ggozad/haiku.rag-slim). Not a free
     # choice: the soliplex release constrains 'haiku.rag-slim' as a
     # dependency, and the ingester writes the LanceDB the backend reads, so
     # this has to satisfy the range the 'soliplex_image_tag' release implies.
-    "haiku_rag_version": "0.96.1",
+    "haiku_rag_version": "0.101.0",
     # The docling-serve image the converter service runs: the variant the
     # host can use (the 'cpu' variant converts on any host; 'base' and
     # the 'cuNNN' variants want a GPU) and the docling-serve version,
@@ -123,7 +123,7 @@ DEFAULTS: dict[str, object] = {
     # initial commit);  upstream tags no moving tag on the CUDA
     # variants ('latest' is only valid for 'cpu' / 'base').
     "docling_serve_variant": "cpu",
-    "docling_serve_version": "v1.32.0",
+    "docling_serve_version": "v1.38.0",
     # Tag of the published web-client image (ghcr.io/soliplex/frontend-web)
     # nginx serves: a moving "<major>.<minor>" (follows patch releases on
     # 'docker compose build --pull'), an exact "<major>.<minor>.<patch>" or
@@ -183,7 +183,7 @@ DOCLING_SERVE_VARIANT_SUFFIXES = {
     "cu128": "-cu128",
     "cu130": "-cu130",
 }
-DOCLING_SERVE_IMAGE_BASE = "ghcr.io/docling-project/docling-serve"
+DOCLING_SERVE_IMAGE_BASE = "quay.io/docling-project/docling-serve"
 # How many patch releases of a moving "<major>.<minor>" tag to check against
 # soliplex_dev_constraint: far more than any series has had.
 _SERIES_PATCHES = 100

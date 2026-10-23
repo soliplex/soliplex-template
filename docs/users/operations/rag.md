@@ -32,7 +32,8 @@ To ingest only part of what lands there, set `ignore_patterns` /
 ## Adding other sources
 
 To pull from S3, HTTP, WebDAV, and the like, append entries under
-`ingester.sources` in `haiku.rag/haiku.rag.yaml` and restart the ingester:
+`ingester.databases.haiku.rag.sources` in `haiku.rag/haiku.rag.yaml` and
+restart the ingester:
 
 ```bash
 docker compose restart haiku-ingester
@@ -40,8 +41,8 @@ docker compose restart haiku-ingester
 
 ## A separate, static database
 
-The ingester only maintains **one** LanceDB. For a *separate*, mostly-static
-corpus, build a standalone database with the `haiku-rag` CLI through the
+For a separate, mostly-static corpus, build a standalone database with the
+`haiku-rag` CLI through the
 `haiku-rag` service — the stack's one-shot CLI runner, which shares the
 ingester's image, its `rag/db` and `rag/docs` mounts, its `OLLAMA_BASE_URL` and
 its `haiku.rag.yaml`. Point it at a **different** `--db` so it never collides
@@ -65,6 +66,51 @@ subcommand runs.
 lands at `rag/db/handbook.lancedb`, which the backend already reads through its
 `rag/db` mount. Wire a room to it with `rag_lancedb_stem: "handbook"` in that
 room's `room_config.yaml`.
+
+## Ingesting multiple databases
+
+One ingester can maintain several databases with the same queue and control
+plane. In `haiku.rag/haiku.rag.yaml`, list their locations under
+`lancedb.databases` and their sources under `ingester.databases`. Keep the
+default database in both maps when adding another:
+
+```yaml
+lancedb:
+  databases:
+    haiku.rag: /data/haiku.rag.lancedb
+    handbook: /data/handbook.lancedb
+
+ingester:
+  # Keep the existing queue and api sections here.
+  databases:
+    haiku.rag:
+      sources:
+        - type: fs
+          id: local-docs
+          root: /docs
+          ignore_patterns: ["handbook/**"]
+          delete_orphans: true
+    handbook:
+      sources:
+        - type: fs
+          id: handbook-docs
+          root: /docs/handbook
+          delete_orphans: true
+```
+
+Source ids must be unique across databases. Each database must have only
+one writer. Point a room at `handbook` with `rag_lancedb_stem: "handbook"`.
+Moving a source does not remove documents already stored in another database.
+
+Apply database and source changes without restarting the other databases:
+
+```bash
+docker compose kill -s SIGHUP haiku-ingester
+```
+
+`POST /reload` is the HTTP equivalent. `GET /databases/{name}` reports a
+database's details. Changes outside `lancedb.databases` and
+`ingester.databases`, such as embeddings or queue settings, require a restart.
 
 ## Migrating a store
 

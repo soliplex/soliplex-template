@@ -20,7 +20,7 @@ without a local build. E.g.:
 
 ```yaml
   docling-serve:
-    image: ghcr.io/docling-project/docling-serve-cpu:vK.L.M
+    image: quay.io/docling-project/docling-serve-cpu:vK.L.M
 
     #build:
     #  context: haiku.rag

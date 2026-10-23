@@ -34,6 +34,7 @@ import tomllib
 import warnings
 
 import pytest
+import yaml
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _SCRIPT = (
@@ -63,10 +64,6 @@ _PARAMS = {
     # Pin a (fictional) frontend release tag to prove version selection lands
     # in nginx/Dockerfile as a /releases/tags/<tag> API URL.
     "frontend_version": "0.110.0-96",
-    # A GPU-capable docling-serve answer, proving the composed image lands
-    # in the generated docker-compose.yml.
-    "docling_serve_variant": "cu130",
-    "docling_serve_version": "v1.38.0",
     # Non-default embeddings and chunk size propagate.
     "rag_embed_model": "not-qwen3-embedding:0.6b",
     "rag_embed_dim": 1023,
@@ -286,6 +283,49 @@ def test_ingester_wired_to_postgres_queue(generated_project):
     assert "ingester_db_password:\n      file: ./.secrets/" in compose
 
 
+def test_ingester_database_and_queue_startup(generated_project):
+    out, _params = generated_project
+    config = yaml.safe_load(_read(out, "haiku.rag/haiku.rag.yaml"))
+    services = yaml.safe_load(_read(out, "docker-compose.yml"))["services"]
+
+    assert "sources" not in config["ingester"]
+    assert config["ingester"]["queue"]["namespace"] == "soliplex"
+    sources = config["ingester"]["databases"]["haiku.rag"]["sources"]
+    assert sources[0]["id"] == "local-docs"
+    assert sources[0]["root"] == "/docs"
+    assert config["storage"]["data_dir"] == "/data"
+    command = services["haiku-ingester"]["command"]
+    assert command[:2] == ["sh", "-ec"]
+    assert command[2].index(" queue migrate") < command[2].index(" serve")
+
+
+def test_default_stack_image_versions(generated_project):
+    out, _params = generated_project
+    services = yaml.safe_load(_read(out, "docker-compose.yml"))["services"]
+
+    assert services["haiku-ingester"]["image"] == (
+        "ghcr.io/ggozad/haiku.rag-slim:0.101.0"
+    )
+    assert (
+        services["haiku-rag"]["image"] == services["haiku-ingester"]["image"]
+    )
+    assert "soliplex-postgres:0.86.1\n" in _read(out, "backend/Dockerfile")
+    project = tomllib.loads(_read(out, "pyproject.toml"))
+    package = tomllib.loads(_read(out, "src/soliplex_functest/pyproject.toml"))
+    assert project["project"]["dependencies"] == [
+        "soliplex[postgres-binary] >= 0.86.1, < 0.87"
+    ]
+    assert package["project"]["dependencies"] == ["soliplex >= 0.86.1, < 0.87"]
+
+
+def test_docling_image_matches_haiku_rag(generated_project):
+    out, _params = generated_project
+    services = yaml.safe_load(_read(out, "docker-compose.yml"))["services"]
+    image = "quay.io/docling-project/docling-serve-cpu:v1.38.0"
+
+    assert services["docling-serve"]["image"] == image
+
+
 def test_one_shot_haiku_rag_service_exports_the_queue_password(
     generated_project,
 ):
@@ -390,7 +430,7 @@ def test_docling_image_baked_at_generation(generated_project):
 
     compose = _read(out, "docker-compose.yml")
     assert (
-        "image: ghcr.io/docling-project/docling-serve-cu130:v1.38.0" in compose
+        "image: quay.io/docling-project/docling-serve-cpu:v1.38.0" in compose
     )
     # No runtime knob, no interpolation:  the bake is a file like
     # everything else, and the local-build recipe travels as the
