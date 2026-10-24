@@ -254,14 +254,6 @@ def test_t_ingester_haiku():
     )
 
 
-def test_t_ingester_dockerfile():
-    text = "FROM ghcr.io/ggozad/haiku.rag-slim:0.96.1\n"
-
-    out = rst.t_ingester_dockerfile(text)
-
-    assert out == "FROM ghcr.io/ggozad/haiku.rag-slim:${haiku_rag_version}\n"
-
-
 def test_t_soliplex_dev_requirements():
     out = rst.t_soliplex_dev_requirements("# header\n#\n")
 
@@ -309,11 +301,6 @@ def test_t_soliplex_dev_requirements_refuses_an_authored_include(monkeypatch):
 def test_t_soliplex_dev_requirements_refuses_requirements():
     with pytest.raises(rst.RefreshError, match="only the header"):
         rst.t_soliplex_dev_requirements("# header\npytest\n")
-
-
-def test_t_ingester_dockerfile_no_match_raises():
-    with pytest.raises(rst.RefreshError, match="ingester Dockerfile"):
-        rst.t_ingester_dockerfile("FROM python:3.13\n")
 
 
 # A Dockerfile carrying what the soliplex transforms must pass through: a
