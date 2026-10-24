@@ -235,7 +235,7 @@ from the user and invoke it.
    curl -s -H "Authorization: Bearer $TOKEN" "$TAGS" | jq -r '.tags[]' | sort -V
    ```
 
-   Explain the two kinds: a `<major>.<minor>` tag (e.g. `0.85`, the default)
+   Explain the two kinds: a `<major>.<minor>` tag (e.g. `0.86`)
    moves, picking up patch releases on `docker compose build --pull`; an
    exact `<major>.<minor>.<patch>` pins one release. `latest` is also
    accepted. Fall back to the default if GHCR is unreachable.
@@ -243,7 +243,7 @@ from the user and invoke it.
    Then set `soliplex_dev_constraint` (the `soliplex` requirement in the
    stack's host-side `pyproject.toml` files) to a range that admits the
    release, e.g. `>= 0.86, < 0.87` for `0.86` or `0.86.1`; the default
-   `>= 0.85, < 0.86` already suits any `0.85` tag. The generator refuses a
+   `>= 0.86.1, < 0.87` admits the default `0.86.1` tag. The generator refuses a
    tag outside the constraint.
 
 2. **Write the answers to a JSON file** (omit keys to accept defaults), e.g.
@@ -438,7 +438,9 @@ backend image: `docker compose run --rm --no-deps backend
 /app/.venv/bin/soliplex-cli database status /environment` (or `upgrade`).
 
 The haiku-ingester's job queue (`soliplex_ingester`) is not Alembic-managed:
-the ingester migrates it in place whenever it opens it.
+the Compose command runs `haiku-ingester queue migrate` before serving.
+Queues from haiku.rag before 0.97 also need their existing rows assigned to
+the `soliplex` namespace; see `docs/operations/migrations.md` in the stack.
 
 ## Migrating the RAG stores after a haiku.rag bump
 

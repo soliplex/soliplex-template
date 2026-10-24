@@ -23,22 +23,25 @@ storage:
 # instead of quietly serving an unauthenticated control plane.
 ingester:
   queue:
+    namespace: soliplex
     # SQLAlchemy async URL; overrides the default SQLite path. asyncpg ships
     # in the slim image's 'ingester' extra.
     dburi: postgresql+asyncpg://soliplex_ingester:${INGESTER_DB_PASSWORD}@postgres/soliplex_ingester
   api:
     host: 0.0.0.0
     auth_token: ${INGESTER_TOKEN}
-  sources:
-    - type: fs
-      id: local-docs
-      root: /docs
-      # Gitignore-style filters over 'root'; empty lists ingest everything.
-      # An 'include_patterns' entry makes the filter exclusive, so leave it
-      # empty unless the corpus really is one file type.
-      ignore_patterns: []   # e.g. ["*.png"]
-      include_patterns: []  # e.g. ["*.md"]
-      delete_orphans: true
+  databases:
+    haiku.rag:
+      sources:
+        - type: fs
+          id: local-docs
+          root: /docs
+          # Gitignore-style filters over 'root'; empty lists ingest everything.
+          # An 'include_patterns' entry makes the filter exclusive, so leave it
+          # empty unless the corpus really is one file type.
+          ignore_patterns: []   # e.g. ["*.png"]
+          include_patterns: []  # e.g. ["*.md"]
+          delete_orphans: true
 
 # Remote document processing with docling-serve
 processing:

@@ -139,8 +139,8 @@ def test_t_compose():
         "      /app/.venv/bin/soliplex-cli serve\n"
         "      --no-auth-mode\n"
         "      --reload=config\n"
-        "    image: &haiku_rag_image ghcr.io/ggozad/haiku.rag-slim:0.96.1\n"
-        "    image: ghcr.io/docling-project/docling-serve-cpu:v1.32.0\n"
+        "    image: &haiku_rag_image ghcr.io/ggozad/haiku.rag-slim:0.101.0\n"
+        "    image: quay.io/docling-project/docling-serve-cpu:v1.38.0\n"
         '      - "8765:8765"\n'
         '      - "5001:5001"\n'
         '      - "5432:5432"\n'

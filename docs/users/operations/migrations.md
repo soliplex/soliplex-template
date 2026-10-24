@@ -138,9 +138,36 @@ docker compose run --rm --no-deps backend sh -c '
 ### The ingester's job queue
 
 `soliplex_ingester`, the haiku-ingester's job queue, is not an Alembic
-database. The ingester records its schema version in the queue itself and
-migrates it in place every time it opens it, so a `haiku.rag-slim` bump
-needs nothing for the queue beyond restarting the ingester on the new image.
+database. The Compose startup command runs `haiku-ingester queue migrate`
+before `serve`, using the queue's schema-owning role. It creates the schema
+on a fresh database and applies pending migrations on an existing one;
+failure prevents the ingester from serving.
+
+The queue uses the namespace `soliplex`. When upgrading from haiku.rag before
+0.97, assign existing rows to this namespace before starting the upgraded
+ingester. Back up `soliplex_ingester` first, then:
+
+```bash
+docker compose stop haiku-ingester
+docker compose build --pull haiku-ingester
+docker compose run --rm --no-deps haiku-ingester sh -ec '
+  export INGESTER_DB_PASSWORD="$(cat /run/secrets/ingester_db_password)"
+  exec haiku-ingester --config /app/haiku.rag.yaml queue migrate'
+docker compose exec -T postgres sh -c '
+  export PGPASSWORD="$(cat /run/secrets/postgres_password)"
+  exec psql -U postgres -d soliplex_ingester -v ON_ERROR_STOP=1' <<'SQL'
+BEGIN;
+UPDATE jobs SET namespace = 'soliplex' WHERE namespace = '';
+UPDATE sync_state SET namespace = 'soliplex' WHERE namespace = '';
+COMMIT;
+SQL
+docker compose up -d haiku-ingester
+```
+
+This preserves queued jobs and source sync state. Keep the namespace stable
+after migration. For a shared queue, stop all its ingesters and assign rows
+by source id to each ingester's namespace instead of using the blanket
+updates above. Fresh installations need no manual queue setup.
 
 ## The RAG vector store (LanceDB)
 
@@ -248,11 +275,16 @@ nothing to say about the converter. What a bump can change is the conversion
 output itself, and so where chunks begin and end.
 
 The docling-serve release pairs with the pinned `haiku.rag-slim`.
-The move to `v1.32.0` (docling 2.124.0, the docling stack haiku.rag 0.83+ pins)
-is one of those: adjacent text items now merge, so chunk boundaries shift.
-Existing stores stay readable and their chunks are left as they are; nothing
-changes until a document is re-ingested. A re-ingested document then gets new
-chunks with **new chunk ids**, so anything that kept an id from before — a
-saved citation, an external index — no longer resolves. A store that mixes
-documents ingested on either side of the bump works, but chunks them
-differently; re-ingest the whole corpus if consistent chunking matters.
+
+Changes which have affected `soliplex`:
+
+- **`docling-serve v1.32.0`** (docling 2.124.0, pinned by haiku.rag 0.83)
+
+  Adjacent text items merge after the bump, so chunk boundaries shift.
+  Existing stores stayed readable and their chunks were left as they are;
+  nothing changes until a document is re-ingested. A re-ingested document
+  gets new chunks with **new chunk ids**, so anything that kept an id
+  from before — a saved citation, an external index — no longer resolves. A
+  store that mixes documents ingested on either side of the bump works, but
+  chunks them differently; re-ingest the whole corpus if consistent chunking
+  matters.

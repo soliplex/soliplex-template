@@ -201,7 +201,7 @@ services:
 
   haiku-ingester:
 
-    image: &haiku_rag_image ghcr.io/ggozad/haiku.rag-slim:0.96.1
+    image: &haiku_rag_image ghcr.io/ggozad/haiku.rag-slim:0.101.0
 
     # To run a locally-built ingester image instead of the published
     # tag, see 'haiku.rag/README.md'.
@@ -213,12 +213,13 @@ services:
     # (0.57+), so the ingester reads the bind-mounted yaml directly -- no
     # rendered copy. The queue password lives in a Docker secret rather than
     # the environment, and interpolation reads the environment, so export it
-    # first.
+    # first. The queue role owns its schema; prepare it before serving.
     command:
       - sh
-      - -c
+      - -ec
       - |
         export INGESTER_DB_PASSWORD="$$(cat /run/secrets/ingester_db_password)"
+        haiku-ingester --config /app/haiku.rag.yaml queue migrate
         exec haiku-ingester --config /app/haiku.rag.yaml serve
 
     ports:
@@ -332,7 +333,7 @@ services:
     # 'docling_serve_version');  re-point by editing this line and
     # committing — see docling-serve/README.md (variants, tagging
     # policy, pairing with the pinned haiku.rag, a local-build recipe).
-    image: ghcr.io/docling-project/docling-serve-cpu:v1.32.0
+    image: quay.io/docling-project/docling-serve-cpu:v1.38.0
 
     # To run a locally-built converter image instead of the published
     # tag, see 'docling-serve/README.md'.
@@ -385,6 +386,7 @@ services:
       - type: "bind"
         source: "./postgres/config"
         target: "/docker-entrypoint-initdb.d"
+        read_only: true
         bind:
           selinux: "z"  # mark as shared
 

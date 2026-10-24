@@ -10,11 +10,13 @@ older stack up to the current template is a by-hand job. This page lists the
 changes in order, grouped by the template release that introduced them: find
 the section your stack is at, and work forward from there.
 
-| Your stack | What its files show | Start at |
-|---|---|---|
-| soliplex 0.84 or earlier | `backend/constraints.txt` pins below `0.85` | [1](#1-move-to-soliplex-085) |
-| soliplex 0.85, built from PyPI | `backend/Dockerfile` runs `uv add … soliplex` | [2](#2-build-on-the-soliplex-release-images) |
-| on the release images | `backend/Dockerfile` builds `FROM ghcr.io/soliplex/soliplex-postgres` | up to date |
+## Where do I start?
+
+| Your stack | What its files show | Skill release to walk with | Start at |
+|---|---|---|---|
+| soliplex 0.84 or earlier | `backend/constraints.txt` pins below `0.85` | `template-skill-2026.10.10-37f7a2d` | [1](#1-move-to-soliplex-085) |
+| soliplex 0.85, built from PyPI | `backend/Dockerfile` runs `uv add … soliplex` | `template-skill-2026.10.14-9a17a20` | [2](#2-build-on-the-soliplex-release-images) |
+| on the 0.85 release images | `backend/Dockerfile` builds `FROM ghcr.io/soliplex/soliplex-postgres:0.85` | `template-skill-2026.10.24-932e134` | [3](#3-move-to-soliplex-0861-and-haikurag-01010) |
 
 The `[tool.soliplex-template]` manifest at the end of the stack's
 `pyproject.toml` records the skill commit (`skill_source_commit`) and date
@@ -23,35 +25,73 @@ with. (`skill_version` may be empty.)
 
 !!! tip "Compare against a fresh stack"
     Each step names what the current template has. To see it in place,
-    generate a throwaway stack with your own parameters and diff the two; see
+    generate a throwaway stack with **the skill release the rung
+    walks with** (see Before you start #1) and your own parameters,
+    and diff the two; see
     [Checking the whole stack against a reference](migrating-layout.md#checking-the-whole-stack-against-a-reference).
 
-## Before you start
+## How an upgrade runs
 
-1. **Upgrade the `soliplex-template` skill in your harness** to the release
-   this page describes, the first whose generator builds stacks on the
-   soliplex release images. The skill manages its own installed copy, so
-   ask your agent, e.g.:
+Every upgrade on this page should follow this phased process:
+
+1. **Prepare** — "Before you start": the new skill, a clean branch,
+   the stack stopped, the state recorded and backed up.
+2. **Run the rung** — the numbered section **Where do I start?**
+   named for your stack's state.
+3. **Check it** — the shared verification checklist: the audit's
+   database lines and a room's `ask`.
+4. **Afterwards** — restore dev mode, refresh the stack's own
+   agent-facing docs.  Still on the rung's branch.
+5. **Roll out** — merge the branch to `main` and bring the live stack
+   up on the merged state.  `main` carries the *files*;  the migration
+   steps the rung rehearsed (the queue migration, the LanceDB store
+   upgrades, the Alembic head) run **live**, against the deployment's
+   own stores and databases, in the rollout's stop-apply-restart
+   order.
+
+Each phase completes before the next begins:  a rung is not done
+until it has passed **Check it** and its commit exists, and no rung
+starts with the previous one unfinished.
+
+### Before you start
+
+1. **Upgrade the `soliplex-template` skill in your harness**, then pick
+   the release that matches the *rung being walked*:  the rung's steps
+   run the skill's scripts (`src_projects.py`), and its generator
+   renders the reference stack the rung compares against. The
+   release this page describes is the right one for the newest rung
+   (3);  earlier rungs walk with the release that generated the
+   shape the rung *lands on* — the stack's own manifest
+   (`skill_source_commit` in `[tool.soliplex-template]`) names the
+   release that generated it, the one the rung moving *from* it
+   needs.
+
+   For instance, upgrade rung #1 above specifies the
+   `template-skill-2026.10.10-37f7a2d` skill release.  If that is your
+   rung, ask your agent, e.g.:
 
     ```text
-    Upgrade the soliplex-template skill to its latest published release.
+    Set the installed soliplex-template skill to the `template-skill-2026.10.10-37f7a2d` release.
     ```
 
-    or run its helper yourself (`list` shows the published releases, and
-    `diff` what upgrading would change):
+    or run its helper yourself (`list` shows the published releases,
+    `diff` what a move would change; both `upgrade` and `downgrade`
+    land on the target from whatever is installed — no need to pass
+    through the newest release first):
 
     ```bash
-    uv run <skill>/scripts/skill_versions.py upgrade
+    uv run <skill>/scripts/skill_versions.py list
+    uv run <skill>/scripts/skill_versions.py downgrade \
+        template-skill-2026.10.10-37f7a2d   # e.g. the rung-1 cut
     ```
 
-    Upgrade first because the rest of the page leans on the skill: steps
-    below run its scripts (`src_projects.py`), the reference stack the tip
-    above suggests comes from its generator, and section 2's last manifest
-    edit copies its version stamp. An older skill runs older scripts and
-    generates the old template, so a comparison against it shows nothing to
-    change. To check that the installed skill is new enough, ask its
-    generator for its defaults: this page's release names the image tag,
-    where an older one names the PyPI constraint instead:
+    The rung's scripts come from the installed release, so walking a
+    rung with a mismatched skill runs older scripts and generates an
+    old-template reference:  a comparison against it shows nothing
+    to change. To check that the installed skill matches *this
+    page*, ask its generator for its defaults: this page's release
+    names the image tag, where an older one names the PyPI
+    constraint instead:
 
     ```bash
     uv run <skill>/scripts/generate_soliplex_project.py --print-defaults \
@@ -67,7 +107,7 @@ with. (`skill_version` may be empty.)
     ```bash
     git status --short                     # should list nothing
     git switch -c upgrade-soliplex-0.85
-    git tag pre-upgrade
+    git tag pre-upgrade-soliplex-0.85
     ```
 
     A checkout cloned under `src/` (e.g. a dev-mode `src/soliplex`) is its
@@ -161,7 +201,7 @@ with. (`skill_version` may be empty.)
 
     The checkout's code would otherwise override the soliplex the rebuilt
     image installs, and the migrations would ask the wrong release. Putting
-    it back is the last step, [Dev mode](#3-dev-mode).
+    it back is the last step, [Restore dev mode](#restore-dev-mode).
 
 7. **Fetch the migration scripts** if the stack's `scripts/` lacks
    `migrate_soliplex_dbs.py` and `migrate_rag_dbs.py` (stacks generated
@@ -187,7 +227,86 @@ with. (`skill_version` may be empty.)
 a few places, although its header says not to: they are the exception, so
 that it describes the stack the upgrade leaves.
 
-## 1. Move to soliplex 0.85
+### Follow the upgrade steps for your rung
+
+Follow the steps listed for your upgrade rung in order.  After each step,
+check the status of your stack's files:
+
+```bash
+git status
+```
+
+If there are changes, commit them with a short checkpoint commit message:
+
+```bash
+git add .
+git commit -m "Step #2: <short description>"
+```
+
+### Restore Dev mode
+
+A stack that ran a `soliplex` checkout in dev mode can put it back now;
+`add` puts it on the path and watches it, like any other project.
+Check out the release the image runs first: the checkout supplies only
+soliplex's *code*, and its dependencies still come from the image, so a
+checkout far from the image's release fails at import time.
+
+```bash
+docker compose run --rm --no-deps backend soliplex-cli --version
+git -C src/soliplex checkout v<the version just reported>
+uv run <skill>/scripts/src_projects.py add soliplex
+docker compose up -d backend
+```
+
+### Check it
+
+```bash
+docker compose ps                    # every service running, backend healthy
+docker compose run --rm --no-deps backend soliplex-cli audit /environment
+ls backend/environment/rooms         # room ids, for the 'ask' below
+docker compose run --rm --no-deps backend \
+    soliplex-cli ask /environment <room-id> "Say hello"
+```
+
+For the upgrade, what matters in the audit is its database lines: both
+databases `OK` at the same Alembic revision. It can still exit non-zero for
+reasons of its own, such as models missing on the Ollama server
+(`soliplex-cli ollama pull` fetches them). The `ask` should return a reply
+and persist its thread. Open the frontend (`http://localhost:9000` by
+default) for a last look.
+
+### Afterwards
+
+The stack's own agent guide (`AGENTS.md`, or `CLAUDE.md` in older
+stacks) and its `docs/` were written for the stack as generated, and
+the upgrade leaves them describing the old setup:
+`backend/constraints.txt`, the old image tags.  Refresh them from a
+reference stack generated with your parameters (see the tip at the
+top), or at least treat them as out of date.
+
+**Wrap the run into `main`**: merge the rung's branch and bring the
+live stack up on the merged state.  What merges is the *files*;  what
+rolls out is the *state*:  the migration steps the rung rehearsed run
+**live**, against the deployment's own databases and stores.
+
+- **In the live stack's clone**, the merge is direct, and the rollout
+  follows it in the same working tree.
+- **From a separate upgrade-only clone**, the clone is the
+  *rehearsal*:  it proved the rung's steps against copied stores and
+  databases;  push the branch and open the PR for the *files*, and
+  roll out live afterwards by re-running the rung's migration steps
+  for real.
+
+## Upgrade rungs
+
+### 1. Move to soliplex 0.85
+
+**Walk this rung with the `template-skill-2026.10.10-37f7a2d` skill release** — its generator produces the rung's end state (Soliplex 0.85 built from PyPI; `uv add`-shaped).  The stack being upgraded names the release that generated it in its own `[tool.soliplex-template]` manifest — use that
+  one when climbing *from* an older shape.
+
+    ```bash
+    uv run <skill>/scripts/skill_versions.py downgrade template-skill-2026.10.10-37f7a2d
+    ```
 
 This section keeps the stack's PyPI-built `backend/Dockerfile`; only versions
 and configuration shapes change. Skip the steps that do not apply.
@@ -424,7 +543,14 @@ and configuration shapes change. Skip the steps that do not apply.
 [Database migrations](../users/operations/migrations.md) covers both
 migration scripts, and what their reports mean, in full.
 
-## 2. Build on the soliplex release images
+### 2. Build on the soliplex release images
+
+**Walk this rung with the `template-skill-2026.10.20-a2c13ae` skill release** — its generator produces the rung's end state (the 0.85 *release-image* shape).  The stack being upgraded names the release that generated it in its own `[tool.soliplex-template]` manifest — use that
+  one when climbing *from* an older shape.
+
+    ```bash
+    uv run <skill>/scripts/skill_versions.py downgrade template-skill-2026.10.20-a2c13ae
+    ```
 
 From here the backend no longer resolves soliplex from PyPI: it builds on the
 published `ghcr.io/soliplex/soliplex-postgres` image, which already holds
@@ -627,42 +753,69 @@ would pick up step 5's edit on the old image.
     `soliplex-dev` to the build if the stack has that (it builds on the
     backend's image). Then [check it](#check-it), and commit.
 
-## 3. Dev mode
+### 3. Move to Soliplex 0.86.1 and haiku.rag 0.101.0
 
-A stack that ran a `soliplex` checkout in dev mode can put it back now;
-`add` puts it on the path and watches it, like any other project.
-Check out the release the image runs first: the checkout supplies only
-soliplex's *code*, and its dependencies still come from the image, so a
-checkout far from the image's release fails at import time.
+**Walk this rung with the `template-skill-2026.10.24-932e134` skill release** — its generator produces the rung's end state (the current template shape).  The stack being upgraded names the release that generated it in its own `[tool.soliplex-template]` manifest — use that
+  one when climbing *from* an older shape.
 
-```bash
-docker compose run --rm --no-deps backend soliplex-cli --version
-git -C src/soliplex checkout v0.85.3     # the version reported above
-uv run <skill>/scripts/src_projects.py add soliplex
-docker compose up -d backend
-```
+    ```bash
+    uv run <skill>/scripts/skill_versions.py downgrade template-skill-2026.10.24-932e134
+    ```
 
-## Check it
+1. Stop `backend` and `haiku-ingester`, and back up the Postgres databases
+   and `rag/db/` before upgrading.
 
-```bash
-docker compose ps                    # every service running, backend healthy
-docker compose run --rm --no-deps backend soliplex-cli audit /environment
-ls backend/environment/rooms         # room ids, for the 'ask' below
-docker compose run --rm --no-deps backend \
-    soliplex-cli ask /environment <room-id> "Say hello"
-```
+2. Adopt the image-shape changes, which came to the template ahead of
+   this step: the image shim Dockerfiles (`haiku.rag/Dockerfile`,
+   `docling-serve/Dockerfile`) are gone; their build recipes moved to
+   `README.md` files beside their build contexts, and the template's
+   `build:` stanzas for those services ship commented. Delete your
+   copies (or rename them to the `README.md`s, which carry the
+   recipes), and comment the stanzas the same way.
 
-For the upgrade, what matters in the audit is its database lines: both
-databases `OK` at the same Alembic revision. It can still exit non-zero for
-reasons of its own, such as models missing on the Ollama server
-(`soliplex-cli ollama pull` fetches them). The `ask` should return a reply
-and persist its thread. Open the frontend (`http://localhost:9000` by
-default) for a last look.
+3. Set the backend and optional TUI image tags to `0.86.1`; set the
+   haiku.rag image to `0.101.0` in the `haiku_rag_image` anchor in
+   `docker-compose.yml`; set the `docling-serve` image to
+   `quay.io/docling-project/docling-serve-cpu:v1.38.0`.
 
-## Afterwards
+4. Update `soliplex_image_tag`, `haiku_rag_version`, and
+   `soliplex_dev_constraint` in the project's manifest. Use
+   `>= 0.86.1, < 0.87` for the Soliplex requirement in the root and package
+   `pyproject.toml` files, then run `uv lock` in each project.
 
-The stack's own agent guide (`AGENTS.md`, or `CLAUDE.md` in older stacks)
-and its `docs/` were written for the stack as generated, and the upgrade
-leaves them describing the old setup: `backend/constraints.txt`, the old
-image tags. Refresh them from a reference stack generated with your
-parameters (see the tip at the top), or at least treat them as out of date.
+5. In `haiku.rag/haiku.rag.yaml`, move the source list from
+   `ingester.sources` to the `sources` list of the `ingester.databases`
+   entry keyed `haiku.rag` (the key is the database's own name, dot
+   included). Keep its
+   source ids and paths. Add `namespace: soliplex` under `ingester.queue`.
+   This still writes `/data/haiku.rag.lancedb`. Additional databases are
+   described in
+   [RAG pipeline](../users/operations/rag.md#ingesting-multiple-databases).
+
+6. In the `haiku-ingester` Compose command, change `sh -c` to `sh -ec` and
+   insert this command after exporting `INGESTER_DB_PASSWORD` and before
+   `exec haiku-ingester --config /app/haiku.rag.yaml serve`:
+
+    ```bash
+    haiku-ingester --config /app/haiku.rag.yaml queue migrate
+    ```
+
+7. Rebuild `backend`, `soliplex-dev`, `haiku-ingester`, `docling-serve`, and
+   the optional `tui` with `docker compose build --pull`.
+
+8. Before restarting the ingester, follow
+   [the queue migration](../users/operations/migrations.md#the-ingesters-job-queue)
+   to migrate the schema and assign existing rows to `soliplex`. Otherwise
+   the ingester will not see its previous jobs and sync state.  The template
+   prepares the queue schema before every ingester start. Manual namespace
+   assignment is needed only when upgrading rows from a queue without
+   namespaces.
+
+9. The ingester's new database API is `GET /databases/{name}`; update any
+   callers of `GET /database` to follow suit.
+
+10. Run `uv run scripts/migrate_soliplex_dbs.py --check` and
+   `uv run scripts/migrate_rag_dbs.py --check`; apply any reported migrations
+   with the relevant service stopped. Start the stack with
+   `docker compose up -d` and inspect the backend and ingester logs.
+   Then [check it](#check-it), and commit.

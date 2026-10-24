@@ -186,7 +186,8 @@ def t_compose(text: str) -> str:
             # not free to choose — the pinned soliplex release constrains
             # 'haiku.rag-slim' as a dependency (see the compose gotchas).
             (
-                "image: &haiku_rag_image ghcr.io/ggozad/haiku.rag-slim:0.96.1",
+                "image: &haiku_rag_image "
+                "ghcr.io/ggozad/haiku.rag-slim:0.101.0",
                 "image: &haiku_rag_image "
                 "ghcr.io/ggozad/haiku.rag-slim:${haiku_rag_version}",
             ),
@@ -194,7 +195,7 @@ def t_compose(text: str) -> str:
             # 'docling_serve_image' ref pairs with the pinned
             # 'haiku.rag-slim' release (see the compose gotchas).
             (
-                "image: ghcr.io/docling-project/docling-serve-cpu:v1.32.0",
+                "image: quay.io/docling-project/docling-serve-cpu:v1.38.0",
                 "image: ${docling_serve_image}",
             ),
             ('- "8765:8765"', '- "${ingester_port}:8765"'),
@@ -722,12 +723,12 @@ def t_agents(text: str) -> str:
             # parameters or the generated AGENTS.md goes stale the moment a
             # project picks different ones.
             (
-                "`FROM ghcr.io/soliplex/soliplex-postgres:0.85`",
+                "`FROM ghcr.io/soliplex/soliplex-postgres:0.86.1`",
                 "`FROM ghcr.io/soliplex/soliplex-postgres:"
                 "${soliplex_image_tag}`",
             ),
             (
-                "haiku.rag-slim:0.96.1",
+                "haiku.rag-slim:0.101.0",
                 "haiku.rag-slim:${haiku_rag_version}",
             ),
             (
@@ -847,7 +848,7 @@ USER_DOC_PARAMS = {
     ],
     "architecture/backend.md": [
         (
-            "FROM ghcr.io/soliplex/soliplex-postgres:0.85\n",
+            "FROM ghcr.io/soliplex/soliplex-postgres:0.86.1\n",
             "FROM ghcr.io/soliplex/soliplex-postgres:${soliplex_image_tag}\n",
         ),
     ],

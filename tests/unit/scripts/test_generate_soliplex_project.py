@@ -19,6 +19,7 @@ import importlib.util
 import json
 import pathlib
 import stat
+import sys
 from unittest import mock
 
 import pytest
@@ -310,8 +311,20 @@ def test_coerce_composes_docling_image():
     params = _valid_params()
 
     assert params["docling_serve_image"] == (
-        "ghcr.io/docling-project/docling-serve-cpu:v1.32.0"
+        "quay.io/docling-project/docling-serve-cpu:v1.38.0"
     )
+
+
+def test_coerce_pgid_darwin_aligns_on_puid(monkeypatch):
+    monkeypatch.setattr(sys, "platform", "darwin")
+    params = _valid_params()
+    params["puid"] = 501
+    params["pgid"] = 20
+
+    params = gen.coerce_and_derive(params)
+
+    assert params["pgid"] == 501
+    assert gen.validate(params) is None
 
 
 def test_coerce_docling_variant_base_has_no_suffix():
@@ -322,7 +335,7 @@ def test_coerce_docling_variant_base_has_no_suffix():
     params = gen.coerce_and_derive(params)
 
     assert params["docling_serve_image"] == (
-        "ghcr.io/docling-project/docling-serve:latest"
+        "quay.io/docling-project/docling-serve:latest"
     )
     assert gen.validate(params) is None
 
@@ -545,7 +558,7 @@ def test_validate_bad_image_tag(tag):
         gen.validate(params)
 
 
-@pytest.mark.parametrize("tag", ["0.86", "0.84.9"])
+@pytest.mark.parametrize("tag", ["0.87", "0.86.0", "0.85.5"])
 def test_validate_image_tag_outside_constraint(tag):
     params = _valid_params()
     params["soliplex_image_tag"] = tag
@@ -557,7 +570,7 @@ def test_validate_image_tag_outside_constraint(tag):
     assert exc_info.value.constraint == params["soliplex_dev_constraint"]
 
 
-@pytest.mark.parametrize("tag", ["latest", "0.85", "0.85.3"])
+@pytest.mark.parametrize("tag", ["latest", "0.86", "0.86.1"])
 def test_validate_accepts_image_tag(tag):
     params = _valid_params()
     params["soliplex_image_tag"] = tag
