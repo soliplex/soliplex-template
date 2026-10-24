@@ -530,8 +530,9 @@ no running backend): it writes
 auto-discovers every room beneath it, so no `installation.yaml` edit is needed
 (reported as `covered`); installations that instead enumerate their rooms get
 `- "./rooms/<room-id>"` spliced in (line-based, so comments and layout are
-preserved). The backend serves with `--reload=config`, so the new room is picked
-up without an image rebuild or restart.
+preserved). The `--reload=config` backend restarts on edits to existing
+config files, but does **not** reload a newly created room: fire the
+rooms-reload endpoint (soliplex#1475) after `add`, below.
 
 1. **Show the bundled templates** and let the user choose one:
 
@@ -571,8 +572,15 @@ up without an image rebuild or restart.
    `--force` to overwrite it). The `room_paths` line reports `added`, `covered`
    (a `./rooms` entry already loads it), or `unchanged` (already listed).
 
-4. **Verify** the install now loads the room (the `--reload=config` backend
-   needs no rebuild):
+4. **Fire the rooms-reload endpoint** so the running backend picks up the
+   new room (a backend on soliplex < 0.87 lacks the endpoint; on those,
+   restart the backend instead):
+
+   ```bash
+   curl -s -XPOST http://localhost:<nginx_http>/api/v1/installation/reload/rooms
+   ```
+
+5. **Verify** the install now loads the room:
 
    ```bash
    uv run scripts/soliplex_config.py rooms --project-dir /path/to/stack
