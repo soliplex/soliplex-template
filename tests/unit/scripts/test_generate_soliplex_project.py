@@ -19,6 +19,7 @@ import importlib.util
 import json
 import pathlib
 import stat
+import sys
 from unittest import mock
 
 import pytest
@@ -312,6 +313,18 @@ def test_coerce_composes_docling_image():
     assert params["docling_serve_image"] == (
         "quay.io/docling-project/docling-serve-cpu:v1.38.0"
     )
+
+
+def test_coerce_pgid_darwin_aligns_on_puid(monkeypatch):
+    monkeypatch.setattr(sys, "platform", "darwin")
+    params = _valid_params()
+    params["puid"] = 501
+    params["pgid"] = 20
+
+    params = gen.coerce_and_derive(params)
+
+    assert params["pgid"] == 501
+    assert gen.validate(params) is None
 
 
 def test_coerce_docling_variant_base_has_no_suffix():

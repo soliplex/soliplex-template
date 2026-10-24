@@ -581,6 +581,19 @@ def coerce_and_derive(params: dict[str, object]) -> dict[str, object]:
             except (TypeError, ValueError) as exc:
                 raise NotAnInteger(key, value) from exc
 
+    # macOS aligns on the login account instead of its primary GID:  the
+    # login GID there ('staff', 20) collides with a group every base
+    # image carries ('dialout', 20), failing the postgres build's
+    # groupmod.  The login UID has no such collision in the image and
+    # owns the bind mounts anyway.
+    if sys.platform == "darwin" and params["pgid"] == 20:
+        print(
+            "warning: macOS login GID 20 ('staff') collides with the image's"
+            " 'dialout' group;  aligning the stack on the login UID",
+            file=sys.stderr,
+        )
+        params["pgid"] = params["puid"]
+
     return params
 
 

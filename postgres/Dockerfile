@@ -6,5 +6,5 @@ USER root
 # owned by the host operator running generate_secrets.py.
 ARG PUID=1000
 ARG PGID=1000
-RUN groupmod -o -g ${PGID} postgres && usermod -u ${PUID} -g ${PGID} postgres && chown -R postgres:postgres /run/postgresql
+RUN groupmod -g ${PGID} postgres && usermod -u ${PUID} -g ${PGID} postgres && chown -R postgres:postgres /run/postgresql
 USER postgres

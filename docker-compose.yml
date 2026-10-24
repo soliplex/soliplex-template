@@ -386,6 +386,7 @@ services:
       - type: "bind"
         source: "./postgres/config"
         target: "/docker-entrypoint-initdb.d"
+        read_only: true
         bind:
           selinux: "z"  # mark as shared
 
