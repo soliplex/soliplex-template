@@ -114,6 +114,16 @@ DEFAULTS: dict[str, object] = {
     # dependency, and the ingester writes the LanceDB the backend reads, so
     # this has to satisfy the range the 'soliplex_image_tag' release implies.
     "haiku_rag_version": "0.96.1",
+    # The docling-serve image the converter service runs: the variant the
+    # host can use (the 'cpu' variant converts on any host; 'base' and
+    # the 'cuNNN' variants want a GPU) and the docling-serve version,
+    # which has to pair with the pinned 'haiku.rag-slim' release
+    # (see docling-serve/README.md).  The composed image is baked into
+    # the generated 'docker-compose.yml' (committed with the stack's
+    # initial commit);  upstream tags no moving tag on the CUDA
+    # variants ('latest' is only valid for 'cpu' / 'base').
+    "docling_serve_variant": "cpu",
+    "docling_serve_version": "v1.32.0",
     # Tag of the published web-client image (ghcr.io/soliplex/frontend-web)
     # nginx serves: a moving "<major>.<minor>" (follows patch releases on
     # 'docker compose build --pull'), an exact "<major>.<minor>.<patch>" or
@@ -164,6 +174,16 @@ _FRONTEND_RELEASE_TAG_RE = re.compile(r"^v(\d+\.\d+\.\d+)(?:\+(\d+))?$")
 # Tags the soliplex image workflow publishes: "latest", a moving
 # "<major>.<minor>", or an exact "<major>.<minor>.<patch>".
 IMAGE_TAG_RE = re.compile(r"^(latest|\d+\.\d+(\.\d+)?)$")
+# docling-serve images: 'cpu' / 'base' also carry a moving 'latest'; the
+# CUDA variants are version-tag-only upstream (explicit 'v<m.m.p>').
+DOCLING_SERVE_VERSION_RE = re.compile(r"^v\d+\.\d+\.\d+$")
+DOCLING_SERVE_VARIANT_SUFFIXES = {
+    "cpu": "-cpu",
+    "base": "",
+    "cu128": "-cu128",
+    "cu130": "-cu130",
+}
+DOCLING_SERVE_IMAGE_BASE = "ghcr.io/docling-project/docling-serve"
 # How many patch releases of a moving "<major>.<minor>" tag to check against
 # soliplex_dev_constraint: far more than any series has had.
 _SERIES_PATCHES = 100
@@ -349,6 +369,27 @@ class ImageTagOutsideConstraint(GenError):
         )
 
 
+class BadDoclingVariant(GenError):
+    def __init__(self, value):
+        self.value = value
+        super().__init__(
+            f"docling_serve_variant={value!r} must be one of "
+            f"{', '.join(sorted(DOCLING_SERVE_VARIANT_SUFFIXES))}"
+        )
+
+
+class BadDoclingVersion(GenError):
+    def __init__(self, value, variant):
+        self.value = value
+        self.variant = variant
+        super().__init__(
+            f"docling_serve_version={value!r} is not usable with "
+            f"docling_serve_variant={variant!r}:  'cpu' and 'base' "
+            "carry a moving 'latest';  the CUDA variants are "
+            "version-tag-only upstream"
+        )
+
+
 class BadDocsDir(GenError):
     def __init__(self, value):
         self.value = value
@@ -489,6 +530,14 @@ def coerce_and_derive(params: dict[str, object]) -> dict[str, object]:
         "--no-auth-mode " if auth_mode == "no-auth" else ""
     )
 
+    # The docling-serve image ref: variant suffix + version, shape-checked
+    # in validate().  Baked into the generated 'docker-compose.yml'.
+    params["docling_serve_image"] = (
+        f"{DOCLING_SERVE_IMAGE_BASE}"
+        f"{DOCLING_SERVE_VARIANT_SUFFIXES[str(params['docling_serve_variant'])]}"
+        f":{params['docling_serve_version']}"
+    )
+
     # Opt-in Gitea service (consumed by the conditional blocks in the
     # compose / nginx / init.sh templates).
     params["include_gitea"] = _as_bool(
@@ -600,6 +649,20 @@ def validate(params: dict[str, object]) -> None:
     frontend_version = str(params["frontend_version"])
     if not FRONTEND_VERSION_RE.match(frontend_version):
         raise BadFrontendVersion(frontend_version)
+
+    docling_variant = str(params["docling_serve_variant"])
+    if docling_variant not in DOCLING_SERVE_VARIANT_SUFFIXES:
+        raise BadDoclingVariant(docling_variant)
+    docling_version = str(params["docling_serve_version"])
+    if docling_variant in ("cpu", "base"):
+        if not (
+            DOCLING_SERVE_VERSION_RE.match(docling_version)
+            or docling_version == "latest"
+        ):
+            raise BadDoclingVersion(docling_version, docling_variant)
+    elif not DOCLING_SERVE_VERSION_RE.match(docling_version):
+        # CUDA images are version-tag-only upstream:  no moving tag.
+        raise BadDoclingVersion(docling_version, docling_variant)
 
     docs = str(params["docs_dir"])
     if docs.startswith("/") or ".." in pathlib.Path(docs).parts:

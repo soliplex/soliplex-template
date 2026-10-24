@@ -63,6 +63,10 @@ _PARAMS = {
     # Pin a (fictional) frontend release tag to prove version selection lands
     # in nginx/Dockerfile as a /releases/tags/<tag> API URL.
     "frontend_version": "0.110.0-96",
+    # A GPU-capable docling-serve answer, proving the composed image lands
+    # in the generated docker-compose.yml.
+    "docling_serve_variant": "cu130",
+    "docling_serve_version": "v1.38.0",
     # Non-default embeddings and chunk size propagate.
     "rag_embed_model": "not-qwen3-embedding:0.6b",
     "rag_embed_dim": 1023,
@@ -379,6 +383,21 @@ def test_env_file_written(generated_project):
     # process); compose reads them and the generated secrets are owned by them.
     assert f"PUID={os.getuid()}" in env
     assert f"PGID={os.getgid()}" in env
+
+
+def test_docling_image_baked_at_generation(generated_project):
+    out, _params = generated_project
+
+    compose = _read(out, "docker-compose.yml")
+    assert (
+        "image: ghcr.io/docling-project/docling-serve-cu130:v1.38.0" in compose
+    )
+    # No runtime knob, no interpolation:  the bake is a file like
+    # everything else, and the local-build recipe travels as the
+    # build-context directory's README.
+    assert "DOCLING_SERVE_IMAGE" not in compose
+    _read(out, "docling-serve", "README.md")
+    assert not out.joinpath("docling-serve", "Dockerfile").exists()
 
 
 # --------------------------------------------------------------------------

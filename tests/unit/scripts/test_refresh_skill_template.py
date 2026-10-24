@@ -140,6 +140,7 @@ def test_t_compose():
         "      --no-auth-mode\n"
         "      --reload=config\n"
         "    image: &haiku_rag_image ghcr.io/ggozad/haiku.rag-slim:0.96.1\n"
+        "    image: ghcr.io/docling-project/docling-serve-cpu:v1.32.0\n"
         '      - "8765:8765"\n'
         '      - "5001:5001"\n'
         '      - "5432:5432"\n'
@@ -176,6 +177,7 @@ def test_t_compose():
     assert '- "${docling_port}:5001"' in out
     assert '- "${postgres_port}:5432"' in out
     assert "- ./${docs_dir}:/docs" in out
+    assert "image: ${docling_serve_image}" in out
     assert "<%text>${OLLAMA_BASE_URL}</%text>" in out
     assert "<%text>${INGESTER_TOKEN:-secret}</%text>" in out
     # UID/GID alignment interpolations reach the rendered compose verbatim.
@@ -254,14 +256,6 @@ def test_t_ingester_haiku():
     )
 
 
-def test_t_ingester_dockerfile():
-    text = "FROM ghcr.io/ggozad/haiku.rag-slim:0.96.1\n"
-
-    out = rst.t_ingester_dockerfile(text)
-
-    assert out == "FROM ghcr.io/ggozad/haiku.rag-slim:${haiku_rag_version}\n"
-
-
 def test_t_soliplex_dev_requirements():
     out = rst.t_soliplex_dev_requirements("# header\n#\n")
 
@@ -309,11 +303,6 @@ def test_t_soliplex_dev_requirements_refuses_an_authored_include(monkeypatch):
 def test_t_soliplex_dev_requirements_refuses_requirements():
     with pytest.raises(rst.RefreshError, match="only the header"):
         rst.t_soliplex_dev_requirements("# header\npytest\n")
-
-
-def test_t_ingester_dockerfile_no_match_raises():
-    with pytest.raises(rst.RefreshError, match="ingester Dockerfile"):
-        rst.t_ingester_dockerfile("FROM python:3.13\n")
 
 
 # A Dockerfile carrying what the soliplex transforms must pass through: a

@@ -306,6 +306,71 @@ def test_validate_accepts_valid_params():
     assert gen.validate(_valid_params()) is None
 
 
+def test_coerce_composes_docling_image():
+    params = _valid_params()
+
+    assert params["docling_serve_image"] == (
+        "ghcr.io/docling-project/docling-serve-cpu:v1.32.0"
+    )
+
+
+def test_coerce_docling_variant_base_has_no_suffix():
+    params = _valid_params()
+    params["docling_serve_variant"] = "base"
+    params["docling_serve_version"] = "latest"
+
+    params = gen.coerce_and_derive(params)
+
+    assert params["docling_serve_image"] == (
+        "ghcr.io/docling-project/docling-serve:latest"
+    )
+    assert gen.validate(params) is None
+
+
+def test_validate_docling_variant_bad():
+    params = _valid_params()
+    params["docling_serve_variant"] = "gpu"
+
+    with pytest.raises(gen.BadDoclingVariant):
+        gen.validate(params)
+
+
+def test_validate_docling_cpu_version_moving_accepted():
+    params = _valid_params()
+    params["docling_serve_version"] = "latest"
+
+    assert gen.validate(params) is None
+
+
+def test_validate_docling_cpu_version_bad_shape():
+    params = _valid_params()
+    params["docling_serve_version"] = "1.32"
+
+    with pytest.raises(gen.BadDoclingVersion):
+        gen.validate(params)
+
+
+def test_validate_docling_cuda_moving_tag_refused():
+    params = _valid_params()
+    params["docling_serve_variant"] = "cu130"
+    params["docling_serve_version"] = "latest"
+
+    with pytest.raises(gen.BadDoclingVersion):
+        gen.validate(params)
+
+
+def test_validate_docling_cuda_explicit_version_accepted():
+    params = _valid_params()
+    params["docling_serve_variant"] = "cu130"
+    params["docling_serve_version"] = "v1.38.0"
+    params = gen.coerce_and_derive(params)
+
+    assert params["docling_serve_image"].endswith(
+        "docling-serve-cu130:v1.38.0"
+    )
+    assert gen.validate(params) is None
+
+
 def test_validate_requires_ollama():
     params = _valid_params()
     params["ollama_base_url"] = "  "

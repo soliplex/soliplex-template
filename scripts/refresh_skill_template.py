@@ -182,12 +182,20 @@ def t_compose(text: str) -> str:
                 "      --reload=config\n"
                 "      --reload-dirs=/app/src/${package_name}/src\n",
             ),
-            # Same parameter as the ingester Dockerfile's FROM: compose tags
-            # the locally built image with this name, so the two must agree.
+            # The ingester's image line: the tag is a parameter because it is
+            # not free to choose — the pinned soliplex release constrains
+            # 'haiku.rag-slim' as a dependency (see the compose gotchas).
             (
                 "image: &haiku_rag_image ghcr.io/ggozad/haiku.rag-slim:0.96.1",
                 "image: &haiku_rag_image "
                 "ghcr.io/ggozad/haiku.rag-slim:${haiku_rag_version}",
+            ),
+            # The converter's image line, chosen at generation: the
+            # 'docling_serve_image' ref pairs with the pinned
+            # 'haiku.rag-slim' release (see the compose gotchas).
+            (
+                "image: ghcr.io/docling-project/docling-serve-cpu:v1.32.0",
+                "image: ${docling_serve_image}",
             ),
             ('- "8765:8765"', '- "${ingester_port}:8765"'),
             ('- "5001:5001"', '- "${docling_port}:5001"'),
@@ -398,24 +406,6 @@ def t_ingester_haiku(text: str) -> str:
             *EMBEDDING_SUBS,
         ],
     )
-
-
-def t_ingester_dockerfile(text: str) -> str:
-    # The ingester image tag is a parameter because it is not free to choose:
-    # the pinned soliplex release constrains 'haiku.rag-slim' as a dependency,
-    # and the ingester writes the LanceDB the backend reads, so the image has
-    # to satisfy the range the 'soliplex_image_tag' release implies.
-    new, n = re.subn(
-        r"(?m)^FROM ghcr\.io/ggozad/haiku\.rag-slim:.*$",
-        "FROM ghcr.io/ggozad/haiku.rag-slim:${haiku_rag_version}",
-        text,
-    )
-    require(
-        n == 1,
-        "expected one haiku.rag-slim FROM line in ingester "
-        f"Dockerfile, got {n}",
-    )
-    return new
 
 
 def _image_from(text: str, image: str, param: str) -> str:
@@ -777,7 +767,6 @@ DERIVED = {
     "backend/environment/installation.yaml": t_installation,
     "backend/environment/haiku.rag.yaml": t_backend_haiku,
     "haiku.rag/haiku.rag.yaml": t_ingester_haiku,
-    "haiku.rag/Dockerfile": t_ingester_dockerfile,
     "soliplex-dev/requirements-dev.txt": t_soliplex_dev_requirements,
     "backend/Dockerfile": t_backend_dockerfile,
     "tui/Dockerfile": t_tui_dockerfile,
@@ -1304,6 +1293,9 @@ PROBE = dict(
     soliplex_image_tag="t",
     soliplex_dev_constraint="c",
     haiku_rag_version="v",
+    docling_serve_variant="cpu",
+    docling_serve_version="v",
+    docling_serve_image="img",
     frontend_version="t",
     docs_dir="d",
     include_gitea=True,
