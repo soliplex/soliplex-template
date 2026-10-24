@@ -16,9 +16,13 @@ the Soliplex backend is built on the published `soliplex` release image, the
 frontend on the published `soliplex/frontend` web image, and `haiku-rag` /
 `docling-serve` use upstream images.
 
-The repository also doubles as its own **exemplar** — the stack files at the
-repo root (`docker-compose.yml`, `backend/environment/`, `nginx/`, …) are a
-real, runnable stack *and* the source the shipped template is derived from.
+The repository's stack files at the repo root (`docker-compose.yml.mako`,
+`backend/environment/`, `nginx/`, …) double as its own **exemplar**: the
+source the shipped template is derived from. The parameterized exemplars
+carry `${param}` placeholders where per-stack values go, and the exemplar
+is render-source, not a runnable stack: runnable stacks exist only on the
+generation side (see
+[Generate a project](../getting-started/generator.md)).
 
 ## Repo → template
 
@@ -27,14 +31,15 @@ The skill ships an embedded, parameterized copy of the stack under
 exemplars by `scripts/refresh_skill_template.py`:
 
 - most tracked files are copied verbatim (minus `EXCLUDE_PATHSPECS`);
-- the parameterized files (`docker-compose.yml`, `installation.yaml`,
-  `nginx.conf`, …) are rewritten as `*.mako` by per-file transforms (`DERIVED`),
-  injecting `${param}` substitutions and the `include_gitea` / `include_tui` /
-  `enable_sandbox` conditionals;
-- the shipped doc pages are derived from `docs/users/` (see below);
+- the parameterized files are checked in as `*.mako`, already carrying the
+  `${param}` substitutions and the `include_gitea` / `include_tui` /
+  `enable_sandbox` conditionals, and are copied as-is;
+- the shipped doc pages are copied from `docs/users/`, which carry the same
+  placeholders (see below);
 - a few templates with no repo exemplar are written verbatim (`AUTHORED`, e.g.
   `README.md.mako`);
-- every generated `.mako` is render-checked with Mako.
+- every `*.mako` the skill ships is render-checked with Mako against the
+  generator's `DEFAULTS`, so a stale placeholder can't ship.
 
 That generated tree is a **build artifact, not source**: it is gitignored and
 **not committed**. `scripts/build_skill.py` regenerates it before assembling the
@@ -57,14 +62,14 @@ Build and validate the packaged skill (which refreshes first) with
 Documentation lives under `docs/`, split by audience:
 
 - **`docs/users/`** documents a *generated* stack, and is the authoritative
-  source the shipped `docs/*.md.mako` are derived from. Edit the `.md` here —
-  **never** the generated `.md.mako`, which the next refresh overwrites.
+  source of the shipped doc pages: the pages are checked in as `*.md.mako`,
+  carrying their parameters as `${...}` placeholders on top of the same
+  conditional fences documented below. On this repo's site, the fences hide
+  their conditional content and the placeholders render literally; in a
+  generated project, the generator bakes the values and resolves the
+  conditionals.
 - **`docs/contributing/`** (this page) documents developing the template, and
   is repo-only.
-
-The `docs/users/` pages are plain Markdown that read correctly on this site;
-`t_user_doc()` (in `refresh_skill_template.py`) turns a few inline conventions
-into Mako when deriving each `.md.mako`.
 
 **Conditional content** for an opt-in service is wrapped in HTML-comment
 fences. They are invisible on this site and become a Mako conditional in a
@@ -95,18 +100,15 @@ Shown only on this repo's docs site.
 <!-- endsite-only -->
 ```
 
-**Parameters** are written as their concrete default; a page-specific anchor
-list in `USER_DOC_PARAMS` rewrites each to the matching Mako `${...}`:
-
-```text
-`9000`          ->  `${nginx_http}`
-`soliplex_agui` ->  `${agui_db}`
-```
+**Parameters** are written as `${param}` placeholders, so the shipped value is
+whatever the generator's `DEFAULTS` resolve for that stack. A generated
+project's `9000` is only a value: the source spells it
+`${nginx_http}`.
 
 Pages that should **not** ship at all — the
 [generator](../getting-started/generator.md) page and this contributing page —
 simply live outside `docs/users/` (under `docs/getting-started/` and
-`docs/contributing/`), so the derive step never touches them.
+`docs/contributing/`), so the copy step never touches them.
 
 As with the stack files, the generated `.mako` are not committed — just edit
 the `docs/users/` `.md`; the build and the functional tests regenerate the
