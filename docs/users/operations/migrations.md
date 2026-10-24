@@ -241,12 +241,13 @@ both cases — that is why `--check` reads its output rather than its status.
 
 ### Converter bumps (docling-serve)
 
-Bumping `docling-serve` — in **both** `docker-compose.yml` and
-`docling-serve/Dockerfile`, which have to agree — never needs a migration: the
+Bumping `docling-serve` — the `image:` line in `docker-compose.yml`,
+baked in at generation — never needs a migration: the
 store layout belongs to haiku.rag, and `migrate_rag_dbs.py --check` has
 nothing to say about the converter. What a bump can change is the conversion
 output itself, and so where chunks begin and end.
 
+The docling-serve release pairs with the pinned `haiku.rag-slim`.
 The move to `v1.32.0` (docling 2.124.0, the docling stack haiku.rag 0.83+ pins)
 is one of those: adjacent text items now merge, so chunk boundaries shift.
 Existing stores stay readable and their chunks are left as they are; nothing

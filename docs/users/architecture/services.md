@@ -105,8 +105,11 @@ owns needs `docker compose stop haiku-ingester` first.
 
 ## docling-serve
 
-A stateless document converter (CPU image by default; a GPU variant is a
-commented swap in `docker-compose.yml`).
+A stateless document converter. Runs the upstream `-cpu` image
+directly;  its variant/version are chosen at generation and baked
+into `docker-compose.yml` — re-point by editing that line and
+committing (see the stack's `docling-serve/README.md` for the
+variants, the tagging policy, and a local-build recipe).
 <!-- if:tui -->
 
 ## tui

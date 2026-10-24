@@ -328,6 +328,10 @@ services:
 
   docling-serve:
 
+    # The image is chosen at generation ('docling_serve_variant' /
+    # 'docling_serve_version');  re-point by editing this line and
+    # committing — see docling-serve/README.md (variants, tagging
+    # policy, pairing with the pinned haiku.rag, a local-build recipe).
     image: ghcr.io/docling-project/docling-serve-cpu:v1.32.0
 
     # To run a locally-built converter image instead of the published

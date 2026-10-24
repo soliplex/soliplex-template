@@ -190,6 +190,13 @@ def t_compose(text: str) -> str:
                 "image: &haiku_rag_image "
                 "ghcr.io/ggozad/haiku.rag-slim:${haiku_rag_version}",
             ),
+            # The converter's image line, chosen at generation: the
+            # 'docling_serve_image' ref pairs with the pinned
+            # 'haiku.rag-slim' release (see the compose gotchas).
+            (
+                "image: ghcr.io/docling-project/docling-serve-cpu:v1.32.0",
+                "image: ${docling_serve_image}",
+            ),
             ('- "8765:8765"', '- "${ingester_port}:8765"'),
             ('- "5001:5001"', '- "${docling_port}:5001"'),
             ('- "5432:5432"', '- "${postgres_port}:5432"'),
@@ -1286,6 +1293,9 @@ PROBE = dict(
     soliplex_image_tag="t",
     soliplex_dev_constraint="c",
     haiku_rag_version="v",
+    docling_serve_variant="cpu",
+    docling_serve_version="v",
+    docling_serve_image="img",
     frontend_version="t",
     docs_dir="d",
     include_gitea=True,
