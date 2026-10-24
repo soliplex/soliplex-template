@@ -278,9 +278,10 @@ from the user and invoke it.
    first** rather than letting `up` build them implicitly: run
    `docker compose build`, then `docker compose up -d`, then poll
    `docker compose ps` (or `docker compose logs -f`) until services report
-   healthy. The nginx image runs a full Flutter web build, so the first build
-   can take several minutes — a separate `build` step makes that wait legible
-   instead of hiding it inside `up`.
+   healthy. The nginx image copies the prebuilt, cache-busted web client
+   from the published `ghcr.io/soliplex/frontend-web` image, so there is
+   no Flutter build in the stack; a separate `build` step still keeps its
+   output legible instead of hiding it inside `up`.
 
    Once the backend reports healthy, **verify the Ollama models the install
    actually references** with the backend's own audit, and pull any that are

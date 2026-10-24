@@ -998,14 +998,15 @@ def main(argv: list[str]) -> int:
     print(f"  sandbox:  {'yes' if params['enable_sandbox'] else 'no'}")
     git_status = "initial commit created" if did_git else "not initialized"
     print(f"  git:      {git_status}")
-    # Build images explicitly before starting: the nginx image runs a full
-    # Flutter web build and can take several minutes, so it's clearer to do
-    # it as its own step than to let `up` build implicitly while you wait.
+    # Build images explicitly before starting so their output stays legible
+    # instead of being hidden inside `up`. There is no Flutter build in the
+    # stack: the nginx image copies the prebuilt, cache-busted web client
+    # from the published ghcr.io/soliplex/frontend-web image.
     print("\nNext steps:")
     steps = []
     if not ran_secrets:
         steps.append("uv run scripts/generate_secrets.py")
-    steps.append("docker compose build   # build images (first build is slow)")
+    steps.append("docker compose build")
     steps.append("docker compose up -d   # start the stack in the background")
     steps.append("docker compose ps      # wait until services are healthy")
     print(f"  1. cd {out}")
