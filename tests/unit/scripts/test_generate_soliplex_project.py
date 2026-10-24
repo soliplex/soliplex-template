@@ -856,6 +856,7 @@ def test_write_env(tmp_path):
     assert "INGESTER_TOKEN=tok" in text
     assert "PUID=1234" in text
     assert "PGID=5678" in text
+    assert ((tmp_path / ".env").stat().st_mode & 0o777) == 0o600
 
 
 # --------------------------------------------------------------------------
