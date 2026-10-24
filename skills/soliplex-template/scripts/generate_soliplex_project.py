@@ -823,7 +823,10 @@ def write_env(out: pathlib.Path, params: dict[str, object]) -> None:
         f"PGID={params['pgid']}",
         "",
     ]
+    # 0600:  the file carries INGESTER_TOKEN, readable by the owning
+    # account only, like the generated .secrets/*.gen files.
     (out / ".env").write_text("\n".join(lines))
+    (out / ".env").chmod(0o600)
 
 
 def maybe_run_secrets(out: pathlib.Path, run: bool) -> bool:
