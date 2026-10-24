@@ -425,9 +425,19 @@ def _print_summary(
     print("Next steps:")
     print(f"  - review/edit {config_path}")
     print(
-        "  - the backend reloads config automatically (--reload=config); "
-        "verify with:"
+        "  - fire the rooms-reload endpoint so the running backend picks"
+        " up the"
     )
+    print(
+        "    new room (--reload=config does not cover a newly created"
+        " room dir):"
+    )
+    print(
+        "      curl -s -XPOST http://localhost:<nginx_http>"
+        "/api/v1/installation/reload/rooms"
+    )
+    print()
+    print("Then verify with:")
     print(
         "      uv run scripts/soliplex_config.py rooms "
         f"--project-dir {project}"
