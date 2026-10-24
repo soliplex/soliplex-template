@@ -238,7 +238,7 @@ git status
 
 If there are changes, commit them with a short checkpoint commit message:
 
-```
+```bash
 git add .
 git commit -m "Step #2: <short description>"
 ```
@@ -307,7 +307,6 @@ rolls out is the *state*:  the migration steps the rung rehearsed run
     ```bash
     uv run <skill>/scripts/skill_versions.py downgrade template-skill-2026.10.10-37f7a2d
     ```
-
 
 This section keeps the stack's PyPI-built `backend/Dockerfile`; only versions
 and configuration shapes change. Skip the steps that do not apply.
@@ -553,7 +552,6 @@ migration scripts, and what their reports mean, in full.
     uv run <skill>/scripts/skill_versions.py downgrade template-skill-2026.10.20-a2c13ae
     ```
 
-
 From here the backend no longer resolves soliplex from PyPI: it builds on the
 published `ghcr.io/soliplex/soliplex-postgres` image, which already holds
 soliplex and its PostgreSQL driver. See
@@ -764,7 +762,6 @@ would pick up step 5's edit on the old image.
     uv run <skill>/scripts/skill_versions.py downgrade template-skill-2026.10.24-932e134
     ```
 
-
 1. Stop `backend` and `haiku-ingester`, and back up the Postgres databases
    and `rag/db/` before upgrading.
 
@@ -787,7 +784,9 @@ would pick up step 5's edit on the old image.
    `pyproject.toml` files, then run `uv lock` in each project.
 
 5. In `haiku.rag/haiku.rag.yaml`, move the source list from
-   `ingester.sources` to `ingester.databases.haiku.rag.sources`. Keep its
+   `ingester.sources` to the `sources` list of the `ingester.databases`
+   entry keyed `haiku.rag` (the key is the database's own name, dot
+   included). Keep its
    source ids and paths. Add `namespace: soliplex` under `ingester.queue`.
    This still writes `/data/haiku.rag.lancedb`. Additional databases are
    described in

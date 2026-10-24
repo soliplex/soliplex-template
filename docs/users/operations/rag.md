@@ -32,7 +32,8 @@ To ingest only part of what lands there, set `ignore_patterns` /
 ## Adding other sources
 
 To pull from S3, HTTP, WebDAV, and the like, append entries under
-`ingester.databases.haiku.rag.sources` in `haiku.rag/haiku.rag.yaml` and
+the `ingester.databases` entry keyed `haiku.rag`, in
+`haiku.rag/haiku.rag.yaml`, and
 restart the ingester:
 
 ```bash
