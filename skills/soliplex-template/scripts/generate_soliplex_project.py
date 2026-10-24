@@ -105,10 +105,10 @@ DEFAULTS: dict[str, object] = {
     # (ghcr.io/soliplex/soliplex-tui) build on: "latest", a moving
     # "<major>.<minor>" (follows patch releases on 'docker compose build
     # --pull'), or an exact "<major>.<minor>.<patch>".
-    "soliplex_image_tag": "0.86.1",
+    "soliplex_image_tag": "0.87.0",
     # The 'soliplex' requirement in the stack's host-side pyproject.toml files
     # (dev mode, and src/<package>/). Must admit the image tag's release.
-    "soliplex_dev_constraint": ">= 0.86.1, < 0.87",
+    "soliplex_dev_constraint": ">= 0.87.0, < 0.88",
     # haiku-ingester image tag (ghcr.io/ggozad/haiku.rag-slim). Not a free
     # choice: the soliplex release constrains 'haiku.rag-slim' as a
     # dependency, and the ingester writes the LanceDB the backend reads, so

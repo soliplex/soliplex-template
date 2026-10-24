@@ -66,8 +66,8 @@ prompt (a command-line value would leak into shell history).
 | `chunk_size` | `256` | int | both `haiku.rag.yaml` files |
 | `agui_db` | `soliplex_agui` | SQL identifier; ≠ `authz_db` | `installation.yaml` DB URIs, `postgres/config/init.sh` (role **and** database) |
 | `authz_db` | `soliplex_authz` | SQL identifier; ≠ `agui_db` | `installation.yaml` DB URIs, `postgres/config/init.sh` |
-| `soliplex_image_tag` | `0.86.1` | `latest`, `<major>.<minor>` (moving), or `<major>.<minor>.<patch>` (exact); the release must satisfy `soliplex_dev_constraint` | `FROM` in `backend/Dockerfile` (`ghcr.io/soliplex/soliplex-postgres`) and `tui/Dockerfile` (`ghcr.io/soliplex/soliplex-tui`); `AGENTS.md`, `docs/architecture/backend.md` |
-| `soliplex_dev_constraint` | `>= 0.86.1, < 0.87` | non-empty | the `soliplex` requirement in `pyproject.toml` and `src/<package>/pyproject.toml` (host-side and dev-mode work) |
+| `soliplex_image_tag` | `0.87.0` | `latest`, `<major>.<minor>` (moving), or `<major>.<minor>.<patch>` (exact); the release must satisfy `soliplex_dev_constraint` | `FROM` in `backend/Dockerfile` (`ghcr.io/soliplex/soliplex-postgres`) and `tui/Dockerfile` (`ghcr.io/soliplex/soliplex-tui`); `AGENTS.md`, `docs/architecture/backend.md` |
+| `soliplex_dev_constraint` | `>= 0.87.0, < 0.88` | non-empty | the `soliplex` requirement in `pyproject.toml` and `src/<package>/pyproject.toml` (host-side and dev-mode work) |
 | `haiku_rag_version` | `0.101.0` | non-empty; must satisfy the `haiku.rag-slim` range the `soliplex_image_tag` release requires | the `haiku-ingester` `image:` in `docker-compose.yml` (the `&haiku_rag_image` anchor) |
 | `docling_serve_variant` | `cpu` | one of `cpu`, `base`, `cu128`, `cu130` | composed into the `docling-serve` `image:` in `docker-compose.yml` (docling-serve/README.md) |
 | `docling_serve_version` | `v1.38.0` | `v<major>.<minor>.<patch>`, or `latest` for `cpu`/`base` only (the CUDA variants are version-tag-only upstream); must pair with the pinned `haiku_rag_version` | same |
