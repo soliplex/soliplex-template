@@ -42,6 +42,7 @@ create a `Dockerfile` in this directory, e.g.:
 ARG BASE_IMAGE=ghcr.io/ggozad/haiku.rag-slim:P.Q.R
 FROM ${BASE_IMAGE}
 ```
+
 and add the needful additional steps.
 
 Then comment out or remove the `image:` stanza for the `haiku-rag`

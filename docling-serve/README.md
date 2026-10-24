@@ -40,6 +40,7 @@ deployment, create a `Dockerfile` in this directory, e.g.:
 ARG BASE_IMAGE=ghcr.io/docling-project/docling-serve-cpu:vK.L.M
 FROM ${BASE_IMAGE}
 ```
+
 and add the needful additional steps.
 
 Then comment out or remove the `image:` stanza for the `docling-serve`
