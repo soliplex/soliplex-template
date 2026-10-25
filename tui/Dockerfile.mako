@@ -5,7 +5,7 @@
 # talks to the backend over HTTP, so it needs no PostgreSQL driver. It shares
 # its tag with the backend's soliplex-postgres image, so the two always run
 # the same soliplex release.
-FROM ghcr.io/soliplex/soliplex-tui:0.86.1
+FROM ghcr.io/soliplex/soliplex-tui:${soliplex_image_tag}
 
 WORKDIR /app
 

@@ -12,7 +12,7 @@
 # and 'bwrap' is installed for the 'bubble-sandbox' skill.
 FROM ghcr.io/astral-sh/uv:0.12.18 AS uv
 
-FROM ghcr.io/soliplex/soliplex-postgres:0.86.1
+FROM ghcr.io/soliplex/soliplex-postgres:${soliplex_image_tag}
 
 WORKDIR /app
 

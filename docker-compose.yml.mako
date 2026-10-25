@@ -201,7 +201,7 @@ services:
 
   haiku-ingester:
 
-    image: &haiku_rag_image ghcr.io/ggozad/haiku.rag-slim:0.101.0
+    image: &haiku_rag_image ghcr.io/ggozad/haiku.rag-slim:${haiku_rag_version}
 
     # To run a locally-built ingester image instead of the published
     # tag, see 'haiku.rag/README.md'.
@@ -333,7 +333,7 @@ services:
     # 'docling_serve_version');  re-point by editing this line and
     # committing — see docling-serve/README.md (variants, tagging
     # policy, pairing with the pinned haiku.rag, a local-build recipe).
-    image: quay.io/docling-project/docling-serve-cpu:v1.38.0
+    image: ${docling_serve_image}
 
     # To run a locally-built converter image instead of the published
     # tag, see 'docling-serve/README.md'.
