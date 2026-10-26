@@ -277,7 +277,15 @@ http {
         # Cookie security flags for proxied responses.
         # SameSite=None is required for the CAC/ADFS federated login flow,
         # which involves cross-site POSTs that would block cookies under
-        # Strict or Lax.
+        # Strict or Lax, but must not apply to the Soliplex authn cookie:
+        # rewriting 'soliplex_authn' to SameSite=None would let other
+        # origins carry the session cookie, defeating the authn gate for
+        # proxied admin surfaces (issue #221).  nginx requires at least one
+        # flag per directive and applies the first matching directive, so
+        # the exemption lists a flag the backend already sets on the authn
+        # cookie: the directive is a no-op for it, and the catch-all below
+        # never runs for it.
+        proxy_cookie_flags soliplex_authn httponly;
         proxy_cookie_flags ~ HttpOnly Secure SameSite=None;
         proxy_cookie_path / /;
 
