@@ -325,9 +325,12 @@ def test_ingester_bearer_gate_wiring(generated_project):
         " queue migrate"
     )
     assert command.rstrip().endswith("serve --root-path /ingester")
-    assert "localhost:8765/ingester/health" in str(
-        ingester["healthcheck"]["test"]
-    )
+    # The healthcheck polls the bind directly (inside the container), so
+    # the bare path: the '/ingester' prefix exists only from outside the
+    # proxy (and --root-path does not mount it).
+    healthcheck_test = str(ingester["healthcheck"]["test"])
+    assert "localhost:8765/health" in healthcheck_test
+    assert "8765/ingester/" not in healthcheck_test
 
 
 def test_ingester_bearer_secret_mounted_on_the_one_shot(generated_project):
