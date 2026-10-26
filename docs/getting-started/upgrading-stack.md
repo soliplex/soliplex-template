@@ -17,6 +17,7 @@ the section your stack is at, and work forward from there.
 | soliplex 0.84 or earlier | `backend/constraints.txt` pins below `0.85` | `template-skill-2026.10.10-37f7a2d` | [1](#1-move-to-soliplex-085) |
 | soliplex 0.85, built from PyPI | `backend/Dockerfile` runs `uv add … soliplex` | `template-skill-2026.10.14-9a17a20` | [2](#2-build-on-the-soliplex-release-images) |
 | on the 0.85 release images | `backend/Dockerfile` builds `FROM ghcr.io/soliplex/soliplex-postgres:0.85` | `template-skill-2026.10.24-932e134` | [3](#3-move-to-soliplex-0861-and-haikurag-01010) |
+| soliplex 0.86.1 | `backend/Dockerfile` builds `FROM ghcr.io/soliplex/soliplex-postgres:0.86.1` | `template-skill-2026.10.26-b57f7ba` | [4](#4-move-to-soliplex-087) |
 
 The `[tool.soliplex-template]` manifest at the end of the stack's
 `pyproject.toml` records the skill commit (`skill_source_commit`) and date
@@ -755,8 +756,7 @@ would pick up step 5's edit on the old image.
 
 ### 3. Move to Soliplex 0.86.1 and haiku.rag 0.101.0
 
-**Walk this rung with the `template-skill-2026.10.24-932e134` skill release** — its generator produces the rung's end state (the current template shape).  The stack being upgraded names the release that generated it in its own `[tool.soliplex-template]` manifest — use that
-  one when climbing *from* an older shape.
+**Walk this rung with the `template-skill-2026.10.24-932e134` skill release** — its generator produces the rung's end state (the current template shape).  The stack being upgraded names the release that generated it in its own `[tool.soliplex-template]` manifest — use that one when climbing *from* an older shape.
 
     ```bash
     uv run <skill>/scripts/skill_versions.py downgrade template-skill-2026.10.24-932e134
@@ -819,3 +819,50 @@ would pick up step 5's edit on the old image.
    with the relevant service stopped. Start the stack with
    `docker compose up -d` and inspect the backend and ingester logs.
    Then [check it](#check-it), and commit.
+
+### 4. Move to Soliplex 0.87
+
+**Walk this rung with the `template-skill-2026.10.26-b57f7ba` skill release** —
+its generator produces the rung's end state (the current template shape).  The
+stack being upgraded names the release that generated it in its own
+`[tool.soliplex-template]` manifest — use that one when climbing *from* an
+older shape.
+
+    ```bash
+    uv run <skill>/scripts/skill_versions.py downgrade template-skill-2026.10.26-b57f7ba
+    ```
+
+1. Stop the stack with `docker compose down`, and back up the Postgres
+   databases and `rag/db/` before upgrading.
+
+2. This rung is a pure release bump: the upgrade changes no template files
+   beyond version spellings, sets up no database migrations (the last
+   alembic migrations shipped with soliplex v0.86), and leaves the
+   haiku.rag pair and docling-serve untouched.  Stacks that changed the
+   generated files by hand should compare the rung's cut with the one
+   their manifest names to confirm nothing else moved.
+
+3. Bump the baked soliplex image tags from `0.86.1` to `0.87.0`: the
+   `FROM` lines in `backend/Dockerfile`
+   (`ghcr.io/soliplex/soliplex-postgres`) and, if the stack ships the
+   TUI, `tui/Dockerfile` (`ghcr.io/soliplex/soliplex-tui`).  If
+   `AGENTS.md` or `docs/architecture/backend.md` name the release
+   version, update those spellings to match.
+
+4. Update `soliplex_image_tag` and `soliplex_dev_constraint` in the
+   project's manifest.  Use `>= 0.87.0, < 0.88` for the Soliplex
+   requirement in the root and package `pyproject.toml` files, then run
+   `uv lock` in each project.
+
+5. Rebuild `backend`, `soliplex-dev`, and the optional `tui` with
+   `docker compose build --pull`.
+
+6. The default generated stack sets no migration policy, so the backend
+   migrates its Alembic databases itself on startup.  Stacks which
+   configured a migration policy are responsible for driving their own
+   migrations; [the migrations
+   reference](../users/operations/migrations.md) describes running them
+   with the CLI.
+
+7. Start the stack with `docker compose up -d` and inspect the backend
+   logs.  Then [check it](#check-it), and commit.
