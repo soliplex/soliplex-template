@@ -592,14 +592,14 @@ would pick up step 5's edit on the old image.
    header:
 
     ```text
-    --8<-- "backend/requirements.txt"
+    --8<-- "docs/getting-started/includes/template-skill-2026.10.20-a2c13ae/backend/requirements.txt"
     ```
 
 3. **Replace `backend/Dockerfile`** with the release-image one below. Carry
    over any local edits from step 1 (e.g. a `COPY` of `vendor/`).
 
     ```dockerfile
-    --8<-- "backend/Dockerfile"
+    --8<-- "docs/getting-started/includes/template-skill-2026.10.20-a2c13ae/backend/Dockerfile"
     ```
 
 4. **Delete `backend/constraints.txt`**.
@@ -635,7 +635,7 @@ would pick up step 5's edit on the old image.
    backend, and delete `tui/constraints.txt`:
 
     ```dockerfile
-    --8<-- "tui/Dockerfile"
+    --8<-- "docs/getting-started/includes/template-skill-2026.10.20-a2c13ae/tui/Dockerfile"
     ```
 
 8. **Update the stack's host-side dependencies** in the root
@@ -694,7 +694,7 @@ would pick up step 5's edit on the old image.
     template's Dockerfile into it as `soliplex-dev/Dockerfile`:
 
     ```dockerfile
-    --8<-- "soliplex-dev/Dockerfile"
+    --8<-- "docs/getting-started/includes/template-skill-2026.10.20-a2c13ae/soliplex-dev/Dockerfile"
     ```
 
     then generate its requirements file from the projects' dev groups:
@@ -722,7 +722,7 @@ would pick up step 5's edit on the old image.
     subject on its `openssl req` line:
 
     ```dockerfile
-    --8<-- "nginx/Dockerfile"
+    --8<-- "docs/getting-started/includes/template-skill-2026.10.20-a2c13ae/nginx/Dockerfile"
     ```
 
     delete `nginx/post-build-cache-bust.sh`, which it no longer runs, and in
@@ -733,7 +733,7 @@ would pick up step 5's edit on the old image.
     without this change the assets lose their long-lived caching:
 
     ```nginx
-    --8<-- "nginx/nginx.conf:hashed-assets"
+    --8<-- "docs/getting-started/includes/template-skill-2026.10.20-a2c13ae/nginx/nginx.conf:hashed-assets"
     ```
 
     Then, in the manifest, set `frontend_version` to the image tag (`0.110`
