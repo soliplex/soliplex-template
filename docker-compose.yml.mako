@@ -1,6 +1,6 @@
 # Usage:
 # docker compose up
-name: soliplex-template
+name: ${project_name}
 
 services:
 
@@ -10,17 +10,21 @@ services:
       context: nginx
       dockerfile: Dockerfile
       args:
-        PUID: ${PUID:-1000}
-        PGID: ${PGID:-1000}
+        PUID: <%text>${PUID:-1000}</%text>
+        PGID: <%text>${PGID:-1000}</%text>
 
     depends_on:
       - backend
+% if include_tui:
       - tui
+% endif
+% if include_gitea:
       - gitea
+% endif
 
     ports:
-      - "9000:9000"
-      - "9443:9443"
+      - "${nginx_http}:9000"
+      - "${nginx_https}:9443"
 
     volumes:
       - type: bind
@@ -36,19 +40,20 @@ services:
         target: /app/error-pages
         read_only: true
 
+% if include_tui:
   tui:
 
     build:
       context: tui
       dockerfile: Dockerfile
       args:
-        PUID: ${PUID:-1000}
-        PGID: ${PGID:-1000}
+        PUID: <%text>${PUID:-1000}</%text>
+        PGID: <%text>${PGID:-1000}</%text>
 
     depends_on:
       - backend
 
-    user: "${PUID:-1000}:${PGID:-1000}"
+    user: "<%text>${PUID:-1000}</%text>:<%text>${PGID:-1000}</%text>"
 
     # No host port mapping: the TUI is reached only through nginx so that the
     # '--public-url' baked into the served HTML (used for static assets and
@@ -58,19 +63,20 @@ services:
       --backend-url http://backend:8000
       --host 0.0.0.0
       --port 8002
-      --public-url https://localhost:9443/tui
+      --public-url https://${server_name}:${nginx_https}/tui
 
+% endif
   backend:
 
     build:
       context: backend
       dockerfile: Dockerfile
       args:
-        PUID: ${PUID:-1000}
-        PGID: ${PGID:-1000}
+        PUID: <%text>${PUID:-1000}</%text>
+        PGID: <%text>${PGID:-1000}</%text>
 
     env_file: ".env"
-    user: "${PUID:-1000}:${PGID:-1000}"
+    user: "<%text>${PUID:-1000}</%text>:<%text>${PGID:-1000}</%text>"
 
     # Lets the 'bubble-sandbox' skill run code (generator: 'enable_sandbox').
     # 'bwrap' needs user namespaces and a fresh '/proc', which Docker's default
@@ -79,10 +85,17 @@ services:
     # exchange for 'bwrap' isolating each execution inside it. Without it, a
     # room that configures the skill fails when used ("Sandbox unavailable").
     # Keep 'soliplex-dev' below in step.
+% if enable_sandbox:
     security_opt: &sandbox_security_opt
       - seccomp=unconfined
       - apparmor=unconfined
       - systempaths=unconfined
+% else:
+    # security_opt: &sandbox_security_opt
+      # - seccomp=unconfined
+      # - apparmor=unconfined
+      # - systempaths=unconfined
+% endif
 
     depends_on:
       - postgres
@@ -104,7 +117,13 @@ services:
       - url_safe_token_secret
 
     environment: &backend_environment
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL}
+      OLLAMA_BASE_URL: <%text>${OLLAMA_BASE_URL}</%text>
+      # Put this project's own package directory on the
+      # backend's import path so Soliplex can resolve
+      # dotted tool / router names (see './src' below).
+      # Append ':/app/src/<other>/src' for each further
+      # project directory whose code you want importable.
+      PYTHONPATH: /app/src/${package_name}/src
 
     volumes:
       - type: bind
@@ -123,14 +142,26 @@ services:
         source: "rag/db/"
         target: "/db"
 
+      # Every project directory under src/: this
+      # project's own, plus any repo cloned alongside
+      # it. Only the package dirs named in PYTHONPATH
+      # are importable.
+      - type: bind
+        source: "./src"
+        target: "/app/src"
+        read_only: true
+
     ports:
       - "8000:8000"
 
     # Temporary: run with '--no-auth-mode'
     command: >-
       /app/.venv/bin/soliplex-cli serve
+% if backend_auth_flag:
       --no-auth-mode
+% endif
       --reload=config
+      --reload-dirs=/app/src/${package_name}/src
       --host=0.0.0.0
       --proxy-headers
       --forwarded-allow-ips=*
@@ -170,12 +201,16 @@ services:
         backend: "service:backend"
 
     env_file: ".env"
-    user: "${PUID:-1000}:${PGID:-1000}"
+    user: "<%text>${PUID:-1000}</%text>:<%text>${PGID:-1000}</%text>"
 
     working_dir: /app/src
 
     # The backend's 'security_opt' (see there), so code runs here too.
+% if enable_sandbox:
     security_opt: *sandbox_security_opt
+% else:
+    # security_opt: *sandbox_security_opt
+% endif
 
     depends_on:
       postgres:
@@ -223,26 +258,26 @@ services:
         exec haiku-ingester --config /app/haiku.rag.yaml serve
 
     ports:
-      - "8765:8765"  # control plane: /health, /jobs, /sources, /dlq, /stats
+      - "${ingester_port}:8765"  # control plane: /health, /jobs, /sources, /dlq, /stats
 
     volumes: &haiku_rag_volumes
       - ./rag/db:/data
-      - ./rag/docs:/docs
+      - ./${docs_dir}:/docs
       - ./haiku.rag/haiku.rag.yaml:/app/haiku.rag.yaml:ro
 
     environment: &haiku_rag_environment
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL}
+      OLLAMA_BASE_URL: <%text>${OLLAMA_BASE_URL}</%text>
       # Bearer token clients must send to /jobs, /sources, /dlq, etc.
       # Override in '.env'; the default 'secret' is intentionally weak
       # so unhardened deployments fail an obvious security review.
-      INGESTER_TOKEN: ${INGESTER_TOKEN:-secret}
+      INGESTER_TOKEN: <%text>${INGESTER_TOKEN:-secret}</%text>
       # API keys (set as needed)
-      #- OPENAI_API_KEY=${OPENAI_API_KEY}
-      #- ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      #- VOYAGE_API_KEY=${VOYAGE_API_KEY}
-      #- CO_API_KEY=${CO_API_KEY}
+      #- OPENAI_API_KEY=<%text>${OPENAI_API_KEY}</%text>
+      #- ANTHROPIC_API_KEY=<%text>${ANTHROPIC_API_KEY}</%text>
+      #- VOYAGE_API_KEY=<%text>${VOYAGE_API_KEY}</%text>
+      #- CO_API_KEY=<%text>${CO_API_KEY}</%text>
 
-    user: "${PUID:-1000}:${PGID:-1000}"
+    user: "<%text>${PUID:-1000}</%text>:<%text>${PGID:-1000}</%text>"
 
     secrets:
       - ingester_db_password
@@ -320,7 +355,7 @@ services:
 
     environment: *haiku_rag_environment
 
-    user: "${PUID:-1000}:${PGID:-1000}"
+    user: "<%text>${PUID:-1000}</%text>:<%text>${PGID:-1000}</%text>"
 
     secrets:
       - ingester_db_password
@@ -345,7 +380,7 @@ services:
       DOCLING_SERVE_ENABLE_UI: 1
 
     ports:
-      - "5001:5001"
+      - "${docling_port}:5001"
 
     restart: unless-stopped
 
@@ -363,8 +398,8 @@ services:
       context: postgres
       dockerfile: Dockerfile
       args:
-        PUID: ${PUID:-1000}
-        PGID: ${PGID:-1000}
+        PUID: <%text>${PUID:-1000}</%text>
+        PGID: <%text>${PGID:-1000}</%text>
 
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
@@ -373,10 +408,12 @@ services:
       retries: 5
 
     environment:
-      AUTO_CREATE_DATABASE: ${AUTO_CREATE_DATABASE:-1}
+      AUTO_CREATE_DATABASE: <%text>${AUTO_CREATE_DATABASE:-1}</%text>
       AGUI_DB_PASS_FILE: /run/secrets/agui_db_password
       AUTHZ_DB_PASS_FILE: /run/secrets/authz_db_password
+% if include_gitea:
       GITEA_DB_PASS_FILE: /run/secrets/gitea_db_password
+% endif
       INGESTER_DB_PASS_FILE: /run/secrets/ingester_db_password
       POSTGRES_INITDB_ARGS: "-A scram-sha-256"
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
@@ -395,17 +432,20 @@ services:
         target: "/var/lib/postgresql"
 
     tmpfs:
-      - /var/run/postgresql:uid=${PUID:-1000},gid=${PGID:-1000}
+      - /var/run/postgresql:uid=<%text>${PUID:-1000}</%text>,gid=<%text>${PGID:-1000}</%text>
       - /tmp
     secrets:
       - source: agui_db_password
       - source: authz_db_password
+% if include_gitea:
       - source: gitea_db_password
+% endif
       - source: ingester_db_password
       - source: postgres_password
     ports:
-      - "5432:5432"
+      - "${postgres_port}:5432"
 
+% if include_gitea:
   gitea:
 
     # See: https://docs.gitea.com/installation/install-with-docker-rootless
@@ -429,7 +469,7 @@ services:
       # Reverse-proxied under /gitea/ by nginx on the HTTPS port (9443);
       # trailing slash is REQUIRED.  Override in .env if you front the
       # stack with another proxy or use a different hostname.
-      GITEA__server__ROOT_URL: "${GITEA_ROOT_URL:-https://localhost:9443/gitea/}"
+      GITEA__server__ROOT_URL: "<%text>${GITEA_ROOT_URL:-https://</%text>${server_name}:${nginx_https}<%text>/gitea/}</%text>"
       # Boot ready (skip the web installer); the DB is configured above.
       GITEA__security__INSTALL_LOCK: "true"
 
@@ -458,11 +498,14 @@ services:
 
     restart: unless-stopped
 
+% endif
 volumes:
   postgres_data:
   lancedb_data:
+% if include_gitea:
   gitea_data:
   gitea_config:
+% endif
 
 secrets:
 
@@ -476,8 +519,10 @@ secrets:
       file: ./.secrets/agui_db_password.gen
     authz_db_password:
       file: ./.secrets/authz_db_password.gen
+% if include_gitea:
     gitea_db_password:
       file: ./.secrets/gitea_db_password.gen
+% endif
     ingester_db_password:
       file: ./.secrets/ingester_db_password.gen
     postgres_password:

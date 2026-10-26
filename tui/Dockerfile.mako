@@ -1,11 +1,11 @@
-# syntax=docker/dockerfile:1
+<%text># syntax=docker/dockerfile:1
 #
 # Built on the soliplex-tui release image: soliplex plus the TUI's
 # dependencies (textual, textual-serve, textual-fspicker) in '/app/.venv'. It
 # talks to the backend over HTTP, so it needs no PostgreSQL driver. It shares
 # its tag with the backend's soliplex-postgres image, so the two always run
 # the same soliplex release.
-FROM ghcr.io/soliplex/soliplex-tui:${soliplex_image_tag}
+FROM ghcr.io/soliplex/soliplex-tui:</%text>${soliplex_image_tag}<%text>
 
 WORKDIR /app
 
@@ -22,4 +22,4 @@ ENV PATH="/app/.venv/bin:$PATH"
 
 EXPOSE 8002
 
-CMD ["/app/.venv/bin/soliplex-tui-serve"]
+CMD ["/app/.venv/bin/soliplex-tui-serve"]</%text>

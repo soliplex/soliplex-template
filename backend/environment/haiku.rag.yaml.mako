@@ -38,9 +38,9 @@ storage:
 # Match ingester's 'haiku.rag/haiku.rag.yaml', which writes the same LanceDB.
 embeddings:
   model:
-    name: qwen3-embedding:4b
+    name: ${rag_embed_model}
     provider: ollama
-    vector_dim: 2560
+    vector_dim: ${rag_embed_dim}
 
 # Omit the 'reranking' section to disable re-ranking.
 #reranking:
@@ -52,12 +52,12 @@ embeddings:
 # iteration bound of the removed 'research' section.
 qa:
   model:
-    name: gpt-oss:latest
+    name: ${rag_qa_model}
     provider: ollama
   #max_searches: 5
 
 processing:
-  chunk_size: 256
+  chunk_size: ${chunk_size}
   converter: docling-serve  # Use remote conversion
   chunker: docling-serve    # Use remote chunking
 

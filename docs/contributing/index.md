@@ -46,6 +46,22 @@ That generated tree is a **build artifact, not source**: it is gitignored and
 skill, and the functional tests regenerate it before they run, so it always
 reflects the current exemplars — there is nothing to keep in sync by hand.
 
+## Reviewing .mako diffs
+
+Reviewing a parameterized file's diff runs into two source spellings that read
+oddly against diff hunks:
+
+- `<%text>…</%text>` encloses text Mako must pass through untouched (shell /
+  Docker `${...}` expansions). A hunk showing a wrapper appear or disappear is
+  an *escaping* change, not a content rewrite.
+- `% if` / `% endif` are the opt-in-service conditionals; the generated stack
+  shows the branch resolved, the source shows both.
+
+When in doubt, review the *rendered* output rather than the source: every
+shipped `.mako` is render-checked with the generator's `DEFAULTS`, and a
+generated stack shows the final shape. For rename-plus-templatize pairs,
+`git diff --find-renames` (and `-M`) keeps the edit attached to the rename.
+
 So the workflow for changing the stack is just to **edit the exemplar** (the
 real files at the repo root). To preview the generated template, or to drive the
 generator from a checkout, regenerate it explicitly:

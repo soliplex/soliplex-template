@@ -35,7 +35,6 @@ import re
 import shutil
 import subprocess
 import sys
-import tomllib
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 TEMPLATE = REPO / "skills" / "soliplex-template" / "assets" / "template"
@@ -44,6 +43,10 @@ TEMPLATE = REPO / "skills" / "soliplex-template" / "assets" / "template"
 EXCLUDE_PATHSPECS = [
     ":!TODO.md",
     ":!.claude",
+    # The repo's own ignore rules (e.g. /dist/): the stack's copy is derived
+    # from the checked-in .gitignore.mako instead, and shipping the plain
+    # file too would race it for the same rendered path.
+    ":!.gitignore",
     ":!.github",  # this repo's CI, not a project file
     ":!.pre-commit-config.yaml",  # repo pre-commit config, not a project file
     ":!skills/soliplex-template",  # the skill source itself (no recursion)
@@ -87,15 +90,6 @@ def require(cond: bool, msg: str) -> None:
         raise RefreshError(msg)
 
 
-def esc(text: str, *literals: str) -> str:
-    """Wrap literal ``${...}`` runs in ``<%text>`` so Mako passes them
-    through untouched."""
-    for lit in literals:
-        require(lit in text, f"expected literal {lit!r} to escape")
-        text = text.replace(lit, f"<%text>{lit}</%text>")
-    return text
-
-
 def repl(text: str, pairs: list[tuple[str, str]]) -> str:
     for old, new in pairs:
         require(old in text, f"expected to find {old!r}")
@@ -103,688 +97,14 @@ def repl(text: str, pairs: list[tuple[str, str]]) -> str:
     return text
 
 
-def opt_replace(text: str, old: str, new: str) -> str:
-    """Replace ``old`` with ``new`` only when present (no-op otherwise).
-
-    Used for the opt-in gitea fragments: the always-on exemplar carries them,
-    but the transforms stay tolerant of minimal inputs that don't."""
-    return text.replace(old, new) if old in text else text
-
-
-def wrap_gitea(text: str, fragment: str) -> str:
-    """Wrap an opt-in gitea ``fragment`` in a Mako ``include_gitea``
-    conditional when present. The ``% if`` / ``% endif`` control lines are
-    consumed by Mako, so the rendered output is byte-identical to the
-    exemplar when include_gitea is true."""
-    return opt_replace(
-        text, fragment, f"% if include_gitea:\n{fragment}% endif\n"
-    )
-
-
-def repl_opt(text: str, pairs: list[tuple[str, str]]) -> str:
-    """Like ``repl()`` but silently skip pairs whose ``old`` is absent
-    (for the opt-in gitea fragments)."""
-    for old, new in pairs:
-        text = opt_replace(text, old, new)
-    return text
-
-
-# --------------------------------------------------------------------------
-# Per-file transforms: repo-relative path -> fn(text) -> mako text
-# Output path is the key + ".mako".
-# --------------------------------------------------------------------------
-def t_compose(text: str) -> str:
-    text = esc(
-        text,
-        "${OLLAMA_BASE_URL}",
-        "${INGESTER_TOKEN:-secret}",
-        "${AUTO_CREATE_DATABASE:-1}",
-        "${OPENAI_API_KEY}",
-        "${ANTHROPIC_API_KEY}",
-        "${VOYAGE_API_KEY}",
-        "${CO_API_KEY}",
-        # Container UID/GID alignment: Compose-level interpolations (read from
-        # .env) for build.args, the service `user:` overrides, and the postgres
-        # tmpfs ownership. They are docker syntax, not generator parameters, so
-        # they must reach the rendered compose file verbatim.
-        "${PUID:-1000}",
-        "${PGID:-1000}",
-    )
-    text = repl(
-        text,
-        [
-            ("name: soliplex-template", "name: ${project_name}"),
-            ('- "9000:9000"', '- "${nginx_http}:9000"'),
-            ('- "9443:9443"', '- "${nginx_https}:9443"'),
-            (
-                "--public-url https://localhost:9443/tui",
-                "--public-url https://${server_name}:${nginx_https}/tui",
-            ),
-            # The serve command is a folded ('>-') scalar, one flag per line,
-            # so auth mode drops the whole '--no-auth-mode' line. The control
-            # lines are consumed by Mako: a no-auth stack renders exactly the
-            # exemplar.
-            (
-                "      /app/.venv/bin/soliplex-cli serve\n"
-                "      --no-auth-mode\n",
-                "      /app/.venv/bin/soliplex-cli serve\n"
-                "% if backend_auth_flag:\n"
-                "      --no-auth-mode\n"
-                "% endif\n",
-            ),
-            # Watch this project's own package as well as the config, so an
-            # edit to its tools or views restarts the server. One
-            # '--reload-dirs' line per PYTHONPATH entry (injected below):
-            # src_projects.py adds and removes the lines for further project
-            # directories along with their PYTHONPATH entries.
-            (
-                "      --reload=config\n",
-                "      --reload=config\n"
-                "      --reload-dirs=/app/src/${package_name}/src\n",
-            ),
-            # The ingester's image line: the tag is a parameter because it is
-            # not free to choose — the pinned soliplex release constrains
-            # 'haiku.rag-slim' as a dependency (see the compose gotchas).
-            (
-                "image: &haiku_rag_image "
-                "ghcr.io/ggozad/haiku.rag-slim:0.101.0",
-                "image: &haiku_rag_image "
-                "ghcr.io/ggozad/haiku.rag-slim:${haiku_rag_version}",
-            ),
-            # The converter's image line, chosen at generation: the
-            # 'docling_serve_image' ref pairs with the pinned
-            # 'haiku.rag-slim' release (see the compose gotchas).
-            (
-                "image: quay.io/docling-project/docling-serve-cpu:v1.38.0",
-                "image: ${docling_serve_image}",
-            ),
-            ('- "8765:8765"', '- "${ingester_port}:8765"'),
-            ('- "5001:5001"', '- "${docling_port}:5001"'),
-            ('- "5432:5432"', '- "${postgres_port}:5432"'),
-            ("- ./rag/docs:/docs", "- ./${docs_dir}:/docs"),
-            # Mount the whole src/ tree (every project directory: ours,
-            # plus any checkout cloned alongside it) read-only, but put only
-            # *our* project's package directory on PYTHONPATH, so Soliplex can
-            # resolve dotted names like '${package_name}.tools.greeting'. The
-            # anchors below are unique to the backend service (the ingester
-            # uses the short './rag/db:/data' volume form and a different
-            # environment).
-            (
-                "      - type: bind\n"
-                '        source: "rag/db/"\n'
-                '        target: "/db"\n',
-                "      - type: bind\n"
-                '        source: "rag/db/"\n'
-                '        target: "/db"\n'
-                "\n"
-                "      # Every project directory under src/: this\n"
-                "      # project's own, plus any repo cloned alongside\n"
-                "      # it. Only the package dirs named in PYTHONPATH\n"
-                "      # are importable.\n"
-                "      - type: bind\n"
-                '        source: "./src"\n'
-                '        target: "/app/src"\n'
-                "        read_only: true\n",
-            ),
-            (
-                "      OLLAMA_BASE_URL: <%text>${OLLAMA_BASE_URL}</%text>\n"
-                "\n"
-                "    volumes:\n",
-                "      OLLAMA_BASE_URL: <%text>${OLLAMA_BASE_URL}</%text>\n"
-                "      # Put this project's own package directory on the\n"
-                "      # backend's import path so Soliplex can resolve\n"
-                "      # dotted tool / router names (see './src' below).\n"
-                "      # Append ':/app/src/<other>/src' for each further\n"
-                "      # project directory whose code you want importable.\n"
-                "      PYTHONPATH: /app/src/${package_name}/src\n"
-                "\n"
-                "    volumes:\n",
-            ),
-        ],
-    )
-    # Wrap the opt-in gitea fragments in Mako conditionals so generated
-    # projects include them only when include_gitea is true. Tolerant of
-    # absence (gitea is optional); the always-on exemplar carries them all.
-    # Escape the gitea ROOT_URL default-expansion (docker syntax, not a
-    # generator parameter) when present:
-    text = opt_replace(
-        text,
-        "${GITEA_ROOT_URL:-https://localhost:9443/gitea/}",
-        "<%text>${GITEA_ROOT_URL:-https://</%text>"
-        "${server_name}:${nginx_https}"
-        "<%text>/gitea/}</%text>",
-    )
-    # nginx depends_on the gitea service:
-    text = opt_replace(
-        text,
-        "      - gitea\n",
-        "% if include_gitea:\n      - gitea\n% endif\n",
-    )
-    # postgres: gitea DB password file + secret source:
-    text = wrap_gitea(
-        text, "      GITEA_DB_PASS_FILE: /run/secrets/gitea_db_password\n"
-    )
-    text = wrap_gitea(text, "      - source: gitea_db_password\n")
-    # the gitea service block (open + close anchors):
-    text = opt_replace(text, "  gitea:\n", "% if include_gitea:\n  gitea:\n")
-    text = opt_replace(
-        text,
-        "    restart: unless-stopped\n\nvolumes:\n",
-        "    restart: unless-stopped\n\n% endif\nvolumes:\n",
-    )
-    # the gitea named volumes:
-    text = wrap_gitea(text, "  gitea_data:\n  gitea_config:\n")
-    # the gitea db_password secret-file entry:
-    text = wrap_gitea(
-        text,
-        "    gitea_db_password:\n"
-        "      file: ./.secrets/gitea_db_password.gen\n",
-    )
-    # Wrap the opt-in tui fragments in include_tui Mako conditionals, mirroring
-    # gitea: the always-on exemplar carries them; generated projects include
-    # them only when include_tui is true.
-    # nginx depends_on the tui service:
-    text = opt_replace(
-        text,
-        "      - tui\n",
-        "% if include_tui:\n      - tui\n% endif\n",
-    )
-    # the tui service block (open anchor + close anchor before backend):
-    text = opt_replace(text, "  tui:\n", "% if include_tui:\n  tui:\n")
-    text = opt_replace(text, "  backend:\n", "% endif\n  backend:\n")
-    # The sandbox 'security_opt' blocks (backend + soliplex-dev). Unlike the
-    # opt-in services these are never dropped: a stack generated without
-    # enable_sandbox carries them commented out, so it can opt in later by
-    # uncommenting rather than regenerating.
-    text = toggle_sandbox(text, _SANDBOX_BACKEND_OPTS)
-    text = toggle_sandbox(text, _SANDBOX_DEV_OPTS)
-    return text
-
-
-_SANDBOX_BACKEND_OPTS = (
-    "    security_opt: &sandbox_security_opt\n"
-    "      - seccomp=unconfined\n"
-    "      - apparmor=unconfined\n"
-    "      - systempaths=unconfined\n"
-)
-_SANDBOX_DEV_OPTS = "    security_opt: *sandbox_security_opt\n"
-
-
-def comment_out(block: str) -> str:
-    """Comment out each line of a YAML ``block``, keeping its indentation."""
-    return "".join(
-        re.sub(r"^( *)", r"\1# ", line, count=1)
-        for line in block.splitlines(keepends=True)
-    )
-
-
-def toggle_sandbox(text: str, block: str) -> str:
-    """Emit ``block`` live when enable_sandbox is true, else commented out.
-
-    Tolerant of absence, like the opt-in service fragments: the exemplar
-    carries both blocks, and the real-exemplar test pins that."""
-    return opt_replace(
-        text,
-        block,
-        f"% if enable_sandbox:\n{block}% else:\n{comment_out(block)}% endif\n",
-    )
-
-
-_ROUTER_BLOCK = (
-    'haiku_rag_config_file: "./haiku.rag.yaml"\n'
-    "\n"
-    "#" + "=" * 74 + "\n"
-    "# FastAPI routers (custom)\n"
-    "#" + "=" * 74 + "\n"
-    "# Add this project's own router (defined in\n"
-    "# src/${package_name}/src/${package_name}/views.py)\n"
-    "# by dotted name, without clearing the default Soliplex routers.\n"
-    "#" + "=" * 74 + "\n"
-    "app_router_operations:\n"
-    '  - kind: "add"\n'
-    '    group_name: "${package_name}"\n'
-    '    router_name: "${package_name}.views.router"\n'
-    '    prefix: "/api"\n'
-)
-
-
-def t_installation(text: str) -> str:
-    return repl(
-        text,
-        [
-            ('id: "soliplex-conf-minimal"', 'id: "${setup_id}"'),
-            (
-                '  - id: "default_chat"\n    model_name: "gpt-oss:latest"',
-                '  - id: "default_chat"\n    model_name: "${chat_model}"',
-            ),
-            (
-                '  - id: "title"\n    model_name: "gpt-oss:latest"',
-                '  - id: "title"\n    model_name: "${title_model}"',
-            ),
-            ('"gpt-oss:20b"', '"${chat_model_alt}"'),
-            ("soliplex_agui", "${agui_db}"),
-            ("soliplex_authz", "${authz_db}"),
-            # The hypothetical 'my_package' meta-config examples become a
-            # dotted reference into this project's own package, so the
-            # commented examples point somewhere real once uncommented.
-            ("my_package", "${package_name}"),
-            # Register this project's FastAPI router by dotted name.
-            ('haiku_rag_config_file: "./haiku.rag.yaml"', _ROUTER_BLOCK),
-        ],
-    )
-
-
-# Ensure that backend and ingester use the same embeddings.
-EMBEDDING_SUBS = [
-    ("name: qwen3-embedding:4b", "name: ${rag_embed_model}"),
-    ("vector_dim: 2560", "vector_dim: ${rag_embed_dim}"),
-]
-
-
-def t_backend_haiku(text: str) -> str:
-    return repl(
-        text,
-        [
-            (
-                "qa:\n  model:\n    name: gpt-oss:latest",
-                "qa:\n  model:\n    name: ${rag_qa_model}",
-            ),
-            ("chunk_size: 256", "chunk_size: ${chunk_size}"),
-            *EMBEDDING_SUBS,
-        ],
-    )
-
-
-def t_ingester_haiku(text: str) -> str:
-    # haiku.rag expands these itself when it loads the config, so they must
-    # reach the rendered file verbatim rather than being substituted by Mako
-    # at generation time.
-    text = esc(text, "${INGESTER_TOKEN}", "${INGESTER_DB_PASSWORD}")
-    return repl(
-        text,
-        [
-            ("chunk_size: 256", "chunk_size: ${chunk_size}"),
-            *EMBEDDING_SUBS,
-        ],
-    )
-
-
-def _image_from(text: str, image: str, param: str) -> str:
-    """Point the one ``FROM ghcr.io/soliplex/<image>:<tag>`` line at the
-    ``param`` generator parameter.
-
-    Everything else is wrapped in ``<%text>``: Mako would otherwise consume
-    each backslash-newline continuation and try to expand the shell's
-    ``${PUID}`` / ``${PGID}``. A stage name after the tag (``AS frontend``)
-    stays put."""
-    pattern = (
-        rf"(?m)^(FROM ghcr\.io/soliplex/{re.escape(image)}:)\S+"
-        r"(?P<stage>[ \t]+AS[ \t]+\S+)?$"
-    )
-    n = len(re.findall(pattern, text))
-    require(n == 1, f"expected one {image} FROM line, got {n}")
-    # Keep the trailing newline outside the <%text> block, so the .mako file
-    # ends with one (keeps end-of-file-fixer happy and refresh idempotent).
-    stripped = text.rstrip("\n")
-    trailing = text[len(stripped) :]
-    body = re.sub(
-        pattern, rf"\1</%text>${{{param}}}<%text>\g<stage>", stripped
-    )
-    return "<%text>" + body + "</%text>" + trailing
-
-
-def _soliplex_from(image: str, text: str) -> str:
-    # The backend and TUI images share one tag, so the two services always
-    # run the same soliplex release.
-    return _image_from(text, image, "soliplex_image_tag")
-
-
-def t_backend_dockerfile(text: str) -> str:
-    return _soliplex_from("soliplex-postgres", text)
-
-
-def t_tui_dockerfile(text: str) -> str:
-    return _soliplex_from("soliplex-tui", text)
-
-
-def t_soliplex_dev_requirements(text: str) -> str:
-    # The exemplar's src/ holds no project with a dev group, so its file is
-    # the bare header src_projects.py writes. A generated stack's own project
-    # (src/${package_name}/, authored below) brings its own 'dev' group, so
-    # the stack's copy starts as src_projects.py would write it: that group,
-    # read from the authored pyproject.toml itself rather than repeated here.
-    require(
-        all(
-            line.startswith("#") or not line.strip()
-            for line in text.splitlines()
-        ),
-        "expected only the header in soliplex-dev/requirements-dev.txt",
-    )
-    authored = tomllib.loads(AUTHORED["src/__package__/pyproject.toml.mako"])
-    dev = authored.get("dependency-groups", {}).get("dev", [])
-    require(
-        all(isinstance(entry, str) for entry in dev),
-        "expected plain requirements in the authored project's dev group",
-    )
-    if not dev:
-        return text
-    return text + "# src/${package_name}\n" + "".join(f"{d}\n" for d in dev)
-
-
-# Snippet-section markers ('# --8<-- [start:name]' / '[end:name]') let a
-# repo-only docs page include part of a file verbatim; they mean nothing to a
-# generated stack, so its copy drops them.
-_SNIPPET_MARKER = re.compile(r"(?m)^[ \t]*# --8<-- \[(?:start|end):[\w-]+\]\n")
-
-
-def t_nginx_conf(text: str) -> str:
-    text = _SNIPPET_MARKER.sub("", text)
-    require(
-        text.count("server_name localhost;") == 2,
-        "expected two 'server_name localhost;' in nginx.conf",
-    )
-    text = text.replace(
-        "server_name localhost;", "server_name ${server_name};"
-    )
-    # Wrap the opt-in /gitea reverse-proxy location (HTTPS server) in a Mako
-    # conditional so it is emitted only when include_gitea is true.
-    gitea_loc = (
-        "        # Gitea under /gitea/.  Only mounted on the HTTPS server"
-        " -- Gitea's\n"
-        "        # ROOT_URL points at https://.../gitea/, so browsers"
-        " hitting\n"
-        "        # http://.../gitea would get mixed absolute links.\n"
-        "        # '^~' makes this prefix trump the regex locations above."
-        "  Gitea\n"
-        "        # itself does not know the sub-path; we strip /gitea before"
-        " proxying\n"
-        "        # and let ROOT_URL prepend it on Gitea's generated links."
-        "  See:\n"
-        "        # https://docs.gitea.com/administration/reverse-proxies\n"
-        "        location ^~ /gitea {\n"
-        "            client_max_body_size 512M;\n"
-        "\n"
-        "            # 'set' MUST precede the 'rewrite ... break' below:"
-        " 'break' halts\n"
-        "            # the ngx_http_rewrite_module, so a 'set' placed after"
-        " it never\n"
-        '            # runs and $backend_gitea reads back empty ("no host in'
-        " upstream\n"
-        '            # :3000").\n'
-        '            set $backend_gitea "gitea";\n'
-        "\n"
-        "            # Preserve encoded chars (e.g. %2F in branch names)"
-        " through the\n"
-        "            # rewrite; two-step trick from the Gitea docs.\n"
-        "            rewrite ^ $request_uri;\n"
-        "            rewrite ^/gitea/?(.*) /$1 break;\n"
-        "\n"
-        "            proxy_pass http://$backend_gitea:3000$uri;\n"
-        "            proxy_http_version 1.1;\n"
-        "            proxy_set_header Connection $http_connection;\n"
-        "            proxy_set_header Upgrade $http_upgrade;\n"
-        "            proxy_set_header Host $host$host_port;\n"
-        "            proxy_set_header X-Real-IP $remote_addr;\n"
-        "            proxy_set_header X-Forwarded-For"
-        " $proxy_add_x_forwarded_for;\n"
-        "            proxy_set_header X-Forwarded-Port $backend_port;\n"
-        "            proxy_set_header X-Forwarded-Proto https;\n"
-        "            proxy_connect_timeout 10;\n"
-        "            proxy_send_timeout 60;\n"
-        "            proxy_read_timeout 600;\n"
-        "            proxy_buffering off;\n"
-        "        }\n"
-    )
-    return wrap_gitea(text, gitea_loc)
-
-
-def t_nginx_dockerfile(text: str) -> str:
-    # The web client comes from the published frontend-web image, whose tag
-    # is the 'frontend_version' parameter; the self-signed cert subject is the
-    # other parameter. Everything else stays literal (see _image_from).
-    m = re.search(r'-subj "([^"]*)"', text)
-    require(m is not None, 'expected a -subj "..." line in nginx/Dockerfile')
-    subj = m.group(1)
-    require(text.count(subj) == 1, f"cert subject {subj!r} is not unique")
-    body = _image_from(text, "frontend-web", "frontend_version")
-    return body.replace(subj, "</%text>${tls_subject}<%text>")
-
-
-def t_init_sh(text: str) -> str:
-    text = repl(
-        text,
-        [
-            ("soliplex_agui", "${agui_db}"),
-            ("soliplex_authz", "${authz_db}"),
-        ],
-    )
-    # Wrap the opt-in gitea fragments in Mako conditionals (see t_compose).
-    # The gitea DB name is fixed (not parameterized), so these anchors are
-    # untouched by the agui/authz substitutions above. Tolerant of absence.
-    return repl_opt(
-        text,
-        [
-            (
-                "# Read password from secret file if available, otherwise"
-                " fallback to environment variable\n"
-                'if [ -f "$GITEA_DB_PASS_FILE" ]; then\n'
-                '    GITEA_DB_PASS=$(cat "$GITEA_DB_PASS_FILE")\n'
-                'elif [ -z "$GITEA_DB_PASS" ]; then\n'
-                '    echo "ERROR: Neither GITEA_DB_PASS_FILE nor'
-                ' GITEA_DB_PASS is set"\n'
-                "    exit 1\n"
-                "fi\n",
-                "% if include_gitea:\n"
-                "# Read password from secret file if available, otherwise"
-                " fallback to environment variable\n"
-                'if [ -f "$GITEA_DB_PASS_FILE" ]; then\n'
-                '    GITEA_DB_PASS=$(cat "$GITEA_DB_PASS_FILE")\n'
-                'elif [ -z "$GITEA_DB_PASS" ]; then\n'
-                '    echo "ERROR: Neither GITEA_DB_PASS_FILE nor'
-                ' GITEA_DB_PASS is set"\n'
-                "    exit 1\n"
-                "fi\n"
-                "% endif\n",
-            ),
-            (
-                "    -- Create Gitea application user with password\n"
-                "    CREATE USER soliplex_gitea WITH PASSWORD"
-                " '$GITEA_DB_PASS';\n",
-                "% if include_gitea:\n"
-                "    -- Create Gitea application user with password\n"
-                "    CREATE USER soliplex_gitea WITH PASSWORD"
-                " '$GITEA_DB_PASS';\n"
-                "% endif\n",
-            ),
-            (
-                "    -- Create database owned by postgres"
-                " (not application user)\n"
-                "    CREATE DATABASE soliplex_gitea;\n"
-                "    ALTER DATABASE soliplex_gitea OWNER TO postgres;\n",
-                "% if include_gitea:\n"
-                "    -- Create database owned by postgres"
-                " (not application user)\n"
-                "    CREATE DATABASE soliplex_gitea;\n"
-                "    ALTER DATABASE soliplex_gitea OWNER TO postgres;\n"
-                "% endif\n",
-            ),
-            (
-                "    -- Connect to the soliplex_gitea database to set up"
-                " schema permissions\n"
-                "    \\c soliplex_gitea\n"
-                "\n"
-                "    -- Grant minimal required PRIVILEGES"
-                " (EVAL.md #14 recommendation)\n"
-                "    -- Only CONNECT, not superuser or database ownership\n"
-                "    GRANT CONNECT ON DATABASE soliplex_gitea TO"
-                " soliplex_gitea;\n"
-                "\n"
-                "    -- Schema-level permissions\n"
-                "    GRANT USAGE ON SCHEMA public TO soliplex_gitea;\n"
-                "\n"
-                "    GRANT ALL PRIVILEGES ON DATABASE soliplex_gitea to"
-                " soliplex_gitea;\n"
-                "    GRANT ALL PRIVILEGES ON SCHEMA public TO"
-                " soliplex_gitea;\n",
-                "% if include_gitea:\n"
-                "    -- Connect to the soliplex_gitea database to set up"
-                " schema permissions\n"
-                "    \\c soliplex_gitea\n"
-                "\n"
-                "    -- Grant minimal required PRIVILEGES"
-                " (EVAL.md #14 recommendation)\n"
-                "    -- Only CONNECT, not superuser or database ownership\n"
-                "    GRANT CONNECT ON DATABASE soliplex_gitea TO"
-                " soliplex_gitea;\n"
-                "\n"
-                "    -- Schema-level permissions\n"
-                "    GRANT USAGE ON SCHEMA public TO soliplex_gitea;\n"
-                "\n"
-                "    GRANT ALL PRIVILEGES ON DATABASE soliplex_gitea to"
-                " soliplex_gitea;\n"
-                "    GRANT ALL PRIVILEGES ON SCHEMA public TO"
-                " soliplex_gitea;\n"
-                "% endif\n",
-            ),
-            (
-                "echo \"Database 'soliplex_gitea' initialized with minimal"
-                " privileges for user 'soliplex_gitea'\"\n",
-                "% if include_gitea:\n"
-                "echo \"Database 'soliplex_gitea' initialized with minimal"
-                " privileges for user 'soliplex_gitea'\"\n"
-                "% endif\n",
-            ),
-        ],
-    )
-
-
-def t_gitignore(text: str) -> str:
-    # The repo ignores its own skill build artifacts under /dist/; a generated
-    # project has no such artifact, so strip that block (a '# Skill build
-    # artifacts' comment, any further comment lines, and the /dist/ entry).
-    new, n = re.subn(
-        r"\n# Skill build artifacts[^\n]*\n(?:#[^\n]*\n)*/dist/\n\n?",
-        "\n",
-        text,
-        count=1,
-    )
-    require(
-        n == 1,
-        "expected the '/dist/' skill build artifacts block in .gitignore",
-    )
-    # Append the rule the repo's own .gitignore cannot carry: in a generated
-    # project every entry under src/ is a project directory, and only *this*
-    # project's is part of this repo. Stated as a rule rather than one
-    # exclusion line per checkout the owner happens to clone.
-    require(
-        "/src/" not in new,
-        "expected no '/src/' rules in .gitignore (derived here instead)",
-    )
-    return new + (
-        "\n"
-        "# Every entry under src/ is a project directory. This project's own\n"
-        "# package is tracked; anything else cloned there (the soliplex\n"
-        "# checkout, a third-party repo you want to hack on) belongs to its\n"
-        "# own repo, so it is ignored without needing a line per clone.\n"
-        "/src/*\n"
-        "!/src/${package_name}/\n"
-    )
-
-
-def t_agents(text: str) -> str:
-    # AGENTS.md is rendered into generated projects (alongside the CLAUDE.md
-    # shim, which is copied verbatim); gitea is opt-in, so its
-    # mentions become Mako conditionals. The woven port / database references
-    # use inline '${... if include_gitea else ""}' so the surrounding prose
-    # stays intact when gitea is off; the standalone service bullet is wrapped
-    # with '% if'. The literal compose ${...} expansion in the secrets notes
-    # must be escaped so Mako passes it through.
-    text = esc(
-        text,
-        "${INGESTER_TOKEN:-secret}",
-        "${INGESTER_TOKEN}",
-        "${VAR}",
-        "${VAR:-default}",
-    )
-    text = repl(
-        text,
-        [
-            (
-                ", `3000` (gitea HTTP), `2222` (gitea SSH)",
-                '${", `3000` (gitea HTTP), `2222` (gitea SSH)"'
-                ' if include_gitea else ""}',
-            ),
-            (
-                ", `soliplex_gitea` (Gitea backing store)",
-                '${", `soliplex_gitea` (Gitea backing store)"'
-                ' if include_gitea else ""}',
-            ),
-            # Version pins: the gotchas quote them, so they have to follow the
-            # parameters or the generated AGENTS.md goes stale the moment a
-            # project picks different ones.
-            (
-                "`FROM ghcr.io/soliplex/soliplex-postgres:0.86.1`",
-                "`FROM ghcr.io/soliplex/soliplex-postgres:"
-                "${soliplex_image_tag}`",
-            ),
-            (
-                "haiku.rag-slim:0.101.0",
-                "haiku.rag-slim:${haiku_rag_version}",
-            ),
-            (
-                "`ghcr.io/soliplex/frontend-web:0.110`",
-                "`ghcr.io/soliplex/frontend-web:${frontend_version}`",
-            ),
-            # tui/Dockerfile only exists in a project that took the TUI.
-            (
-                " (The opt-in TUI's `tui/Dockerfile` builds on"
-                " `ghcr.io/soliplex/soliplex-tui` at the same tag.)",
-                "${\" (The opt-in TUI's `tui/Dockerfile` builds on"
-                ' `ghcr.io/soliplex/soliplex-tui` at the same tag.)"'
-                ' if include_tui else ""}',
-            ),
-        ],
-    )
-    return wrap_gitea(
-        text,
-        "- **gitea** — rootless Gitea (`docker.gitea.com/gitea:*-rootless`)"
-        " backed by the `soliplex_gitea` database, reverse-proxied by nginx"
-        " at `https://localhost:9443/gitea/` (HTTPS only; override via"
-        " `GITEA_ROOT_URL`). State lives in the `gitea_data` /"
-        " `gitea_config` named volumes; built-in SSH on host `:2222`."
-        " Provision an admin user, access token, and tracking repo with"
-        " `scripts/init_gitea.py` (a rotating service account whose password"
-        " is never persisted; pass `--admin-user NAME` to also create a"
-        " distinct, known web-UI admin login, prompted for its password)."
-        " Pass `--push-to-gitea` to also set this stack's git `origin` to a"
-        " Gitea"
-        " repo over SSH and push the initial commit.\n",
-    )
-
-
-DERIVED = {
-    ".gitignore": t_gitignore,
-    "docker-compose.yml": t_compose,
-    "backend/environment/installation.yaml": t_installation,
-    "backend/environment/haiku.rag.yaml": t_backend_haiku,
-    "haiku.rag/haiku.rag.yaml": t_ingester_haiku,
-    "soliplex-dev/requirements-dev.txt": t_soliplex_dev_requirements,
-    "backend/Dockerfile": t_backend_dockerfile,
-    "tui/Dockerfile": t_tui_dockerfile,
-    "nginx/nginx.conf": t_nginx_conf,
-    "nginx/Dockerfile": t_nginx_dockerfile,
-    "postgres/config/init.sh": t_init_sh,
-    "AGENTS.md": t_agents,
-}
-
-# --------------------------------------------------------------------------
 # User-facing docs: derived from authoritative Markdown under docs/users/.
 #
 # The shipped docs/*.md.mako are NOT authored as string literals here; they are
-# DERIVED from plain Markdown that lives under the repo's docs/users/ tree --
-# one source of truth, the same repo->template derivation used for
-# docker-compose.yml et al. The authoritative .md reads cleanly on the repo's
-# own docs site (concrete default values; conditional blocks fenced in HTML
+# The shipped docs/*.md.mako are derived from plain Markdown living under
+# the repo's docs/users/ tree --
+# one source of truth: the page is edited once, and the same fence-and-
+# parameter conventions apply everywhere. The authoritative .md reads on the
+# repo's own docs site (concrete defaults; conditional blocks fenced in HTML
 # comments that render to nothing), and t_user_doc() turns it into the
 # parameterized, conditional Mako the generator consumes.
 #
@@ -1348,33 +668,25 @@ def render_check(root: pathlib.Path) -> int:
 
 
 def _build_into(dest_root: pathlib.Path, files: list[str]) -> tuple[int, int]:
-    """Assemble template into ``dest_root``; return (derived, authored)."""
+    """Assemble template into ``dest_root``.
+
+    Returns (derived, authored, checked): the shippable-docs derived count,
+    the authored-template count, and the count of tracked files that are
+    themselves checked-in ``*.mako`` (the parameterized stack files).
+    """
     # copy verbatim
+    dest_map = {}
     for rel in files:
         src = REPO / rel
         dest = dest_root / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dest)  # preserves mode (executable scripts, etc.)
-
-    # rewrite parameterized files as .mako
-    derived = 0
-    for rel, fn in DERIVED.items():
-        copied = dest_root / rel
-        require(
-            copied.is_file(),
-            f"derived source {rel} not found among tracked files (committed?)",
-        )
-        try:
-            mako_text = fn(copied.read_text())
-        except RefreshError as exc:
-            raise Wrap(rel, exc) from exc
-        copied.with_name(copied.name + ".mako").write_text(mako_text)
-        copied.unlink()
-        derived += 1
+        dest_map[rel] = dest
 
     # derive shipped docs/*.md.mako from authoritative docs/users/*.md, read
     # straight from the repo (docs/ is excluded from the verbatim copy). The
     # users/ path segment is stripped, so a project gets docs/<...>.md.mako.
+    derived = 0
     docs_src = REPO / USER_DOCS_SRC
     if docs_src.is_dir():
         for md in sorted(docs_src.rglob("*.md")):
@@ -1397,16 +709,17 @@ def _build_into(dest_root: pathlib.Path, files: list[str]) -> tuple[int, int]:
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(content)
 
-    return derived, len(AUTHORED)
+    checked = sum(1 for rel in files if dest_map[rel].name.endswith(".mako"))
+    return derived, len(AUTHORED), checked
 
 
-def _assemble(staging: pathlib.Path, files: list[str]) -> tuple[int, int]:
+def _assemble(staging: pathlib.Path, files: list[str]) -> tuple[int, int, int]:
     """Build the template into ``staging`` and render-check it."""
-    derived, authored = _build_into(staging, files)
+    derived, authored, checked = _build_into(staging, files)
     bad = render_check(staging)
     if bad:
         raise RenderFailures(bad)
-    return derived, authored
+    return derived, authored, checked
 
 
 def main() -> int:
@@ -1421,7 +734,7 @@ def main() -> int:
         shutil.rmtree(staging)
     staging.mkdir(parents=True)
     try:
-        derived, authored = _assemble(staging, files)
+        derived, authored, checked = _assemble(staging, files)
     except BaseException:
         shutil.rmtree(staging, ignore_errors=True)
         raise
@@ -1433,8 +746,9 @@ def main() -> int:
     total_mako = sum(1 for _ in TEMPLATE.rglob("*.mako"))
     print(
         f"refreshed {TEMPLATE.relative_to(REPO)}: "
-        f"{len(files)} files copied, {derived} derived + "
-        f"{authored} authored = {total_mako} .mako templates, render-check OK"
+        f"{len(files)} copied, {checked} checked-in, "
+        f"{derived} docs-derived + {authored} authored = "
+        f"{total_mako} .mako templates, render-check OK"
     )
     return 0
 

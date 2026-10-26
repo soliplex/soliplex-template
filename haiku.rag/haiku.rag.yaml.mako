@@ -26,10 +26,10 @@ ingester:
     namespace: soliplex
     # SQLAlchemy async URL; overrides the default SQLite path. asyncpg ships
     # in the slim image's 'ingester' extra.
-    dburi: postgresql+asyncpg://soliplex_ingester:${INGESTER_DB_PASSWORD}@postgres/soliplex_ingester
+    dburi: postgresql+asyncpg://soliplex_ingester:<%text>${INGESTER_DB_PASSWORD}</%text>@postgres/soliplex_ingester
   api:
     host: 0.0.0.0
-    auth_token: ${INGESTER_TOKEN}
+    auth_token: <%text>${INGESTER_TOKEN}</%text>
   databases:
     haiku.rag:
       sources:
@@ -47,7 +47,7 @@ ingester:
 processing:
   converter: docling-serve
   chunker: docling-serve
-  chunk_size: 256
+  chunk_size: ${chunk_size}
   chunker_type: hybrid
   chunking_tokenizer: "Qwen/Qwen3-Embedding-0.6B"
   chunking_merge_peers: true
@@ -57,9 +57,9 @@ processing:
 # reads the same LanceDB.
 embeddings:
   model:
-    name: qwen3-embedding:4b
+    name: ${rag_embed_model}
     provider: ollama
-    vector_dim: 2560
+    vector_dim: ${rag_embed_dim}
 
 providers:
   docling_serve:

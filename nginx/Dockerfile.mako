@@ -1,11 +1,11 @@
-# The built Soliplex web client, published by soliplex/frontend as an image
+<%text># The built Soliplex web client, published by soliplex/frontend as an image
 # holding only 'build/web', already cache-busted: everything but index.html,
 # the manifest, favicon and icons sits under a 'v<release-tag>/' directory,
 # with relative URLs, so the same tree serves under any '<base href>'. Its tag
 # picks the release: a moving '<major>.<minor>' tag follows patch releases on
 # 'docker compose build --pull nginx'; an exact '<major>.<minor>.<patch>' (or
 # '<major>.<minor>.<patch>-<build>') pins one.
-FROM ghcr.io/soliplex/frontend-web:0.110 AS frontend
+FROM ghcr.io/soliplex/frontend-web:</%text>${frontend_version}<%text> AS frontend
 
 FROM debian:trixie
 
@@ -34,7 +34,7 @@ RUN mkdir -p /etc/nginx/ssl && \
     openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
     -keyout /etc/nginx/ssl/server.key \
     -out /etc/nginx/ssl/server.crt \
-    -subj "/C=US/ST=State/L=City/O=Organization/CN=localhost" && \
+    -subj "</%text>${tls_subject}<%text>" && \
     chown -R ${PUID}:${PGID} /etc/nginx/ssl
 
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
@@ -54,4 +54,4 @@ USER soliplex
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
     CMD curl -f http://localhost:9000/ || exit 1
 
-CMD ["nginx", "-g", "daemon off;"]
+CMD ["nginx", "-g", "daemon off;"]</%text>

@@ -95,7 +95,7 @@ http {
 
     server {
         listen 9000;
-        server_name localhost;
+        server_name ${server_name};
 
         root /app/build/web;
         index index.html;
@@ -147,12 +147,10 @@ http {
         # (1 year, immutable). The directory is named for the frontend release tag,
         # build metadata included (e.g., /v0.110.0+96/...), so each release's assets
         # live at new URLs and browsers fetch them afresh.
-        # --8<-- [start:hashed-assets]
         location ~ "^/v[0-9]+\.[0-9]+(\.[0-9]+)?(\+[0-9A-Za-z.-]+)?/(.*)" {
             expires 1y;
             add_header Cache-Control "public, max-age=31536000, immutable";
         }
-        # --8<-- [end:hashed-assets]
 
         # Root-level static assets (favicon, icons, manifest) - moderate caching
         location ~* ^/(favicon\.png|manifest\.json|icons/.*)$ {
@@ -262,7 +260,7 @@ http {
     # HTTPS server with self-signed certificate
     server {
         listen 9443 ssl;
-        server_name localhost;
+        server_name ${server_name};
 
         ssl_certificate /etc/nginx/ssl/server.crt;
         ssl_certificate_key /etc/nginx/ssl/server.key;
@@ -415,6 +413,7 @@ http {
             proxy_send_timeout 3600s;
         }
 
+% if include_gitea:
         # Gitea under /gitea/.  Only mounted on the HTTPS server -- Gitea's
         # ROOT_URL points at https://.../gitea/, so browsers hitting
         # http://.../gitea would get mixed absolute links.
@@ -450,6 +449,7 @@ http {
             proxy_read_timeout 600;
             proxy_buffering off;
         }
+% endif
 
     }
 }
