@@ -252,6 +252,25 @@ def test_frontend_version_pinned_in_nginx_dockerfile(generated_project):
     ) in dockerfile
 
 
+def test_backend_cookie_exempted_from_proxy_cookie_flags(generated_project):
+    # #221: the catch-all cookie-flags rewrite must never touch the authn
+    # cookie -- rewriting it to SameSite=None would let other origins carry
+    # the session, defeating the authn gate for admin surfaces proxied
+    # through nginx.  nginx applies the first matching directive and
+    # requires at least one flag, so the exemption re-declares a flag the
+    # backend already sets (httponly): a no-op for the authn cookie, while
+    # the catch-all still rewrites every other proxied cookie.
+    out, _params = generated_project
+
+    nginx = _read(out, "nginx/nginx.conf")
+
+    exemption = "proxy_cookie_flags soliplex_authn httponly;"
+    catch_all = "proxy_cookie_flags ~ HttpOnly Secure SameSite=None;"
+    assert exemption in nginx
+    assert catch_all in nginx
+    assert nginx.index(exemption) < nginx.index(catch_all)
+
+
 def test_escaped_literals_survived(generated_project):
     out, _params = generated_project
 
