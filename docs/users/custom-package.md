@@ -12,25 +12,25 @@ icon: lucide/package
 
 Every entry under `src/` is a self-contained project directory: a
 `pyproject.toml`, an `src/` package inside it, and its own tests. This
-project's own is `src/myproject/`:
+project's own is `src/${package_name}/`:
 
 ```text
 src/
-  myproject/
+  ${package_name}/
     pyproject.toml
-    src/myproject/
+    src/${package_name}/
     tests/unit/
   <other>/
 ```
 
-`src/myproject/` is the project directory; `src/myproject/src/myproject/` is
+`src/${package_name}/` is the project directory; `src/${package_name}/src/${package_name}/` is
 the importable package inside it. `<other>/` is whatever else you clone —
 same shape, no special handling.
 
 Work in it the way you would work in any checkout:
 
 ```bash
-cd src/myproject
+cd src/${package_name}
 uv sync                 # create/refresh the dev environment (installs pytest)
 uv run pytest           # run the project's tests
 uv pip install -e .     # or a plain editable install into another environment
@@ -44,11 +44,11 @@ lives under `src/`.
 
 The Soliplex backend bind-mounts `./src` (read-only) into its container as
 `/app/src` and puts **this project's package directory** on `PYTHONPATH` as
-`/app/src/myproject/src` (see `docker-compose.yml`), so anything you define
+`/app/src/${package_name}/src` (see `docker-compose.yml`), so anything you define
 here is importable by **dotted name** from the Soliplex config under
 `backend/environment/` — no image rebuild needed to edit your code. The
 backend watches it too: its serve command carries
-`--reload-dirs=/app/src/myproject/src`, so saving a change to your code
+`--reload-dirs=/app/src/${package_name}/src`, so saving a change to your code
 restarts the server.
 
 Because only the package directories named in `PYTHONPATH` are import roots,
@@ -60,19 +60,19 @@ until you add its own `src/` to `PYTHONPATH`.
 
 Two examples are referenced from the config so you can see the pattern:
 
-- a tool, `myproject.tools.greeting`, referenced from
+- a tool, `${package_name}.tools.greeting`, referenced from
   `backend/environment/rooms/custom/room_config.yaml`;
-- a FastAPI router, `myproject.views.router`, registered via
+- a FastAPI router, `${package_name}.views.router`, registered via
   `app_router_operations` in `backend/environment/installation.yaml`.
 
 Dotted names into this package can equally be used in the `installation.yaml`
 `meta:` section (tool/agent/skill config classes, MCP wrappers, secret sources)
-— see the commented `myproject.*` examples there.
+— see the commented `${package_name}.*` examples there.
 
 ## Making it your own
 
-Add modules under `src/myproject/src/myproject/`, reference them by dotted name
-from the config, and add tests under `src/myproject/tests/unit/`. Delete the
+Add modules under `src/${package_name}/src/${package_name}/`, reference them by dotted name
+from the config, and add tests under `src/${package_name}/tests/unit/`. Delete the
 demonstration `custom` room once you have your own.
 
 ## Adding a second project
@@ -132,7 +132,7 @@ By hand, append its package directory to the backend's `PYTHONPATH` in
 `docker-compose.yml`:
 
 ```yaml
-      PYTHONPATH: /app/src/myproject/src:/app/src/<other>/src
+      PYTHONPATH: /app/src/${package_name}/src:/app/src/<other>/src
 ```
 
 and, so edits to it restart the server, a matching `--reload-dirs` line to
@@ -140,7 +140,7 @@ the backend's serve command, after this project's own:
 
 ```yaml
       --reload=config
-      --reload-dirs=/app/src/myproject/src
+      --reload-dirs=/app/src/${package_name}/src
       --reload-dirs=/app/src/<other>/src
 ```
 
@@ -200,7 +200,7 @@ To check the code itself against the image, import it in the dev-mode
 `PYTHONPATH` (`--no-deps`: the check needs no database):
 
 ```bash
-docker compose run --rm --no-deps soliplex-dev /app/.venv/bin/python -c "import myproject.tools, myproject.views"
+docker compose run --rm --no-deps soliplex-dev /app/.venv/bin/python -c "import ${package_name}.tools, ${package_name}.views"
 ```
 
 For another project on the path, import its own package instead. A silent
@@ -218,7 +218,7 @@ image's own versions frozen, so a project's tests run there against the very
 versions the backend imports it with:
 
 ```bash
-docker compose run --rm --no-deps -w /app/src/myproject soliplex-dev /app/.venv/bin/python -m pytest
+docker compose run --rm --no-deps -w /app/src/${package_name} soliplex-dev /app/.venv/bin/python -m pytest
 ```
 
 For another project, pass its own directory to `-w`. The dev groups are

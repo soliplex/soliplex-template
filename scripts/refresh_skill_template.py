@@ -115,98 +115,8 @@ def repl(text: str, pairs: list[tuple[str, str]]) -> str:
 # are never derived and never shipped.
 USER_DOCS_SRC = "docs/users"
 
-# Per-doc parameter substitutions: concrete default value -> live Mako ${...}.
-# Keyed by the doc's path relative to docs/users/ (posix). Contextual anchors,
-# asserted via repl(); a doc absent here (or with []) is parameter-free.
-USER_DOC_PARAMS = {
-    "index.md": [
-        ("# myproject", "# ${project_name}"),
-        ("| nginx (HTTP) | 9000 |", "| nginx (HTTP) | ${nginx_http} |"),
-        ("| nginx (HTTPS) | 9443 |", "| nginx (HTTPS) | ${nginx_https} |"),
-        (
-            "| haiku-ingester | 8765 |",
-            "| haiku-ingester | ${ingester_port} |",
-        ),
-        ("| docling-serve | 5001 |", "| docling-serve | ${docling_port} |"),
-        ("| postgres | 5432 |", "| postgres | ${postgres_port} |"),
-        ("`src/myproject`", "`src/${package_name}`"),
-    ],
-    "installation.md": [
-        ("| `9000` |", "| `${nginx_http}` |"),
-        ("| `9443` |", "| `${nginx_https}` |"),
-        ("| `8765` |", "| `${ingester_port}` |"),
-        ("| `5001` |", "| `${docling_port}` |"),
-        ("| `5432` |", "| `${postgres_port}` |"),
-        (
-            "http://localhost:8765/health",
-            "http://localhost:${ingester_port}/health",
-        ),
-        ("http://localhost:9000>", "http://localhost:${nginx_http}>"),
-        (
-            "https://myproject.localhost:9443/tui/",
-            "https://${server_name}:${nginx_https}/tui/",
-        ),
-        (
-            "https://myproject.localhost:9443/gitea/",
-            "https://${server_name}:${nginx_https}/gitea/",
-        ),
-    ],
-    "architecture/services.md": [
-        ("|9000/9443|", "|${nginx_http}/${nginx_https}|"),
-        ("host port 9443 with", "host port ${nginx_https} with"),
-        ("host\nport 8765.", "host\nport ${ingester_port}."),
-        (
-            "https://myproject.localhost:9443/tui/",
-            "https://${server_name}:${nginx_https}/tui/",
-        ),
-        ("`soliplex_agui` (thread", "`${agui_db}` (thread"),
-        ("`soliplex_authz` (authorization", "`${authz_db}` (authorization"),
-        (
-            "https://myproject.localhost:9443/gitea/",
-            "https://${server_name}:${nginx_https}/gitea/",
-        ),
-    ],
-    "architecture/backend.md": [
-        (
-            "FROM ghcr.io/soliplex/soliplex-postgres:0.86.1\n",
-            "FROM ghcr.io/soliplex/soliplex-postgres:${soliplex_image_tag}\n",
-        ),
-    ],
-    "operations/rag.md": [
-        ("`rag/docs/`", "`${docs_dir}/`"),
-        ("host port 8765 —", "host port ${ingester_port} —"),
-    ],
-    "operations/ingester.md": [
-        ("localhost:8765/stats", "localhost:${ingester_port}/stats"),
-    ],
-    # Order matters: repl() replaces *every* occurrence of each anchor, so
-    # the longer paths have to be consumed before the bare 'src/myproject/'
-    # that is a substring of them.
-    "custom-package.md": [
-        (
-            "src/myproject/src/myproject/",
-            "src/${package_name}/src/${package_name}/",
-        ),
-        ("/app/src/myproject/src", "/app/src/${package_name}/src"),
-        ("cd src/myproject\n", "cd src/${package_name}\n"),
-        ("src/myproject/", "src/${package_name}/"),
-        ("\nsrc/\n  myproject/\n", "\nsrc/\n  ${package_name}/\n"),
-        ("`myproject.tools.greeting`", "`${package_name}.tools.greeting`"),
-        ("`myproject.views.router`", "`${package_name}.views.router`"),
-        ("`myproject.*`", "`${package_name}.*`"),
-        (
-            '"import myproject.tools, myproject.views"',
-            '"import ${package_name}.tools, ${package_name}.views"',
-        ),
-        (
-            "-w /app/src/myproject soliplex-dev",
-            "-w /app/src/${package_name} soliplex-dev",
-        ),
-    ],
-}
 
-
-def t_user_doc(text, params):
+def t_user_doc(text):
     """Derive a shipped ``docs/*.md.mako`` from an authoritative user doc.
 
     Steps, in order:
@@ -214,11 +124,10 @@ def t_user_doc(text, params):
          content that belongs only on this repo's docs site (e.g. a banner
          noting these pages describe a *generated* project), removed from the
          docs that ship into a generated project;
-      1. escape any literal ``${...}`` (e.g. the docker
-         ``${INGESTER_TOKEN:-secret}`` expansion shown to the reader) so Mako
-         passes it through;
-      2. parameterize concrete default values -> live ``${...}`` via the
-         per-doc anchor list (contextual, asserted -- mirrors ``repl()``);
+      1. escape literal ``${...}`` that is *not* a generator parameter (e.g.
+         the docker ``${INGESTER_TOKEN:-secret}`` expansion shown to the
+         reader) so Mako passes it through; ``${param}`` spellings on the
+         page survive for the generator to bake;
       3. escape Markdown H2+ headings, since Mako reads a leading ``##`` as a
          line comment (the H1 ``#`` is safe);
       4. turn the HTML-comment conditional fences (``<!-- if:gitea -->`` /
@@ -230,10 +139,16 @@ def t_user_doc(text, params):
         "",
         text,
     )
+    known = frozenset(PROBE)
     text = re.sub(
-        r"\$\{[^}]*\}", lambda m: f"<%text>{m.group(0)}</%text>", text
+        r"\$\{([^}]*)\}",
+        lambda m: (
+            m.group(0)
+            if m.group(1) in known
+            else f"<%text>{m.group(0)}</%text>"
+        ),
+        text,
     )
-    text = repl(text, params)
     text = re.sub(r"(?m)^(#{2,} .*)$", r"<%text>\1</%text>", text)
     text = re.sub(
         r"(?m)^[ \t]*<!-- if:(\w+) -->[ \t]*$", r"% if include_\1:", text
@@ -692,9 +607,7 @@ def _build_into(dest_root: pathlib.Path, files: list[str]) -> tuple[int, int]:
         for md in sorted(docs_src.rglob("*.md")):
             rel = md.relative_to(docs_src)
             try:
-                mako_text = t_user_doc(
-                    md.read_text(), USER_DOC_PARAMS.get(rel.as_posix(), [])
-                )
+                mako_text = t_user_doc(md.read_text())
             except RefreshError as exc:
                 raise Wrap(f"{USER_DOCS_SRC}/{rel}", exc) from exc
             dest = dest_root / "docs" / rel

@@ -2,7 +2,7 @@
 icon: lucide/rocket
 ---
 
-# myproject
+# ${project_name}
 
 <!-- site-only -->
 !!! note "About this page"
@@ -30,11 +30,11 @@ This site documents *this* project. The quickest path to a running stack is the
 
 | Service | Host port |
 |---------|-----------|
-| nginx (HTTP) | 9000 |
-| nginx (HTTPS) | 9443 |
-| haiku-ingester | 8765 |
-| docling-serve | 5001 |
-| postgres | 5432 |
+| nginx (HTTP) | ${nginx_http} |
+| nginx (HTTPS) | ${nginx_https} |
+| haiku-ingester | ${ingester_port} |
+| docling-serve | ${docling_port} |
+| postgres | ${postgres_port} |
 
 ## Documentation map
 
@@ -52,4 +52,4 @@ This site documents *this* project. The quickest path to a running stack is the
 - **[Ingester control plane](operations/ingester.md)** — the control-plane API
   and its auth token.
 - **[Custom Python package](custom-package.md)** — the installable
-  `src/myproject` project, and how to clone others alongside it.
+  `src/${package_name}` project, and how to clone others alongside it.
