@@ -558,7 +558,7 @@ def test_validate_bad_image_tag(tag):
         gen.validate(params)
 
 
-@pytest.mark.parametrize("tag", ["0.87", "0.86.0", "0.85.5"])
+@pytest.mark.parametrize("tag", ["0.88", "0.86.0", "0.85.5"])
 def test_validate_image_tag_outside_constraint(tag):
     params = _valid_params()
     params["soliplex_image_tag"] = tag
@@ -570,7 +570,7 @@ def test_validate_image_tag_outside_constraint(tag):
     assert exc_info.value.constraint == params["soliplex_dev_constraint"]
 
 
-@pytest.mark.parametrize("tag", ["latest", "0.86", "0.86.1"])
+@pytest.mark.parametrize("tag", ["latest", "0.87", "0.87.0"])
 def test_validate_accepts_image_tag(tag):
     params = _valid_params()
     params["soliplex_image_tag"] = tag
