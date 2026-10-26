@@ -330,13 +330,13 @@ services:
     stop_grace_period: 180s
 
     healthcheck:
-      # slim image has no curl; use stdlib instead. The control plane is
-      # served under /ingester (see the command above).
+      # slim image has no curl; use stdlib instead against localhost,
+      # no proxy-only `ingester/' prefix.
       test:
         - "CMD"
         - "python"
         - "-c"
-        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8765/ingester/health', timeout=2).status == 200 else 1)"
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8765/health', timeout=2).status == 200 else 1)"
       interval: 5s
       timeout: 3s
       retries: 12

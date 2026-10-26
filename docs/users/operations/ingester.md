@@ -24,8 +24,7 @@ cancel jobs, retry from the dead-letter queue, and trigger source refreshes.
 
 2. `nginx` does not read the token from the environment at all.
    Its command reads the value from the secret file and renders it via `sed`
-   into a writabl copy of `/etc/nginx.conf` `/tmp` at container
-   start
+   into a writable copy of `/etc/nginx.conf` at `/tmp` at container start.
 
 3. The proxy also gates `/ingester/` on the backend's admin check
    via an `auth_request` against `/_authz_check`:
