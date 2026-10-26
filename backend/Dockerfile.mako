@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1
+<%text># syntax=docker/dockerfile:1
 #
 # Built on the soliplex release image with PostgreSQL support: '/app/.venv'
 # holds soliplex and its 'postgres' extra (pure-Python 'psycopg' over the
@@ -12,7 +12,7 @@
 # and 'bwrap' is installed for the 'bubble-sandbox' skill.
 FROM ghcr.io/astral-sh/uv:0.12.18 AS uv
 
-FROM ghcr.io/soliplex/soliplex-postgres:0.86.1
+FROM ghcr.io/soliplex/soliplex-postgres:</%text>${soliplex_image_tag}<%text>
 
 WORKDIR /app
 
@@ -69,4 +69,4 @@ USER soliplex
 
 ENV PATH="/app/.venv/bin:$PATH"
 
-CMD ["/app/.venv/bin/soliplex-cli", "serve", "--host=0.0.0.0", "--proxy-headers", "--forwarded-allow-ips=*", "/environment"]
+CMD ["/app/.venv/bin/soliplex-cli", "serve", "--host=0.0.0.0", "--proxy-headers", "--forwarded-allow-ips=*", "/environment"]</%text>

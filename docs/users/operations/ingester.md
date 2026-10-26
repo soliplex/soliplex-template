@@ -33,7 +33,7 @@ Clients send `Authorization: Bearer $INGESTER_TOKEN`:
 
 ```bash
 curl -fsS -H "Authorization: Bearer $INGESTER_TOKEN" \
-  http://localhost:8765/stats
+  http://localhost:${ingester_port}/stats
 ```
 
 The browser dashboard at `/` is unauthenticated HTML; its in-page JavaScript

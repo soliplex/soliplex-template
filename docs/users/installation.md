@@ -62,12 +62,12 @@ it takes a few minutes. Subsequent runs are fast.
 
 | Port | Service | Purpose |
 |------|---------|---------|
-| `9000` | nginx | HTTP — the web frontend |
-| `9443` | nginx | HTTPS (self-signed cert) |
+| `${nginx_http}` | nginx | HTTP — the web frontend |
+| `${nginx_https}` | nginx | HTTPS (self-signed cert) |
 | `8000` | backend | Soliplex backend, direct |
-| `8765` | haiku-ingester | Control plane + dashboard |
-| `5001` | docling-serve | Document converter |
-| `5432` | postgres | Database |
+| `${ingester_port}` | haiku-ingester | Control plane + dashboard |
+| `${docling_port}` | docling-serve | Document converter |
+| `${postgres_port}` | postgres | Database |
 <!-- if:gitea -->
 | `3000` | gitea | Gitea HTTP [^1] |
 | `2222` | gitea | Gitea SSH |
@@ -81,11 +81,11 @@ it takes a few minutes. Subsequent runs are fast.
 
 ```bash
 docker compose ps
-curl -fsS http://localhost:8765/health
+curl -fsS http://localhost:${ingester_port}/health
 docker compose logs -f backend
 ```
 
-Then open <http://localhost:9000> for the web frontend.
+Then open <http://localhost:${nginx_http}> for the web frontend.
 
 <!-- if:gitea -->
 
@@ -106,7 +106,7 @@ Useful flags:
 - `--push-to-gitea` — register your SSH key(s), create a repo, set this stack's
   git `origin` to it, and push the initial commit.
 
-Open Gitea at <https://myproject.localhost:9443/gitea/>.
+Open Gitea at <https://${server_name}:${nginx_https}/gitea/>.
 
 <!-- endif -->
 
@@ -122,7 +122,7 @@ docker compose exec backend soliplex-tui --url http://localhost:8000
 
 <!-- if:tui -->
 This stack also serves the same client as a web app via the `tui` service;
-nginx proxies it at <https://myproject.localhost:9443/tui/>.
+nginx proxies it at <https://${server_name}:${nginx_https}/tui/>.
 <!-- endif -->
 
 ## Everyday commands

@@ -5,7 +5,7 @@
 # descriptions of the defaults for sections not configured here.
 #==========================================================================
 
-id: "soliplex-conf-minimal"
+id: "${setup_id}"
 
 #==========================================================================
 # Meta-configuration
@@ -36,7 +36,7 @@ meta:
   # tool configuration):
   #
   # tool_configs:
-  # - "my_package.config.MyToolConfig"
+  # - "${package_name}.config.MyToolConfig"
   #------------------------------------------------------------------------
 
   #------------------------------------------------------------------------
@@ -73,8 +73,8 @@ meta:
   # tool configuration and wrapper class):
   #
   # mcp_server_tool_wrappers:
-  # - config_klass: "my_package.config.MyToolConfig"
-  #   wrapper_klass: "my_package.config.MyMCPWrapper"
+  # - config_klass: "${package_name}.config.MyToolConfig"
+  #   wrapper_klass: "${package_name}.config.MyMCPWrapper"
   #------------------------------------------------------------------------
 
   #------------------------------------------------------------------------
@@ -245,6 +245,20 @@ environment:
 haiku_rag_config_file: "./haiku.rag.yaml"
 
 #==========================================================================
+# FastAPI routers (custom)
+#==========================================================================
+# Add this project's own router (defined in
+# src/${package_name}/src/${package_name}/views.py)
+# by dotted name, without clearing the default Soliplex routers.
+#==========================================================================
+app_router_operations:
+  - kind: "add"
+    group_name: "${package_name}"
+    router_name: "${package_name}.views.router"
+    prefix: "/api"
+
+
+#==========================================================================
 # Agent configurations
 #==========================================================================
 # See: https://soliplex.github.io/soliplex/config/agents/
@@ -252,7 +266,7 @@ haiku_rag_config_file: "./haiku.rag.yaml"
 
 agent_configs:
   - id: "default_chat"
-    model_name: "gpt-oss:latest"
+    model_name: "${chat_model}"
     system_prompt: |
       You are an expert AI assistant specializing in information retrieval.
 
@@ -261,7 +275,7 @@ agent_configs:
       Always provide code or examples in Markdown blocks.
 
   - id: "alternate_chat"
-    model_name: "gpt-oss:20b"
+    model_name: "${chat_model_alt}"
     system_prompt: |
       You are an expert AI assistant specializing in information retrieval.
 
@@ -270,7 +284,7 @@ agent_configs:
       Always provide code or examples in Markdown blocks.
 
   - id: "title"
-    model_name: "gpt-oss:latest"
+    model_name: "${title_model}"
 
 title_agent_config_id: "title"
 
@@ -306,8 +320,8 @@ sandbox_config:
 thread_persistence_db:
   #sync_dburi: "sqlite://"
   #async_dburi: "sqlite+aiosqlite://"
-  sync_dburi: "postgresql+psycopg://soliplex_agui:secret:AGUI_DB_PASSWORD@postgres/soliplex_agui"
-  async_dburi: "postgresql+psycopg://soliplex_agui:secret:AGUI_DB_PASSWORD@postgres/soliplex_agui"
+  sync_dburi: "postgresql+psycopg://${agui_db}:secret:AGUI_DB_PASSWORD@postgres/${agui_db}"
+  async_dburi: "postgresql+psycopg://${agui_db}:secret:AGUI_DB_PASSWORD@postgres/${agui_db}"
 
 #==========================================================================
 # Authorization policy:  SQLAlchemy DBURIs
@@ -315,8 +329,8 @@ thread_persistence_db:
 authorization_db:
   #sync_dburi: "sqlite://"
   #async_dburi: "sqlite+aiosqlite://"
-  sync_dburi: "postgresql+psycopg://soliplex_authz:secret:AUTHZ_DB_PASSWORD@postgres/soliplex_authz"
-  async_dburi: "postgresql+psycopg://soliplex_authz:secret:AUTHZ_DB_PASSWORD@postgres/soliplex_authz"
+  sync_dburi: "postgresql+psycopg://${authz_db}:secret:AUTHZ_DB_PASSWORD@postgres/${authz_db}"
+  async_dburi: "postgresql+psycopg://${authz_db}:secret:AUTHZ_DB_PASSWORD@postgres/${authz_db}"
 
 #==========================================================================
 # OIDC authentication provider configuration

@@ -1054,14 +1054,20 @@ def _dev_group(stack, name, groups):
     )
 
 
-def test_exemplar_requirements_dev_is_the_bare_header():
-    # The repo's own src/ has no project with a dev group, so its committed
-    # file is exactly what this script writes for it: the header.
-    exemplar = _MODULE_PATH.parents[3] / _DEV_FILE
+def test_exemplar_requirements_dev_is_the_header_with_own_dev_group():
+    # The repo's own src/ has no project with a dev group, so its checked-in
+    # exemplar carries the header plus the one placeholder stub the template
+    # ships for this project's own package (the generator bakes the
+    # ${package_name}); the authored pyproject's dev group is just 'pytest'.
+    exemplar = _MODULE_PATH.parents[3] / (_DEV_FILE + ".mako")
 
     result = exemplar.read_text()
 
-    assert result == src_projects.DEV_REQUIREMENTS_HEADER
+    assert result == (
+        src_projects.DEV_REQUIREMENTS_HEADER
+        + "# src/${package_name}\n"
+        + "pytest\n"
+    )
 
 
 @pytest.mark.parametrize(

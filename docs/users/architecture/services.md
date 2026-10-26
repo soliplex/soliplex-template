@@ -15,7 +15,7 @@ of them share the RAG vector store through a bind mount.
 
 ```mermaid
 graph LR
-  browser([Browser]) -->|9000/9443| nginx
+  browser([Browser]) -->|${nginx_http}/${nginx_https}| nginx
   nginx -->|/api/ /mcp/| backend
   backend -->|reads LanceDB| ragdb[(rag/db)]
   ingester[haiku-ingester] -->|writes LanceDB| ragdb
@@ -31,7 +31,7 @@ Serves the Flutter web frontend and reverse-proxies `/api/` and `/mcp/` to
 published `ghcr.io/soliplex/frontend-web` image, whose tag picks the release; its assets
 sit under a `v<release-tag>/` directory, which `nginx/nginx.conf` caches for
 a year, while `index.html` is never cached, so a new release reaches browsers
-on their next load. Terminates TLS on host port 9443 with a self-signed cert.
+on their next load. Terminates TLS on host port ${nginx_https} with a self-signed cert.
 
 ## backend
 
@@ -81,7 +81,7 @@ Any project directory under `src/` works, not just a `soliplex` checkout.
 The **writer** for the LanceDB at `rag/db/`. Runs `haiku-ingester serve` with a
 Postgres-backed job queue (its own `soliplex_ingester` database), an async
 worker pool, retries + a dead-letter queue, and an HTTP control plane on host
-port 8765. There is a **single-writer constraint**: only one
+port ${ingester_port}. There is a **single-writer constraint**: only one
 ingester per LanceDB. The backend reads the same store through a bind mount.
 See [RAG pipeline](../operations/rag.md).
 
@@ -116,7 +116,7 @@ variants, the tagging policy, and a local-build recipe).
 
 Soliplex's [Textual](https://textual.textualize.io/) terminal client, served
 as a web app over textual-serve; nginx proxies it at `/tui/`, so open
-<https://myproject.localhost:9443/tui/>. The same client is bundled in
+<https://${server_name}:${nginx_https}/tui/>. The same client is bundled in
 the backend image — to run it from the command line, see
 [Using the TUI](../installation.md#using-the-tui).
 <!-- endif -->
@@ -125,8 +125,8 @@ the backend image — to run it from the command line, see
 
 Creates the stack's databases on first boot via `postgres/config/init.sh`:
 
-- `soliplex_agui` (thread persistence)
-- `soliplex_authz` (authorization policy)
+- `${agui_db}` (thread persistence)
+- `${authz_db}` (authorization policy)
 - `soliplex_ingester` (the haiku-ingester job queue)
   <!-- if:gitea -->
 - `soliplex_gitea` (Gitea's backing store)
@@ -143,7 +143,7 @@ Init runs **only on an empty data volume**; to re-run it,
 
 A local [Gitea](https://about.gitea.com/) instance (rootless image), backed by
 the `soliplex_gitea` Postgres database. nginx reverse-proxies it under `/gitea/`
-on the HTTPS port — open <https://myproject.localhost:9443/gitea/> — and its
+on the HTTPS port — open <https://${server_name}:${nginx_https}/gitea/> — and its
 built-in SSH and HTTP are published on host ports `2222` and `3000`. State lives
 in the `gitea_data` / `gitea_config` named volumes. Provision it after first
 boot with `scripts/init_gitea.py` — see

@@ -3,3 +3,5 @@
 # from the projects' pyproject.toml files -- do not edit; regenerate with
 # 'uv run <skill>/scripts/src_projects.py dev-requirements', then rebuild with
 # 'docker compose build soliplex-dev'.
+# src/${package_name}
+pytest

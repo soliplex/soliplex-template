@@ -21,7 +21,7 @@ Only one ingester may write a given LanceDB (the single-writer constraint).
 
 ## Adding documents
 
-Drop files into `rag/docs/`. The filesystem source in
+Drop files into `${docs_dir}/`. The filesystem source in
 `haiku.rag/haiku.rag.yaml` picks them up on its next poll, and docling-serve
 converts and chunks them.
 
@@ -62,7 +62,7 @@ service's command, which is the only thing that exports the queue password
 subcommand runs.
 
 `add-src` also takes a URL or `s3://` URI; for a local path outside
-`rag/docs/`, add `-v /abs/path:/src:ro` and point `add-src` at `/src`. Use
+`${docs_dir}/`, add `-v /abs/path:/src:ro` and point `add-src` at `/src`. Use
 `rebuild` to re-index and `delete <id>` to remove a document. The database
 lands at `rag/db/handbook.lancedb`, which the backend already reads through its
 `rag/db` mount. Wire a room to it with `rag_lancedb_stem: "handbook"` in that
@@ -205,6 +205,6 @@ them. A bare `rag_lancedb_stem` on the skill is shorthand for a one-entry list.
 
 ## Operating the pipeline
 
-The ingester exposes a control plane on host port 8765 — `/health`,
+The ingester exposes a control plane on host port ${ingester_port} — `/health`,
 `/jobs`, `/sources`, `/dlq`, `/stats`, and a dashboard at `/`. It requires a
 bearer token; see [Ingester control plane](ingester.md).

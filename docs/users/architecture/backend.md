@@ -14,7 +14,7 @@ The `backend` service image is built from `backend/Dockerfile`, on top of the
 published soliplex release image:
 
 ```dockerfile
-FROM ghcr.io/soliplex/soliplex-postgres:0.86.1
+FROM ghcr.io/soliplex/soliplex-postgres:${soliplex_image_tag}
 ```
 
 That image already holds soliplex and its PostgreSQL driver (`psycopg`, over
