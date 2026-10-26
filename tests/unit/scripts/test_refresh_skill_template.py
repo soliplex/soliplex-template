@@ -1,13 +1,17 @@
 """Unit tests for ``scripts/refresh_skill_template.py``.
 
 The script is repo build tooling, not part of an importable package, so it is
-loaded here by file path via ``importlib.util``. Tests are hermetic: the pure
-text transforms are driven with minimal inline exemplar snippets, and the git /
+loaded here by file path via ``importlib.util``. Tests are hermetic: the git /
 filesystem seams are mocked or routed through ``tmp_path`` -- no real git, no
-Docker, no network, and the live
-``skills/soliplex-template/assets/template`` tree is never touched. The
-``.mako`` render check runs against real Mako (the ``dev`` group
-dependency).
+Docker, no network -- and the tests never write to the tree (the live
+``skills/soliplex-template/assets/template`` and the checked-in ``*.mako``
+exemplars are read but never touched). The ``.mako`` render check runs against
+real Mako (the ``dev`` group dependency).
+
+The pipeline is placeholder-first: the checked-in ``*.mako`` templates carry
+their ``${...}``` spellings verbatim, and the invariant tests below pin that
+they render under the same parameters the generator uses and name no concrete
+release tags.
 
 Each test is laid out in three blank-line-separated phases -- setup, then the
 single call under test (the "act"), then the assertions -- and performs that
@@ -18,10 +22,10 @@ from __future__ import annotations
 
 import importlib.util
 import pathlib
+import re
 from unittest import mock
 
 import pytest
-from mako import template
 
 _MODULE_PATH = (
     pathlib.Path(__file__).resolve().parents[3]
@@ -71,17 +75,18 @@ def render_check(monkeypatch):
 
 @pytest.fixture
 def repo(tmp_path, monkeypatch):
-    """Pin REPO/TEMPLATE into ``tmp_path``; ``.git`` is left to the test."""
-    repo = tmp_path / "repo"
-    template = repo / "skills" / "soliplex-template" / "assets" / "template"
-    template.parent.mkdir(parents=True)
-    monkeypatch.setattr(rst, "REPO", repo)
+    repo_dir = tmp_path / "repo"
+    (repo_dir / "skills" / "soliplex-template" / "assets").mkdir(parents=True)
+    template = (
+        repo_dir / "skills" / "soliplex-template" / "assets" / "template"
+    )
+    monkeypatch.setattr(rst, "REPO", repo_dir)
     monkeypatch.setattr(rst, "TEMPLATE", template)
-    return repo, template
+    return repo_dir, template
 
 
 # --------------------------------------------------------------------------
-# require
+# require()
 # --------------------------------------------------------------------------
 def test_require_truthy_is_noop():
     assert rst.require(True, "unused") is None
@@ -93,531 +98,120 @@ def test_require_falsy_raises():
 
 
 # --------------------------------------------------------------------------
-# esc / repl
+# Checked-in template invariants
+#
+# These read the live tree (never touching it) and pin the de-maze shape:
+# the parameterized files are checked in as .mako, spell their parameters,
+# and name no concrete release tags.
 # --------------------------------------------------------------------------
-def test_esc_wraps_literal():
-    assert rst.esc("a ${X} b", "${X}") == "a <%text>${X}</%text> b"
-
-
-def test_esc_missing_literal_raises():
-    with pytest.raises(rst.RefreshError, match="expected literal"):
-        rst.esc("nothing here", "${X}")
-
-
-def test_repl_applies_pairs_in_order():
-    assert (
-        rst.repl("hello world", [("hello", "goodbye"), ("world", "all")])
-        == "goodbye all"
-    )
-
-
-def test_repl_missing_old_raises():
-    with pytest.raises(rst.RefreshError, match="expected to find"):
-        rst.repl("hello", [("absent", "x")])
-
-
-# --------------------------------------------------------------------------
-# t_* transforms (pure)
-# --------------------------------------------------------------------------
-def test_t_compose():
-    text = (
-        "name: soliplex-template\n"
-        'OLLAMA_BASE_URL: "${OLLAMA_BASE_URL}"\n'
-        'INGESTER_TOKEN: "${INGESTER_TOKEN:-secret}"\n'
-        'AUTO_CREATE_DATABASE: "${AUTO_CREATE_DATABASE:-1}"\n'
-        'OPENAI_API_KEY: "${OPENAI_API_KEY}"\n'
-        'ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"\n'
-        'VOYAGE_API_KEY: "${VOYAGE_API_KEY}"\n'
-        'CO_API_KEY: "${CO_API_KEY}"\n'
-        "        PUID: ${PUID:-1000}\n"
-        "        PGID: ${PGID:-1000}\n"
-        '    user: "${PUID:-1000}:${PGID:-1000}"\n'
-        '      - "9000:9000"\n'
-        '      - "9443:9443"\n'
-        "      command: --public-url https://localhost:9443/tui\n"
-        "    command: >-\n"
-        "      /app/.venv/bin/soliplex-cli serve\n"
-        "      --no-auth-mode\n"
-        "      --reload=config\n"
-        "    image: &haiku_rag_image ghcr.io/ggozad/haiku.rag-slim:0.101.0\n"
-        "    image: quay.io/docling-project/docling-serve-cpu:v1.38.0\n"
-        '      - "8765:8765"\n'
-        '      - "5001:5001"\n'
-        '      - "5432:5432"\n'
-        "      - ./rag/docs:/docs\n"
-        # Backend-only anchors for the src/ bind mount + PYTHONPATH injection.
-        "    environment:\n"
-        "      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL}\n"
-        "\n"
-        "    volumes:\n"
-        "      - type: bind\n"
-        '        source: "rag/db/"\n'
-        '        target: "/db"\n'
-    )
-
-    out = rst.t_compose(text)
-
-    assert "name: ${project_name}" in out
-    assert '- "${nginx_http}:9000"' in out
-    assert '- "${nginx_https}:9443"' in out
-    assert "https://${server_name}:${nginx_https}/tui" in out
-    assert (
-        "      /app/.venv/bin/soliplex-cli serve\n"
-        "% if backend_auth_flag:\n"
-        "      --no-auth-mode\n"
-        "% endif\n"
-        "      --reload=config\n"
-        "      --reload-dirs=/app/src/${package_name}/src\n"
-    ) in out
-    assert '- "${ingester_port}:8765"' in out
-    assert (
-        "image: &haiku_rag_image "
-        "ghcr.io/ggozad/haiku.rag-slim:${haiku_rag_version}" in out
-    )
-    assert '- "${docling_port}:5001"' in out
-    assert '- "${postgres_port}:5432"' in out
-    assert "- ./${docs_dir}:/docs" in out
-    assert "image: ${docling_serve_image}" in out
-    assert "<%text>${OLLAMA_BASE_URL}</%text>" in out
-    assert "<%text>${INGESTER_TOKEN:-secret}</%text>" in out
-    # UID/GID alignment interpolations reach the rendered compose verbatim.
-    assert "<%text>${PUID:-1000}</%text>" in out
-    assert "<%text>${PGID:-1000}</%text>" in out
-    # The whole src/ tree is mounted, but only THIS project's package
-    # directory is an import root -- /app/src itself must not be one.
-    assert "PYTHONPATH: /app/src/${package_name}/src\n" in out
-    assert "PYTHONPATH: /app/src\n" not in out
-    assert 'source: "./src"' in out
-    assert 'target: "/app/src"' in out
-
-
-def test_t_installation():
-    text = (
-        'id: "soliplex-conf-minimal"\n'
-        '  # - "my_package.config.MyToolConfig"\n'
-        '  - id: "default_chat"\n    model_name: "gpt-oss:latest"\n'
-        '  - id: "title"\n    model_name: "gpt-oss:latest"\n'
-        '    alt: "gpt-oss:20b"\n'
-        "db: soliplex_agui authz: soliplex_authz\n"
-        'haiku_rag_config_file: "./haiku.rag.yaml"\n'
-    )
-
-    out = rst.t_installation(text)
-
-    assert 'id: "${setup_id}"' in out
-    assert 'model_name: "${chat_model}"' in out
-    assert 'model_name: "${title_model}"' in out
-    assert '"${chat_model_alt}"' in out
-    assert "${agui_db}" in out
-    assert "${authz_db}" in out
-    # The hypothetical 'my_package' meta example now points at this project.
-    assert '"${package_name}.config.MyToolConfig"' in out
-    assert "my_package" not in out
-    # The package's FastAPI router is registered.
-    assert 'router_name: "${package_name}.views.router"' in out
-
-
-def test_t_backend_haiku():
-    text = (
-        "name: qwen3-embedding:4b\n"
-        "vector_dim: 2560\n"
-        "qa:\n  model:\n    name: gpt-oss:latest\n"
-        "chunk_size: 256\n"
-    )
-
-    out = rst.t_backend_haiku(text)
-
-    assert "name: ${rag_embed_model}" in out
-    assert "vector_dim: ${rag_embed_dim}" in out
-    assert "name: ${rag_qa_model}" in out
-    assert "chunk_size: ${chunk_size}" in out
-
-
-def test_t_ingester_haiku():
-    text = (
-        "      auth_token: ${INGESTER_TOKEN}\n"
-        "      dburi: postgresql://u:${INGESTER_DB_PASSWORD}@postgres/db\n"
-        "  chunk_size: 256\n"
-        "  name: qwen3-embedding:4b\n"
-        "  vector_dim: 2560\n"
-    )
-
-    out = rst.t_ingester_haiku(text)
-
-    # The two runtime references are haiku.rag's own interpolation and must
-    # survive Mako untouched; only chunk_size is a generator parameter.
-    assert out == (
-        "      auth_token: <%text>${INGESTER_TOKEN}</%text>\n"
-        "      dburi: postgresql://u:"
-        "<%text>${INGESTER_DB_PASSWORD}</%text>@postgres/db\n"
-        "  chunk_size: ${chunk_size}\n"
-        "  name: ${rag_embed_model}\n"
-        "  vector_dim: ${rag_embed_dim}\n"
-    )
-
-
-def test_t_soliplex_dev_requirements():
-    out = rst.t_soliplex_dev_requirements("# header\n#\n")
-
-    assert out == "# header\n#\n# src/${package_name}\npytest\n"
-
-
-# The stack's copy follows the authored project's dev group, whatever it is,
-# rather than repeating it.
-_PACKAGE_PYPROJECT = "src/__package__/pyproject.toml.mako"
-
-
-@pytest.mark.parametrize(
-    "dev, expected",
-    [
-        (
-            '["pytest", "coverage"]',
-            "# h\n# src/${package_name}\npytest\ncoverage\n",
-        ),
-        ("[]", "# h\n"),
-    ],
+_RELEASE_TAG = re.compile(
+    r"ghcr\.io/soliplex/soliplex-(postgres|tui):[0-9v]"
+    r"|ghcr\.io/ggozad/haiku\.rag-slim:[0-9v]"
+    r"|quay\.io/docling-project/docling-serve[-\w]*:[0-9v]"
 )
-def test_t_soliplex_dev_requirements_follows_the_authored_group(
-    monkeypatch, dev, expected
-):
-    monkeypatch.setitem(
-        rst.AUTHORED, _PACKAGE_PYPROJECT, f"[dependency-groups]\ndev = {dev}\n"
-    )
 
-    out = rst.t_soliplex_dev_requirements("# h\n")
-
-    assert out == expected
-
-
-def test_t_soliplex_dev_requirements_refuses_an_authored_include(monkeypatch):
-    monkeypatch.setitem(
-        rst.AUTHORED,
-        _PACKAGE_PYPROJECT,
-        '[dependency-groups]\ndev = [{include-group = "t"}]\nt = ["x"]\n',
-    )
-
-    with pytest.raises(rst.RefreshError, match="plain requirements"):
-        rst.t_soliplex_dev_requirements("# h\n")
-
-
-def test_t_soliplex_dev_requirements_refuses_requirements():
-    with pytest.raises(rst.RefreshError, match="only the header"):
-        rst.t_soliplex_dev_requirements("# header\npytest\n")
-
-
-# A Dockerfile carrying what the soliplex transforms must pass through: a
-# second (non-soliplex) FROM, a shell ${...} and a backslash continuation.
-def _soliplex_dockerfile(image: str) -> str:
-    return (
-        "FROM ghcr.io/astral-sh/uv:0.12.18 AS uv\n"
-        f"FROM ghcr.io/soliplex/{image}:0.85\n"
-        "RUN useradd -u ${PUID} soliplex && \\\n"
-        "    true\n"
-    )
-
-
-_SOLIPLEX_DOCKERFILE_TRANSFORMS = [
-    pytest.param(rst.t_backend_dockerfile, "soliplex-postgres", id="backend"),
-    pytest.param(rst.t_tui_dockerfile, "soliplex-tui", id="tui"),
+_CHECKED_IN_MAKO = [
+    "AGENTS.md.mako",
+    "docker-compose.yml.mako",
+    ".gitignore.mako",
+    "backend/Dockerfile.mako",
+    "backend/environment/installation.yaml.mako",
+    "backend/environment/haiku.rag.yaml.mako",
+    "haiku.rag/haiku.rag.yaml.mako",
+    "nginx/Dockerfile.mako",
+    "nginx/nginx.conf.mako",
+    "postgres/config/init.sh.mako",
+    "tui/Dockerfile.mako",
 ]
 
 
-@pytest.mark.parametrize("transform, image", _SOLIPLEX_DOCKERFILE_TRANSFORMS)
-def test_t_soliplex_dockerfile(transform, image):
-    text = _soliplex_dockerfile(image)
-
-    out = transform(text)
-
-    assert out == (
-        "<%text>FROM ghcr.io/astral-sh/uv:0.12.18 AS uv\n"
-        f"FROM ghcr.io/soliplex/{image}:</%text>"
-        "${soliplex_image_tag}"
-        "<%text>\n"
-        "RUN useradd -u ${PUID} soliplex && \\\n"
-        "    true</%text>\n"
-    )
+def _checked_in(rel: str) -> str:
+    return (rst.REPO / rel).read_text()
 
 
-# Mako consumes a bare backslash-newline and expands ${PUID}: the rendered
-# Dockerfile must come back byte-identical at the exemplar's own tag.
-@pytest.mark.parametrize("transform, image", _SOLIPLEX_DOCKERFILE_TRANSFORMS)
-def test_t_soliplex_dockerfile_renders_the_exemplar(transform, image):
-    text = _soliplex_dockerfile(image)
-    mako = template.Template(transform(text), strict_undefined=True)
+@pytest.mark.parametrize("rel", _CHECKED_IN_MAKO)
+def test_checked_in_mako_carry_no_release_tags(rel):
+    text = _checked_in(rel)
 
-    out = mako.render(soliplex_image_tag="0.85")
+    assert _RELEASE_TAG.search(text) is None, rel
 
-    assert out == text
+
+@pytest.mark.parametrize("rel", _CHECKED_IN_MAKO)
+def test_checked_in_mako_renders_under_probe_params(rel, tmp_path):
+    # One checked-in file, copied flat into a scratch dir, renders under the
+    # same parameters the generator uses; render_check reports failures
+    # rather than raising.
+    (tmp_path / "d.mako").write_text(_checked_in(rel))
+
+    assert rst.render_check(tmp_path) == 0
 
 
 @pytest.mark.parametrize(
-    "transform, text, count",
+    "rel, param",
     [
-        pytest.param(
-            rst.t_backend_dockerfile,
-            "FROM ghcr.io/soliplex/soliplex:0.85\n",
-            0,
-            id="backend-wrong-image",
-        ),
-        pytest.param(
-            rst.t_tui_dockerfile,
-            "FROM ghcr.io/soliplex/soliplex-tui:0.85\n" * 2,
-            2,
-            id="tui-two-froms",
-        ),
+        ("docker-compose.yml.mako", "haiku_rag_version"),
+        ("docker-compose.yml.mako", "docling_serve_image"),
+        ("AGENTS.md.mako", "haiku_rag_version"),
+        ("AGENTS.md.mako", "soliplex_image_tag"),
+        ("backend/Dockerfile.mako", "soliplex_image_tag"),
+        ("tui/Dockerfile.mako", "soliplex_image_tag"),
     ],
 )
-def test_t_soliplex_dockerfile_wrong_from_count_raises(transform, text, count):
-    with pytest.raises(rst.RefreshError, match=f"FROM line, got {count}"):
-        transform(text)
+def test_version_parameters_are_spelled_not_baked(rel, param):
+    needle = f"${{{param}}}"
 
+    text = _checked_in(rel)
 
-def test_t_nginx_conf():
-    text = (
-        "server { server_name localhost; }\n"
-        "server { server_name localhost; }\n"
-    )
+    assert needle in text, rel
 
-    out = rst.t_nginx_conf(text)
 
-    assert out.count("server_name ${server_name};") == 2
+def test_backend_dockerfile_mako_wraps_dockerfile_literal():
+    # The Dockerfile body (including the shell ${PUID}/${PGID} expansions and
+    # every line-continuation backslash) lives inside one <%text> block, with
+    # only the ${soliplex_image_tag} spelling outside it.
+    text = _checked_in("backend/Dockerfile.mako")
 
+    assert text.count("<%text>") == 2
+    assert "</%text>${soliplex_image_tag}<%text>" in text
+    assert "ARG PUID=1000" in text
 
-def test_t_nginx_conf_drops_snippet_markers():
-    text = (
-        "server { server_name localhost; }\n"
-        "server {\n"
-        "    server_name localhost;\n"
-        "    # --8<-- [start:hashed-assets]\n"
-        "    location ~ x { }\n"
-        "    # --8<-- [end:hashed-assets]\n"
-        "}\n"
-    )
 
-    out = rst.t_nginx_conf(text)
+def test_agents_mako_escapes_ingester_token_expansion():
+    text = _checked_in("AGENTS.md.mako")
 
-    assert "--8<--" not in out
-    assert "    location ~ x { }\n}\n" in out
+    assert "<%text>${INGESTER_TOKEN:-secret}</%text>" in text
 
 
-# The upgrade page includes this section of the exemplar's nginx.conf by
-# name; snippets includes nothing, silently, for a section that is missing.
-def test_exemplar_nginx_conf_has_one_hashed_assets_section():
-    exemplar = (rst.REPO / "nginx" / "nginx.conf").read_text()
+def test_agents_mako_folds_gitea_into_conditionals():
+    text = _checked_in("AGENTS.md.mako")
 
-    starts = exemplar.count("# --8<-- [start:hashed-assets]\n")
-    ends = exemplar.count("# --8<-- [end:hashed-assets]\n")
+    assert "% if include_gitea:" in text
 
-    assert (starts, ends) == (1, 1)
-    section = exemplar.split("[start:hashed-assets]\n")[1].split("# --8<--")[0]
-    assert "immutable" in section
 
-
-def test_t_nginx_conf_wrong_count_raises():
-    with pytest.raises(rst.RefreshError, match="two 'server_name localhost;'"):
-        rst.t_nginx_conf("server_name localhost;\n")
-
-
-def test_t_nginx_dockerfile():
-    text = (
-        "FROM ghcr.io/soliplex/frontend-web:0.110 AS frontend\n"
-        "FROM debian:trixie\n"
-        'RUN openssl req -subj "/C=US/CN=localhost" -out cert && \\\n'
-        "    chown -R ${PUID}:${PGID} /etc/nginx/ssl\n"
-    )
-
-    out = rst.t_nginx_dockerfile(text)
-
-    assert out == (
-        "<%text>FROM ghcr.io/soliplex/frontend-web:</%text>"
-        "${frontend_version}"
-        "<%text> AS frontend\n"
-        "FROM debian:trixie\n"
-        'RUN openssl req -subj "</%text>'
-        "${tls_subject}"
-        '<%text>" -out cert && \\\n'
-        "    chown -R ${PUID}:${PGID} /etc/nginx/ssl</%text>\n"
-    )
-
-
-def test_t_nginx_dockerfile_renders_the_exemplar():
-    text = (
-        "FROM ghcr.io/soliplex/frontend-web:0.110 AS frontend\n"
-        'RUN openssl req -subj "/CN=localhost" -out cert && \\\n'
-        "    chown ${PUID} cert\n"
-    )
-    mako = template.Template(rst.t_nginx_dockerfile(text))
-
-    out = mako.render(frontend_version="0.110", tls_subject="/CN=localhost")
-
-    assert out == text
-
-
-def test_t_nginx_dockerfile_no_subj_raises():
-    with pytest.raises(rst.RefreshError, match="-subj"):
-        rst.t_nginx_dockerfile("RUN echo hi\n")
-
-
-def test_t_nginx_dockerfile_no_frontend_image_raises():
-    text = 'RUN openssl req -subj "/CN=x" -out cert\n'
-
-    with pytest.raises(rst.RefreshError, match="one frontend-web FROM line"):
-        rst.t_nginx_dockerfile(text)
-
-
-def test_t_nginx_dockerfile_non_unique_subject_raises():
-    text = 'RUN openssl req -subj "/CN=x" -out a\necho "/CN=x"\n'
-
-    with pytest.raises(rst.RefreshError, match="not unique"):
-        rst.t_nginx_dockerfile(text)
-
-
-def test_t_init_sh():
-    out = rst.t_init_sh("createdb soliplex_agui; createdb soliplex_authz\n")
-
-    assert "${agui_db}" in out
-    assert "${authz_db}" in out
-
-
-# The always-on exemplars carry the gitea service / db / proxy; each transform
-# must wrap its gitea fragment(s) in an include_gitea Mako conditional so
-# generated projects can opt out. Driven by the real exemplars -- the same
-# inputs refresh feeds the transforms.
-def test_t_compose_wraps_gitea_on_real_exemplar():
-    exemplar = (rst.REPO / "docker-compose.yml").read_text()
-
-    mako = rst.t_compose(exemplar)
-
-    assert "% if include_gitea:\n  gitea:\n" in mako
-    assert "    restart: unless-stopped\n\n% endif\nvolumes:\n" in mako
-    # ROOT_URL host+port track ${server_name}/${nginx_https}; the docker
-    # ${GITEA_ROOT_URL:-...} override stays escaped on either side.
-    assert (
-        "<%text>${GITEA_ROOT_URL:-https://</%text>"
-        "${server_name}:${nginx_https}"
-        "<%text>/gitea/}</%text>" in mako
-    )
-    # SSH_DOMAIN stays literal localhost (resolves for git clone everywhere).
-    assert 'GITEA__server__SSH_DOMAIN: "localhost"' in mako
-
-
-def test_t_compose_wraps_tui_on_real_exemplar():
-    exemplar = (rst.REPO / "docker-compose.yml").read_text()
-
-    mako = rst.t_compose(exemplar)
-
-    assert "% if include_tui:\n  tui:\n" in mako
-    # the tui block closes with a % endif immediately before the backend
-    # service, and nginx's depends_on entry is wrapped too.
-    assert "% endif\n  backend:\n" in mako
-    assert "% if include_tui:\n      - tui\n% endif\n" in mako
-
-
-@pytest.mark.parametrize(
-    "block", [rst._SANDBOX_BACKEND_OPTS, rst._SANDBOX_DEV_OPTS]
-)
-def test_t_compose_toggles_sandbox_on_real_exemplar(block):
-    exemplar = (rst.REPO / "docker-compose.yml").read_text()
-
-    mako = rst.t_compose(exemplar)
-
-    assert (
-        f"% if enable_sandbox:\n{block}% else:\n"
-        f"{rst.comment_out(block)}% endif\n"
-    ) in mako
-
-
-def test_comment_out_keeps_indentation():
-    block = "    key: &anchor\n      - a\n"
-
-    out = rst.comment_out(block)
-
-    assert out == "    # key: &anchor\n      # - a\n"
-
-
-def test_toggle_sandbox_absent_is_noop():
-    text = "services: {}\n"
-
-    out = rst.toggle_sandbox(text, rst._SANDBOX_DEV_OPTS)
-
-    assert out == text
-
-
-def test_t_init_sh_wraps_gitea_on_real_exemplar():
-    exemplar = (rst.REPO / "postgres" / "config" / "init.sh").read_text()
-
-    mako = rst.t_init_sh(exemplar)
-
-    assert "% if include_gitea:\n" in mako
-    assert "CREATE DATABASE soliplex_gitea;" in mako
-
-
-def test_t_nginx_conf_wraps_gitea_on_real_exemplar():
-    exemplar = (rst.REPO / "nginx" / "nginx.conf").read_text()
-
-    mako = rst.t_nginx_conf(exemplar)
-
-    assert "% if include_gitea:\n        # Gitea under /gitea/" in mako
-
-
-def test_t_agents_wraps_gitea_on_real_exemplar():
-    exemplar = (rst.REPO / "AGENTS.md").read_text()
-
-    mako = rst.t_agents(exemplar)
-
-    assert (
-        '${", `3000` (gitea HTTP), `2222` (gitea SSH)"'
-        ' if include_gitea else ""}' in mako
-    )
-    assert "% if include_gitea:\n- **gitea**" in mako
-    assert "<%text>${INGESTER_TOKEN:-secret}</%text>" in mako
-
-
-_SRC_RULE = "/src/*\n!/src/${package_name}/\n"
-
-
-def test_t_gitignore():
-    text = "/.env\n# Skill build artifacts:\n# more notes\n/dist/\n\n/tmp/\n"
-
-    out = rst.t_gitignore(text)
-
-    # the /dist/ block is stripped; the parameterized src/ rule is appended
-    assert out.startswith("/.env\n/tmp/\n")
-    assert out.endswith(_SRC_RULE)
-
-
-def test_t_gitignore_missing_block_raises():
-    with pytest.raises(rst.RefreshError, match="/dist/"):
-        rst.t_gitignore("/.env\n/tmp/\n")
-
-
-def test_t_gitignore_existing_src_rule_raises():
-    text = "/src/soliplex/\n# Skill build artifacts:\n/dist/\n\n/tmp/\n"
-
-    with pytest.raises(rst.RefreshError, match="no '/src/' rules"):
-        rst.t_gitignore(text)
-
-
+# --------------------------------------------------------------------------
+# t_user_doc(): shipped docs derive from docs/users/ Markdown.
+# --------------------------------------------------------------------------
 def test_t_user_doc():
     text = (
         "# Title\n"
         "\n"
         "## Section\n"
         "\n"
-        "Open <http://localhost:9000>. Token `${INGESTER_TOKEN:-secret}`.\n"
+        "Open <http://localhost:${nginx_http}>. Token"
+        " `${INGESTER_TOKEN:-secret}`.\n"
         "\n"
         "<!-- if:tui -->\n"
         "tui only\n"
         "<!-- endif -->\n"
     )
-    params = [("http://localhost:9000>", "http://localhost:${nginx_http}>")]
 
-    out = rst.t_user_doc(text, params)
+    out = rst.t_user_doc(text)
 
     # H1 left alone; H2+ wrapped so Mako doesn't read '##' as a comment.
     assert "# Title\n" in out
     assert "<%text>## Section</%text>" in out
-    # Concrete default -> live ${...}; literal ${...} escaped through.
+    # The source's own ${...} parameter spelling passes through for the
+    # generator to bake; literal shell expansions are escaped.
     assert "Open <http://localhost:${nginx_http}>." in out
     assert "Token `<%text>${INGESTER_TOKEN:-secret}</%text>`." in out
     # HTML-comment conditional fences become Mako control lines.
@@ -636,20 +230,26 @@ def test_t_user_doc_strips_site_only_block():
         "Body paragraph.\n"
     )
 
-    out = rst.t_user_doc(text, [])
+    out = rst.t_user_doc(text)
 
-    # The banner (and its trailing blank line) is gone; the body is untouched.
     assert out == "# Title\n\nBody paragraph.\n"
 
 
-def test_t_user_doc_missing_anchor_raises():
-    with pytest.raises(rst.RefreshError, match="expected to find"):
-        rst.t_user_doc("nothing\n", [("absent", "${x}")])
+def test_t_user_doc_escapes_non_parameter_expansions():
+    text = (
+        "`${INGESTER_TOKEN}` and `${VAR:-default}` and"
+        " `${nginx_http}` and `${VAR}`.\n"
+    )
+
+    out = rst.t_user_doc(text)
+
+    assert (
+        "`<%text>${INGESTER_TOKEN}</%text>` and"
+        " `<%text>${VAR:-default}</%text>` and `${nginx_http}` and"
+        " `<%text>${VAR}</%text>`.\n" == out
+    )
 
 
-# --------------------------------------------------------------------------
-# tracked_files
-# --------------------------------------------------------------------------
 def test_tracked_files_splits_and_filters(repo, check_output):
     root, _ = repo
     (root / "a").mkdir()
@@ -682,12 +282,9 @@ def test_tracked_files_splits_and_filters(repo, check_output):
 # render_check (real Mako)
 # --------------------------------------------------------------------------
 def test_render_check_counts_failures(tmp_path, capsys):
-    (tmp_path / "good.mako").write_text(
-        "hello ${project_name}\n", encoding="utf-8"
-    )
-    (tmp_path / "bad.mako").write_text(
-        "oops ${undefined_var}\n", encoding="utf-8"
-    )
+    (tmp_path / "subdir").mkdir()
+    (tmp_path / "good.mako").write_text("plain\n")
+    (tmp_path / "subdir" / "bad.mako").write_text("% if broken\n")
 
     bad = rst.render_check(tmp_path)
 
@@ -695,101 +292,50 @@ def test_render_check_counts_failures(tmp_path, capsys):
     assert "render FAILED: bad.mako" in capsys.readouterr().err
 
 
-# --------------------------------------------------------------------------
-# _build_into
-# --------------------------------------------------------------------------
-def test_build_into_happy_path(tmp_path, monkeypatch):
-    src = tmp_path / "repo"
-    src.mkdir()
-    (src / "plain.txt").write_text("verbatim\n", encoding="utf-8")
-    (src / "d.txt").write_text("derive me\n", encoding="utf-8")
-    monkeypatch.setattr(rst, "REPO", src)
-    monkeypatch.setattr(rst, "DERIVED", {"d.txt": lambda t: "MAKO:" + t})
-    monkeypatch.setattr(
-        rst, "AUTHORED", {"nested/authored.md": "authored body\n"}
+def test_build_into_copies_checked_in_mako_and_authors(tmp_path, monkeypatch):
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    (repo_dir / "plain.txt").write_text("verbatim\n")
+    (repo_dir / "d.mako").write_text("${nginx_http}\n")
+    monkeypatch.setattr(rst, "REPO", repo_dir)
+    # src/__package__/pyproject.toml.mako only; its file content is unused.
+    monkeypatch.setattr(rst, "AUTHORED", {"nested/authored.md": "authored\n"})
+
+    derived, authored, checked = rst._build_into(
+        tmp_path / "dest", ["plain.txt", "d.mako"]
     )
-    dest = tmp_path / "dest"
 
-    derived, authored = rst._build_into(dest, ["plain.txt", "d.txt"])
-
-    assert (derived, authored) == (1, 1)
-    assert (dest / "plain.txt").read_text() == "verbatim\n"
-    assert (dest / "d.txt.mako").read_text() == "MAKO:derive me\n"
-    assert not (dest / "d.txt").exists()
-    # authored paths may nest (src/__package__/src/__package__/tools.py.mako)
-    assert (dest / "nested" / "authored.md").read_text() == "authored body\n"
+    assert (derived, authored, checked) == (0, 1, 1)
+    assert (tmp_path / "dest" / "plain.txt").read_text() == "verbatim\n"
+    assert (tmp_path / "dest" / "d.mako").read_text() == "${nginx_http}\n"
+    assert (
+        tmp_path / "dest" / "nested" / "authored.md"
+    ).read_text() == "authored\n"
 
 
 def test_build_into_derives_user_docs(tmp_path, monkeypatch):
-    src = tmp_path / "repo"
-    (src / "docs" / "users" / "operations").mkdir(parents=True)
-    (src / "docs" / "users" / "index.md").write_text(
-        "# Home\n", encoding="utf-8"
+    repo_dir = tmp_path / "repo"
+    (repo_dir / "docs" / "users").mkdir(parents=True)
+    (repo_dir / "docs" / "users" / "index.md").write_text(
+        "port `${nginx_http}`\n"
     )
-    (src / "docs" / "users" / "operations" / "rag.md").write_text(
-        "## RAG\n", encoding="utf-8"
-    )
-    monkeypatch.setattr(rst, "REPO", src)
-    monkeypatch.setattr(rst, "DERIVED", {})
+    (repo_dir / "docs" / "users" / "sub").mkdir()
+    (repo_dir / "docs" / "users" / "sub" / "page.md").write_text("# Home\n")
+    monkeypatch.setattr(rst, "REPO", repo_dir)
+    monkeypatch.setattr(rst, "USER_DOCS_SRC", "docs/users")
     monkeypatch.setattr(rst, "AUTHORED", {})
-    monkeypatch.setattr(rst, "USER_DOC_PARAMS", {})
-    dest = tmp_path / "dest"
 
-    derived, authored = rst._build_into(dest, [])
+    derived, authored, _checked = rst._build_into(tmp_path / "dest", [])
 
-    # Both user docs are derived; the users/ segment is stripped so a project
-    # gets docs/<...>.md.mako.
     assert (derived, authored) == (2, 0)
-    assert (dest / "docs" / "index.md.mako").read_text() == "# Home\n"
     assert (
-        dest / "docs" / "operations" / "rag.md.mako"
-    ).read_text() == "<%text>## RAG</%text>\n"
-    assert not (dest / "docs" / "users").exists()
+        tmp_path / "dest" / "docs" / "index.md.mako"
+    ).read_text() == "port `${nginx_http}`\n"
+    assert (
+        tmp_path / "dest" / "docs" / "sub" / "page.md.mako"
+    ).read_text() == "# Home\n"
 
 
-def test_build_into_user_doc_error_is_wrapped(tmp_path, monkeypatch):
-    src = tmp_path / "repo"
-    (src / "docs" / "users").mkdir(parents=True)
-    (src / "docs" / "users" / "bad.md").write_text("x\n", encoding="utf-8")
-    monkeypatch.setattr(rst, "REPO", src)
-    monkeypatch.setattr(rst, "DERIVED", {})
-    monkeypatch.setattr(rst, "AUTHORED", {})
-    monkeypatch.setattr(
-        rst, "USER_DOC_PARAMS", {"bad.md": [("absent", "${x}")]}
-    )
-
-    with pytest.raises(rst.Wrap, match="docs/users/bad.md: expected to find"):
-        rst._build_into(tmp_path / "dest", [])
-
-
-def test_build_into_derived_source_missing(tmp_path, monkeypatch):
-    monkeypatch.setattr(rst, "REPO", tmp_path / "repo")
-    monkeypatch.setattr(rst, "DERIVED", {"gone.txt": str.upper})
-    monkeypatch.setattr(rst, "AUTHORED", {})
-
-    with pytest.raises(rst.RefreshError, match="derived source gone.txt"):
-        rst._build_into(tmp_path / "dest", [])
-
-
-def test_build_into_derived_transform_error_is_wrapped(tmp_path, monkeypatch):
-    src = tmp_path / "repo"
-    src.mkdir()
-    (src / "d.txt").write_text("x\n", encoding="utf-8")
-    monkeypatch.setattr(rst, "REPO", src)
-
-    def boom(_text):
-        raise rst.RefreshError("inner")
-
-    monkeypatch.setattr(rst, "DERIVED", {"d.txt": boom})
-    monkeypatch.setattr(rst, "AUTHORED", {})
-
-    with pytest.raises(rst.Wrap, match="d.txt: inner"):
-        rst._build_into(tmp_path / "dest", ["d.txt"])
-
-
-# --------------------------------------------------------------------------
-# main
-# --------------------------------------------------------------------------
 def test_main_requires_git_repo(repo):
     with pytest.raises(rst.RefreshError, match="must run inside the repo"):
         rst.main()
@@ -797,13 +343,11 @@ def test_main_requires_git_repo(repo):
 
 def test_main_no_tracked_files(repo, tracked_files):
     repo_dir, _template = repo
-    (repo_dir / ".git").mkdir()
+    (repo_dir / ".git").mkdir(exist_ok=True)
     tracked_files.return_value = []
 
     with pytest.raises(rst.RefreshError, match="returned nothing"):
         rst.main()
-
-    tracked_files.assert_called_once_with()
 
 
 def test_main_happy_path_fresh(
@@ -813,7 +357,7 @@ def test_main_happy_path_fresh(
     (repo_dir / ".git").mkdir()
     staging = template.parent / "template.new"
     tracked_files.return_value = ["a"]
-    build_into.return_value = (3, 2)
+    build_into.return_value = (3, 1, 2)
     render_check.return_value = 0
 
     result = rst.main()
@@ -837,7 +381,7 @@ def test_main_happy_path_replaces_existing(
     staging = template.parent / "template.new"
     staging.mkdir()
     tracked_files.return_value = ["a"]
-    build_into.return_value = (3, 2)
+    build_into.return_value = (3, 1, 2)
     render_check.return_value = 0
 
     result = rst.main()
@@ -858,7 +402,7 @@ def test_main_render_check_failure_leaves_template_intact(
     (template / "keep").write_text("intact\n", encoding="utf-8")
     staging = template.parent / "template.new"
     tracked_files.return_value = ["a"]
-    build_into.return_value = (3, 2)
+    build_into.return_value = (3, 1, 2)
     render_check.return_value = 2
 
     with pytest.raises(rst.RenderFailures, match="failed the render check"):

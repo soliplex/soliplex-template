@@ -72,13 +72,6 @@ class RefreshError(Exception):
     """Error refreshing template"""
 
 
-class Wrap(RefreshError):
-    def __init__(self, rel, exc):
-        self.rel = rel
-        self.exc = exc
-        super().__init__(f"{rel}: {exc}")
-
-
 class RenderFailures(RefreshError):
     def __init__(self, count):
         self.count = count
@@ -88,13 +81,6 @@ class RenderFailures(RefreshError):
 def require(cond: bool, msg: str) -> None:
     if not cond:
         raise RefreshError(msg)
-
-
-def repl(text: str, pairs: list[tuple[str, str]]) -> str:
-    for old, new in pairs:
-        require(old in text, f"expected to find {old!r}")
-        text = text.replace(old, new)
-    return text
 
 
 # User-facing docs: derived from authoritative Markdown under docs/users/.
@@ -606,10 +592,7 @@ def _build_into(dest_root: pathlib.Path, files: list[str]) -> tuple[int, int]:
     if docs_src.is_dir():
         for md in sorted(docs_src.rglob("*.md")):
             rel = md.relative_to(docs_src)
-            try:
-                mako_text = t_user_doc(md.read_text())
-            except RefreshError as exc:
-                raise Wrap(f"{USER_DOCS_SRC}/{rel}", exc) from exc
+            mako_text = t_user_doc(md.read_text())
             dest = dest_root / "docs" / rel
             dest = dest.with_name(dest.name + ".mako")
             dest.parent.mkdir(parents=True, exist_ok=True)
