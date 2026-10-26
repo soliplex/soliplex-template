@@ -25,9 +25,10 @@ not re-listed here):
 - `force`, `git=no`, `secrets=no` — the `--force`, `--no-git`, and
   `--no-generate-secrets` flags.
 
-Anything not supplied inline is prompted for. **Secrets are never accepted
-inline:** `ingester_token` has no alias and is only ever set via the interactive
-prompt (a command-line value would leak into shell history).
+Anything not supplied inline is prompted for. **No parameter is a secret:**
+since #244, the ingester control plane's bearer is generated into
+`.secrets/ingester_bearer.gen` (alongside the db passwords); older params
+files carrying `ingester_token` are rejected with a pointer at the file.
 
 ## CLI arguments (not template parameters)
 
@@ -77,7 +78,6 @@ prompt (a command-line value would leak into shell history).
 | `include_tui` | `false` | bool (`true`/`false`, or `yes`/`no`/`1`/`0`) | adds the opt-in `tui` service (web TUI proxied by nginx at `/tui/`) plus the `tui/` build context; omitted entirely when false |
 | `enable_sandbox` | `false` | bool (`true`/`false`, or `yes`/`no`/`1`/`0`) | lets the `bubble-sandbox` skill run code: emits the `security_opt` block (`seccomp`, `apparmor` and `systempaths` unconfined) on `backend` and `soliplex-dev` live; when false the block ships commented out, and `add_room.py` refuses (and `list --project-dir` skips) room templates that configure the skill, such as `sandbox` |
 | `docs_dir` | `rag/docs` | relative path inside the project | compose ingester bind mount; created at generation time |
-| `ingester_token` | `secret` | weak default — override for real deployments | `.env` `INGESTER_TOKEN` |
 | `puid` | *(host `os.getuid()`)* | derived if unset; positive int < 2³¹ (an explicit `0`/root is rejected) | `.env` `PUID`; compose `build.args`, service `user:`, postgres tmpfs |
 | `pgid` | *(host `os.getgid()`)* | derived if unset; positive int < 2³¹ | `.env` `PGID`; same places as `puid` |
 

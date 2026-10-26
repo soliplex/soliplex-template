@@ -44,9 +44,7 @@ and rebuild; see [Secrets](operations/secrets.md).
 ## 2. Confirm `OLLAMA_BASE_URL`
 
 The generator wrote `.env` with the `OLLAMA_BASE_URL` you supplied. Confirm it
-points at your Ollama server and adjust if needed. You can also set
-`INGESTER_TOKEN` there — see
-[Ingester control plane](operations/ingester.md).
+points at your Ollama server and adjust if needed.
 
 ## 3. Bring the stack up
 
@@ -81,7 +79,8 @@ it takes a few minutes. Subsequent runs are fast.
 
 ```bash
 docker compose ps
-curl -fsS http://localhost:${ingester_port}/health
+curl -fsS -H "Authorization: Bearer $(cat .secrets/ingester_bearer.gen)" \
+  http://localhost:${ingester_port}/ingester/health
 docker compose logs -f backend
 ```
 

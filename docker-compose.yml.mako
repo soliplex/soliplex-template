@@ -15,6 +15,7 @@ services:
 
     depends_on:
       - backend
+      - haiku-ingester
 % if include_tui:
       - tui
 % endif
@@ -42,6 +43,27 @@ services:
 
     secrets:
       - ingester_bearer
+
+    #
+    # '$$' is Compose's escape for a literal '$': the container's shell sees
+    # '$(cat ...)'.
+    #
+    # Tokens are generated as [A-Za-z0-9]{32} (scripts/generate_secrets.py),
+    # so the sed below cannot trip on metacharacters in its replacement.
+    command:
+      - sh
+      - -ec
+      - |
+        # Fail loudly on a missing or empty token.
+        test -s /run/secrets/ingester_bearer || {
+            echo "error: /run/secrets/ingester_bearer missing or empty; run 'uv run scripts/generate_secrets.py'" >&2
+            exit 1
+        }
+        # nginx cannot read a secret file inside 'location' blocks, nor
+        # environment references in its configuration: substitute the
+        # ingester bearer into a copy of the config instead.
+        sed "s|@@INGESTER_BEARER@@|$$(cat /run/secrets/ingester_bearer)|g" /etc/nginx/nginx.conf > /tmp/nginx.conf
+        exec nginx -c /tmp/nginx.conf -g 'daemon off;'
 
 % if include_tui:
   tui:
@@ -247,18 +269,25 @@ services:
     #  context: haiku.rag
     #  dockerfile: Dockerfile
 
-    # haiku.rag interpolates environment references in its own config
-    # (0.57+), so the ingester reads the bind-mounted yaml directly -- no
-    # rendered copy. The queue password lives in a Docker secret rather than
-    # the environment, and interpolation reads the environment, so export it
-    # first. The queue role owns its schema; prepare it before serving.
     command:
       - sh
       - -ec
       - |
+        # haiku.rag interpolates environment references in its own config
+        # (0.57+), so the ingester reads the bind-mounted yaml directly -- no
+        # rendered copy. Pending a possible direct read (ggozad/haiku-rag#749),
+        # read secrets files into the environment variables expected by its
+        # interpolation.
+        # - queue password:
         export INGESTER_DB_PASSWORD="$$(cat /run/secrets/ingester_db_password)"
+        # - control plane bearer token:
+        export INGESTER_TOKEN="$$(cat /run/secrets/ingester_bearer)"
+        # The queue role owns its schema; prepare it before serving.
         haiku-ingester --config /app/haiku.rag.yaml queue migrate
-        exec haiku-ingester --config /app/haiku.rag.yaml serve
+        # '--root-path /ingester' mounts the API (and the dashboard's
+        # <base href>) under the public prefix so nginx's '/ingester/'
+        # locations strip it before proxying.
+        exec haiku-ingester --config /app/haiku.rag.yaml serve --root-path /ingester
 
     ports:
       - "${ingester_port}:8765"  # control plane: /health, /jobs, /sources, /dlq, /stats
@@ -274,10 +303,6 @@ services:
 
     environment: &haiku_rag_environment
       OLLAMA_BASE_URL: <%text>${OLLAMA_BASE_URL}</%text>
-      # Bearer token clients must send to /jobs, /sources, /dlq, etc.
-      # Override in '.env'; the default 'secret' is intentionally weak
-      # so unhardened deployments fail an obvious security review.
-      INGESTER_TOKEN: <%text>${INGESTER_TOKEN:-secret}</%text>
       # API keys (set as needed)
       #- OPENAI_API_KEY=<%text>${OPENAI_API_KEY}</%text>
       #- ANTHROPIC_API_KEY=<%text>${ANTHROPIC_API_KEY}</%text>
@@ -305,12 +330,13 @@ services:
     stop_grace_period: 180s
 
     healthcheck:
-      # slim image has no curl; use stdlib instead.
+      # slim image has no curl; use stdlib instead. The control plane is
+      # served under /ingester (see the command above).
       test:
         - "CMD"
         - "python"
         - "-c"
-        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8765/health', timeout=2).status == 200 else 1)"
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8765/ingester/health', timeout=2).status == 200 else 1)"
       interval: 5s
       timeout: 3s
       retries: 12
@@ -352,6 +378,10 @@ services:
       - -c
       - |
         export INGESTER_DB_PASSWORD="$$(cat /run/secrets/ingester_db_password)"
+        # The shared haiku.rag.yaml interpolates INGESTER_TOKEN as well (it
+        # describes the 'haiku-ingester' service's API), so the CLI needs it
+        # in the environment even though it never calls the API itself.
+        export INGESTER_TOKEN="$$(cat /run/secrets/ingester_bearer)"
         exec haiku-rag --config /app/haiku.rag.yaml "$$@"
       - haiku-rag
 
@@ -363,6 +393,7 @@ services:
 
     secrets:
       - ingester_db_password
+      - ingester_bearer
 
     ulimits: *haiku_rag_ulimits
 

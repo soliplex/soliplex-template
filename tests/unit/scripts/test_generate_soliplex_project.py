@@ -142,6 +142,11 @@ def test_load_params_unknown_key(tmp_path):
             "soliplex_tui_constraint",
             "soliplex_tui_constraint (now soliplex_image_tag)",
         ),
+        (
+            "ingester_token",
+            "ingester_token (now not a parameter anymore: the bearer token "
+            "is generated into .secrets/ingester_bearer.gen)",
+        ),
     ],
 )
 def test_load_params_renamed_key_names_its_replacement(tmp_path, name, hint):
@@ -844,7 +849,6 @@ def test_ensure_runtime_dirs(tmp_path):
 def test_write_env(tmp_path):
     params = {
         "ollama_base_url": "http://o:11434",
-        "ingester_token": "tok",
         "puid": 1234,
         "pgid": 5678,
     }
@@ -853,9 +857,9 @@ def test_write_env(tmp_path):
 
     text = (tmp_path / ".env").read_text()
     assert "OLLAMA_BASE_URL=http://o:11434" in text
-    assert "INGESTER_TOKEN=tok" in text
     assert "PUID=1234" in text
     assert "PGID=5678" in text
+    assert "INGESTER_TOKEN" not in text  # (#244): the bearer is a .gen secret
     assert ((tmp_path / ".env").stat().st_mode & 0o777) == 0o600
 
 
@@ -1337,12 +1341,6 @@ def test_sanitize_param_strips_url_userinfo_without_port():
     assert result == "http://ollama.invalid"
 
 
-def test_sanitize_param_redacts_secret():
-    result = gen._sanitize_param("ingester_token", "hunter2")
-
-    assert result == "<redacted>"
-
-
 def test_sanitize_param_strips_url_userinfo():
     result = gen._sanitize_param(
         "ollama_base_url", "http://user:pass@ollama.invalid:11434"
@@ -1392,8 +1390,8 @@ def test_render_manifest_structure():
     assert "x = true" in out
 
 
-def test_render_manifest_blank_skill_fields_and_redaction():
-    params = {"ingester_token": "secret"}
+def test_render_manifest_blank_skill_fields():
+    params = {"project_name": "demo"}
     meta = {"version": "", "source_commit": "", "generated": ""}
 
     out = gen.render_manifest(params, meta)
@@ -1401,4 +1399,3 @@ def test_render_manifest_blank_skill_fields_and_redaction():
     assert 'skill_version = ""' in out
     assert 'skill_source_commit = ""' in out
     assert 'skill_generated = ""' in out
-    assert 'ingester_token = "<redacted>"' in out

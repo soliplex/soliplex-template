@@ -111,8 +111,8 @@ def t_user_doc(text):
          noting these pages describe a *generated* project), removed from the
          docs that ship into a generated project;
       1. escape literal ``${...}`` that is *not* a generator parameter (e.g.
-         the docker ``${INGESTER_TOKEN:-secret}`` expansion shown to the
-         reader) so Mako passes it through; ``${param}`` spellings on the
+         the socat ``${OLLAMA_RELAY_BIND:-172.17.0.1}`` expansion shown to
+         the reader) so Mako passes it through; ``${param}`` spellings on the
          page survive for the generator to bake;
       3. escape Markdown H2+ headings, since Mako reads a leading ``##`` as a
          line comment (the H1 ``#`` is safe);

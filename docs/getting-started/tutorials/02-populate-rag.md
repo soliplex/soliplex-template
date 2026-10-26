@@ -36,10 +36,16 @@ have a checkout of it:
 rsync -rv ~/projects/soliplex/docs/ rag/docs/
 ```
 
-Watch progress on the ingester control plane at <http://localhost:8765/>; the
-dashboard prompts for the `INGESTER_TOKEN` (`secret` by default). Once `/stats`
-shows the documents processed and the job queue drained, the corpus is
-searchable.
+Watch progress on the ingester dashboard:
+
+- No-auth stacks (the default) serve it at <http://localhost:9000/ingester/>
+  with the bearer injected at the proxy — nothing to type;
+
+- Auth-mode stacks serve it (gated on the soliplex admin check)
+  at <https://localhost:9443/ingester/> and redirect to sign-in first.
+
+Once `/stats` shows the documents processed and the job queue drained, the
+corpus is searchable.
 
 ## 3. Wire the corpus into the `custom` room
 

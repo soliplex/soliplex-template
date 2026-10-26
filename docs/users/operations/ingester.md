@@ -17,34 +17,41 @@ cancel jobs, retry from the dead-letter queue, and trigger source refreshes.
 
 ## How the token gets in
 
-1. `haiku.rag/haiku.rag.yaml` ships
-   `ingester.api.auth_token: ${INGESTER_TOKEN}`. haiku.rag expands `${VAR}`
-   references when it loads the file, so the ingester reads the
-   bind-mounted config directly.
-2. `INGESTER_TOKEN` defaults to `secret` — Compose sets
-   `${INGESTER_TOKEN:-secret}`. Override it in `.env`
-   for anything that isn't a single-developer laptop.
-3. An unset or empty value is a load error, so a missing token stops the
-   ingester at startup instead of leaving the control plane unauthenticated.
+1. The service interpolates the `${INGESTER_TOKEN}` value
+   into `haiku.rag/haiku.rag.yaml` **from the environment, not files**.
+   Each service exports the value from the secret file into the environment
+   before the config loads.
 
-## Calling the API
+2. `nginx` does not read the token from the environment at all.
+   Its command reads the value from the secret file and renders it via `sed`
+   into a writabl copy of `/etc/nginx.conf` `/tmp` at container
+   start
 
-Clients send `Authorization: Bearer $INGESTER_TOKEN`:
+3. The proxy also gates `/ingester/` on the backend's admin check
+   via an `auth_request` against `/_authz_check`:
+   signed-in admins get through, anonymous requests are redirected to
+   sign-in, and non-admins get the stack's error page.
+
+## Reaching it
+
+**Via nginx** — the normal route. In a no-auth stack open
+<http://localhost:${nginx_http}/ingester/> and you're done (the token is
+injected at the proxy). In an auth-mode stack open
+<https://${server_name}:${nginx_https}/ingester/>:
+not signed in → sign-in page; signed in as an admin → the dashboard; signed
+in as a non-admin → the stack's "access denied" page.
+
+**Direct** (the stack's `${ingester_port}` mapping) — for scripts and
+debugging; pass the token yourself:
 
 ```bash
-curl -fsS -H "Authorization: Bearer $INGESTER_TOKEN" \
+curl -fsS -H "Authorization: Bearer $(cat .secrets/ingester_bearer.gen)" \
   http://localhost:${ingester_port}/stats
 ```
 
-The browser dashboard at `/` is unauthenticated HTML; its in-page JavaScript
-attaches the bearer to its JSON fetches itself.
-
 ## Choosing a token
 
-haiku.rag expands the reference itself, so the token no longer has to dodge
-`sed` metacharacters. Prefer alphanumerics anyway, which keeps a literal `$`
-out of `.env` where Compose would try to interpolate it:
-
-```bash
-openssl rand -hex 32
-```
+Tokens are generated as 32 alphanumeric characters by
+`scripts/generate_secrets.py` and re-generated on each run — rotation is
+regenerating the files and restarting `haiku-ingester` and `nginx` (the
+token is rendered into nginx's running config).

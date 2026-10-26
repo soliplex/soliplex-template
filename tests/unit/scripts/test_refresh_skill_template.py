@@ -177,9 +177,12 @@ def test_backend_dockerfile_mako_wraps_dockerfile_literal():
 
 
 def test_agents_mako_escapes_ingester_token_expansion():
+    # haiku.rag's own ${INGESTER_TOKEN} interpolation is still shell
+    # literal after rendering (the secret is exported into the environment,
+    # #244), so AGENTS.md.mako must keep it <%text>-escaped.
     text = _checked_in("AGENTS.md.mako")
 
-    assert "<%text>${INGESTER_TOKEN:-secret}</%text>" in text
+    assert "<%text>${INGESTER_TOKEN}</%text>" in text
 
 
 def test_agents_mako_folds_gitea_into_conditionals():

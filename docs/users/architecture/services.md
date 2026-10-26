@@ -26,12 +26,23 @@ graph LR
 
 ## nginx
 
-Serves the Flutter web frontend and reverse-proxies `/api/` and `/mcp/` to
-`backend:8000`. The web client is copied in `nginx/Dockerfile` from the
-published `ghcr.io/soliplex/frontend-web` image, whose tag picks the release; its assets
-sit under a `v<release-tag>/` directory, which `nginx/nginx.conf` caches for
-a year, while `index.html` is never cached, so a new release reaches browsers
-on their next load. Terminates TLS on host port ${nginx_https} with a self-signed cert.
+- Serves the Flutter web frontend.
+
+- Reverse-proxies `/api/` and `/mcp/` to `backend:8000`.
+
+- Reverse-proxies `/ingester/` to `haiku-ingester:8765`
+  (see [Ingester control plane](../operations/ingester.md)).
+
+- The web client is copied in `nginx/Dockerfile` from the published
+  `ghcr.io/soliplex/frontend-web` image, whose tag picks the release
+
+- Its assets sit under a `v<release-tag>/` directory, which `nginx/nginx.conf`
+  caches for a year
+
+- `index.html` is never cached, so a new release reaches browsers
+  on their next load.
+
+- Terminates TLS on host port ${nginx_https} with a self-signed cert.
 
 ## backend
 
@@ -78,12 +89,26 @@ Any project directory under `src/` works, not just a `soliplex` checkout.
 
 ## haiku-ingester
 
-The **writer** for the LanceDB at `rag/db/`. Runs `haiku-ingester serve` with a
-Postgres-backed job queue (its own `soliplex_ingester` database), an async
-worker pool, retries + a dead-letter queue, and an HTTP control plane on host
-port ${ingester_port}. There is a **single-writer constraint**: only one
-ingester per LanceDB. The backend reads the same store through a bind mount.
-See [RAG pipeline](../operations/rag.md).
+The **writer** for the LanceDB at `rag/db/`.
+
+Runs `haiku-ingester serve --root-path /ingester` with a Postgres-backed
+job queue (its own `soliplex_ingester` database), an async worker pool,
+retries + a dead-letter queue, and an HTTP control plane.
+
+Secrets handling:
+
+- The service entrypoint exports `INGESTER_DB_PASSWORD` and `INGESTER_TOKEN`
+  from Docker secrets files;
+
+- The `haiku-rag` config machinery interpolates them into `haiku.rag.yaml`
+
+There is a **single-writer constraint**: only one ingester per LanceDB.
+Reads are safe while the stack is up; writing a store the ingester
+owns needs `docker compose stop haiku-ingester` first.
+
+The backend reads the same store through a bind mount. See
+[RAG pipeline](../operations/rag.md) and
+[Ingester control plane](../operations/ingester.md).
 
 ## haiku-rag
 
@@ -97,11 +122,7 @@ the CLI:
 docker compose run --rm haiku-rag info --db /data/haiku.rag.lancedb
 ```
 
-Its entrypoint exports `INGESTER_DB_PASSWORD` from the Docker secret first,
-which every CLI call needs: `haiku.rag.yaml` interpolates that variable into
-the queue `dburi` and haiku.rag expands the whole file before running the
-subcommand. Reads are safe while the stack is up; writing a store the ingester
-owns needs `docker compose stop haiku-ingester` first.
+Uses the same secrets interpolation as `haiku-ingester`.
 
 ## docling-serve
 

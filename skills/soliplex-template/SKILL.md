@@ -45,9 +45,9 @@ from the user and invoke it.
      (→ `--no-generate-secrets`).
    - A token whose key matches none of the above → don't guess; show it back to
      the user and ask what they meant.
-   - **Never accept a secret inline.** `ingester_token` has no alias and must
-     not be read from the command line (it would land in shell history); always
-     prompt for it (or accept its warned default) in the secrets step below.
+   - **Never accept a secret inline.** No parameter is a secret (the ingester
+     control plane's bearer is generated into `.secrets/ingester_bearer.gen`);
+     anything secret-shaped offered inline is a red flag, not an input.
 
    **(b) Prompt for whatever is still unanswered** — and *only* that, so a
    fully-specified command runs with no questions while a bare
@@ -83,8 +83,11 @@ from the user and invoke it.
      sandbox. It lifts the backend container's seccomp, AppArmor and `/proc`
      masking, so say so when asking; default no. Without it the `sandbox` room
      template is unavailable.
-   - **secrets handling** — prompt for `ingester_token` (or accept the warned
-     default) and confirm the secrets/git flags.
+   - **secrets handling** — no secret is prompted for: the ingester control
+     plane's bearer is generated into `.secrets/ingester_bearer.gen` (see
+     "Ingester control plane auth" in the generated AGENTS.md). Confirm the
+     secrets/git flags: generating them here (default) or skipping
+     (`secrets=no`), initial git commit (`git=no` skips).
 
    You can show all defaults with:
 
