@@ -271,6 +271,30 @@ def test_backend_cookie_exempted_from_proxy_cookie_flags(generated_project):
     assert nginx.index(exemption) < nginx.index(catch_all)
 
 
+def test_ingester_bearer_secret_declared_and_mounted(generated_project):
+    # #244: the ingester control plane's bearer token is a file-based Docker
+    # secret, not an environment variable -- 'docker inspect' shows only the
+    # mount, /proc/*/environ carries no value, and rotation is a .gen file
+    # swap. The compose declares the secret once and mounts it into both
+    # consumers: the ingester (which exports it for haiku.rag's env-only
+    # interpolation until haiku.rag#749 lands) and nginx (which will inject
+    # it at the proxy for the /ingester/ route).
+    out, _params = generated_project
+
+    compose = _read(out, "docker-compose.yml")
+    compose_dict = yaml.safe_load(compose)
+
+    assert (
+        compose_dict["secrets"]["ingester_bearer"]["file"]
+        == "./.secrets/ingester_bearer.gen"
+    )
+    assert (
+        "ingester_bearer"
+        in compose_dict["services"]["haiku-ingester"]["secrets"]
+    )
+    assert "ingester_bearer" in compose_dict["services"]["nginx"]["secrets"]
+
+
 def test_escaped_literals_survived(generated_project):
     out, _params = generated_project
 
@@ -284,6 +308,11 @@ def test_escaped_literals_survived(generated_project):
 
 
 def test_ingester_wired_to_postgres_queue(generated_project):
+    # #68: the ingester job queue is a dedicated Postgres database
+    # (soliplex_ingester), created by init.sh and addressed by a dburi whose
+    # password haiku.rag interpolates from INGESTER_DB_PASSWORD, exported
+    # from the ingester_db_password secret by the compose command.
+    out, _params = generated_project
     # #68: the ingester job queue is a dedicated Postgres database
     # (soliplex_ingester), created by init.sh and addressed by a dburi whose
     # password haiku.rag interpolates from INGESTER_DB_PASSWORD, exported
@@ -791,6 +820,7 @@ def test_secrets_generated_by_default(generated_project):
     assert gen_files == [
         "agui_db_password.gen",
         "authz_db_password.gen",
+        "ingester_bearer.gen",
         "ingester_db_password.gen",
         "postgres_password.gen",
         "url_safe_token_secret.gen",

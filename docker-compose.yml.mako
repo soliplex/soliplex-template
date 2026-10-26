@@ -40,6 +40,9 @@ services:
         target: /app/error-pages
         read_only: true
 
+    secrets:
+      - ingester_bearer
+
 % if include_tui:
   tui:
 
@@ -260,6 +263,10 @@ services:
     ports:
       - "${ingester_port}:8765"  # control plane: /health, /jobs, /sources, /dlq, /stats
 
+    secrets:
+      - ingester_db_password
+      - ingester_bearer
+
     volumes: &haiku_rag_volumes
       - ./rag/db:/data
       - ./${docs_dir}:/docs
@@ -278,9 +285,6 @@ services:
       #- CO_API_KEY=<%text>${CO_API_KEY}</%text>
 
     user: "<%text>${PUID:-1000}</%text>:<%text>${PGID:-1000}</%text>"
-
-    secrets:
-      - ingester_db_password
 
     # LanceDB's full-text-search (content_fts) index merge opens many
     # files at once; the default soft limit of 1024 trips EMFILE
@@ -525,6 +529,8 @@ secrets:
 % endif
     ingester_db_password:
       file: ./.secrets/ingester_db_password.gen
+    ingester_bearer:
+      file: ./.secrets/ingester_bearer.gen
     postgres_password:
       file: ./.secrets/postgres_password.gen
     url_safe_token_secret:
