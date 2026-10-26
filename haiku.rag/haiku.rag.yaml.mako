@@ -12,15 +12,7 @@ storage:
 # and shares the stack's Postgres instance. (The LanceDB vector store still
 # lives on the /data bind mount; only the queue moved off SQLite.)
 #
-# The two environment references below are expanded by haiku.rag's own
-# loader (0.57+), which interpolates them when it reads this file (an
-# earlier release had no interpolation, hence the sed wrapper this
-# replaced). INGESTER_TOKEN comes from the container
-# environment; INGESTER_DB_PASSWORD is exported from the
-# ingester_db_password Docker secret by the 'haiku-ingester' command in
-# docker-compose.yml, because interpolation reads the environment, not files.
-# An unset or empty value is an error, so a missing token fails at startup
-# instead of quietly serving an unauthenticated control plane.
+# Setting the env var secrets is the responsibility of 'docker-compose.yml'
 ingester:
   queue:
     namespace: soliplex

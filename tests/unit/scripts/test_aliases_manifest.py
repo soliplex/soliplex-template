@@ -5,7 +5,10 @@ shortcuts (issue #92) against ``assets/aliases.json`` rather than a vocabulary
 spelled out in SKILL.md prose. Nothing imports that file at runtime, so these
 tests are its contract: every alias target and group member must name a real
 ``generate_soliplex_project.py`` parameter (so the map can't silently drift
-from ``DEFAULTS``), and no secret parameter may be reachable inline.
+from ``DEFAULTS``). Secret-shaped things are simply not parameters (since #244
+the ingester control plane's bearer lives in the generated
+``.secrets/ingester_bearer.gen``), so there is nothing to keep off an alias
+path.
 
 The generator ships inside the skill and is not an importable package, so it is
 loaded here by file path via ``importlib.util`` -- the same seam the sibling
@@ -78,15 +81,3 @@ def test_group_member_is_a_default_key(group, member):
     assert member in gen.DEFAULTS, (
         f"group {group!r} member {member!r} is not a DEFAULTS key"
     )
-
-
-@pytest.mark.parametrize("secret", sorted(gen._SENSITIVE_PARAMS))
-def test_secret_is_not_reachable_inline(secret):
-    alias_targets = set(_ALIASES["aliases"].values())
-    group_members = {
-        member for members in _ALIASES["groups"].values() for member in members
-    }
-
-    reachable = secret in alias_targets or secret in group_members
-
-    assert not reachable, f"secret {secret!r} must not be reachable inline"

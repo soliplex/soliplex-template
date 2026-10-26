@@ -271,6 +271,109 @@ def test_backend_cookie_exempted_from_proxy_cookie_flags(generated_project):
     assert nginx.index(exemption) < nginx.index(catch_all)
 
 
+def test_ingester_bearer_gate_wiring(generated_project):
+    # #104/#244: nginx injects the control plane's bearer (from the
+    # ingester_bearer secret) on everything it proxies under /ingester/, and
+    # the ingester serves the control plane under that prefix
+    # (serve --root-path /ingester: routes match the stripped path; root_path
+    # keeps the dashboard's <base href> and generated redirects inside it).
+    # This module's stack is a no-auth stack: no gate machinery rendered.
+    out, _params = generated_project
+
+    compose = _read(out, "docker-compose.yml")
+    nginx = _read(out, "nginx/nginx.conf")
+
+    # the same location set on both servers, with the redirect for the bare
+    # path
+    assert nginx.count("proxy_pass http://$backend_ingester:8765;") == 2
+    assert (
+        nginx.count(
+            'proxy_set_header Authorization "Bearer @@INGESTER_BEARER@@";'
+        )
+        == 2
+    )
+    assert nginx.count("location = /ingester {") == 2
+    assert nginx.count("location /ingester/ {") == 2
+    # the prefix strip (root_path pairing) and no rewrite of the app's own
+    # trailing-redirect behaviour
+    assert nginx.count(r"rewrite ^/ingester/?(.*)$ /$1 break;") == 2
+    # no-auth: no gate
+    assert "auth_request" not in nginx
+    assert "@ingester_signin" not in nginx
+
+    # nginx renders the bearer into its config at container start, loudly
+    # failing when the secret file is missing/empty
+    assert (
+        'sed "s|@@INGESTER_BEARER@@|$$(cat /run/secrets/ingester_bearer)|g"'
+        in compose
+    )
+    assert "test -s /run/secrets/ingester_bearer || {" in compose
+    # uniform escape: no bare '$(cat' secret read survives the '$$' spelling
+    assert 'sed "s|@@INGESTER_BEARER@@|$(cat' not in compose
+
+    assert "exec nginx -c /tmp/nginx.conf -g 'daemon off;'" in compose
+
+    ingester = yaml.safe_load(compose)["services"]["haiku-ingester"]
+    command = ingester["command"][2]
+    # the bearer is exported alongside the queue password, before the config
+    # loads (whole-file expansion), and serve runs under the public prefix
+    assert (
+        'export INGESTER_TOKEN="$$(cat /run/secrets/ingester_bearer)"'
+        in command
+    )
+    assert command.index("export INGESTER_TOKEN=") < command.index(
+        " queue migrate"
+    )
+    assert command.rstrip().endswith("serve --root-path /ingester")
+    assert "localhost:8765/ingester/health" in str(
+        ingester["healthcheck"]["test"]
+    )
+
+
+def test_ingester_bearer_secret_mounted_on_the_one_shot(generated_project):
+    # #244: the shared haiku.rag.yaml interpolates INGESTER_TOKEN too, so
+    # the one-shot service exports it from the same secret (it never calls
+    # the control plane API; the export is only for config expansion).
+    out, _params = generated_project
+
+    compose = _read(out, "docker-compose.yml")
+    one_shot = yaml.safe_load(compose)["services"]["haiku-rag"]
+
+    assert "ingester_bearer" in one_shot["secrets"]
+    entrypoint = one_shot["entrypoint"][2]
+    assert (
+        'export INGESTER_TOKEN="$$(cat /run/secrets/ingester_bearer)"'
+        in entrypoint
+    )
+    assert entrypoint.index("INGESTER_DB_PASSWORD=") < entrypoint.index(
+        "INGESTER_TOKEN=", entrypoint.index("INGESTER_DB_PASSWORD=")
+    )
+
+
+def test_ingester_bearer_secret_declared_and_mounted(generated_project):
+    # #244: the ingester control plane's bearer token is a file-based Docker
+    # secret, not an environment variable -- 'docker inspect' shows only the
+    # mount, /proc/*/environ carries no value, and rotation is a .gen file
+    # swap. The compose declares the secret once and mounts it into both
+    # consumers: the ingester (which exports it for haiku.rag's env-only
+    # interpolation until haiku.rag#749 lands) and nginx (which will inject
+    # it at the proxy for the /ingester/ route).
+    out, _params = generated_project
+
+    compose = _read(out, "docker-compose.yml")
+    compose_dict = yaml.safe_load(compose)
+
+    assert (
+        compose_dict["secrets"]["ingester_bearer"]["file"]
+        == "./.secrets/ingester_bearer.gen"
+    )
+    assert (
+        "ingester_bearer"
+        in compose_dict["services"]["haiku-ingester"]["secrets"]
+    )
+    assert "ingester_bearer" in compose_dict["services"]["nginx"]["secrets"]
+
+
 def test_escaped_literals_survived(generated_project):
     out, _params = generated_project
 
@@ -279,11 +382,20 @@ def test_escaped_literals_survived(generated_project):
 
     # <%text>-escaped runtime interpolations must reach the output verbatim.
     assert "${OLLAMA_BASE_URL}" in compose
-    assert "${INGESTER_TOKEN:-secret}" in compose
+    # #244: the control plane's bearer is a Docker secret exported into the
+    # environment (no .env placeholder), so haiku.rag's own interpolation is
+    # the only ${INGESTER_TOKEN} spelling left in the output.
+    assert "${INGESTER_TOKEN:-secret}" not in compose
+    assert "INGESTER_TOKEN=" not in _read(out, ".env")
     assert "${INGESTER_TOKEN}" in haiku
 
 
 def test_ingester_wired_to_postgres_queue(generated_project):
+    # #68: the ingester job queue is a dedicated Postgres database
+    # (soliplex_ingester), created by init.sh and addressed by a dburi whose
+    # password haiku.rag interpolates from INGESTER_DB_PASSWORD, exported
+    # from the ingester_db_password secret by the compose command.
+    out, _params = generated_project
     # #68: the ingester job queue is a dedicated Postgres database
     # (soliplex_ingester), created by init.sh and addressed by a dburi whose
     # password haiku.rag interpolates from INGESTER_DB_PASSWORD, exported
@@ -437,7 +549,8 @@ def test_env_file_written(generated_project):
     env = _read(out, ".env")
 
     assert f"OLLAMA_BASE_URL={params['ollama_base_url']}" in env
-    assert "INGESTER_TOKEN=" in env
+    # #244: the bearer token is no longer an .env value.
+    assert "INGESTER_TOKEN" not in env
     # UID/GID default to the host operator running the generator (this test
     # process); compose reads them and the generated secrets are owned by them.
     assert f"PUID={os.getuid()}" in env
@@ -587,7 +700,9 @@ def test_pyproject_records_generation_manifest(generated_project):
     assert params["nginx_https"] == 19443  # int preserved
     assert params["include_gitea"] is False  # bool preserved
     assert params["include_tui"] is False  # bool preserved
-    assert params["ingester_token"] == "<redacted>"  # secret never recorded
+    # #244: no secret parameters exist; the bearer never appears in the
+    # (committed) manifest under any spelling.
+    assert "ingester_token" not in params
 
 
 def test_custom_room_references_package_tool(generated_project):
@@ -791,6 +906,7 @@ def test_secrets_generated_by_default(generated_project):
     assert gen_files == [
         "agui_db_password.gen",
         "authz_db_password.gen",
+        "ingester_bearer.gen",
         "ingester_db_password.gen",
         "postgres_password.gen",
         "url_safe_token_secret.gen",
@@ -867,6 +983,74 @@ def test_include_tui_renders_valid_compose(
     compose = _read(out, "docker-compose.yml")
     assert "\n  tui:\n" in compose
     assert (out / "tui" / "Dockerfile").exists()
+    cfg = _compose(out, "config", "-q")
+    assert cfg.returncode == 0, cfg.stderr
+
+
+@pytest.mark.needs_docker
+def test_ingester_bearer_gate_auth_mode(
+    tmp_path, docker_required, refresh_embedded_template
+):
+    # #104: with auth_mode=auth the proxy gates /ingester/ behind the
+    # backend's admin check: 204 passes; a 401 redirects top-level
+    # navigations (Sec-Fetch-Mode: navigate) to sign-in while the dashboard's
+    # polling fetches get a plain JSON 401; a check-side 403 gets the stack's
+    # error page. And the backend runs WITHOUT --no-auth-mode.
+    missing = [t for t in _GEN_TOOLS if shutil.which(t) is None]
+    if missing:
+        pytest.skip(f"generation needs {', '.join(_GEN_TOOLS)}")
+    out = tmp_path / "project"
+    params_file = tmp_path / "params.json"
+    params_file.write_text(
+        json.dumps({**_PARAMS, "auth_mode": "auth"}), encoding="utf-8"
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(_SCRIPT),
+            "--out",
+            str(out),
+            "--params",
+            str(params_file),
+            "--no-git",
+            "--disable-gpg-sign",
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+    compose = _read(out, "docker-compose.yml")
+    nginx = _read(out, "nginx/nginx.conf")
+
+    # the gate renders into both servers, pointing at the backend's check
+    # endpoint for the ingester resource
+    assert nginx.count("auth_request /_authz_check;") == 2
+    assert nginx.count("location = /_authz_check {") == 2
+    assert (
+        nginx.count(
+            "auth_request_set $soliplex_user $upstream_http_x_soliplex_user;"
+        )
+        == 2
+    )
+    # navigations sign in; fetches get the JSON 401
+    assert "map $http_sec_fetch_mode $soliplex_navigate {" in nginx
+    assert nginx.count("location @ingester_signin {") == 2
+    assert (
+        nginx.count(
+            'return 302 "/api/login/keycloak?delivery=cookie'
+            '&return_to=$request_uri"'
+        )
+        == 2
+    )
+    assert '{"error": "signin_required", "message"' in nginx
+
+    assert (
+        "--no-auth-mode"
+        not in yaml.safe_load(compose)["services"]["backend"]["command"]
+    )
     cfg = _compose(out, "config", "-q")
     assert cfg.returncode == 0, cfg.stderr
 

@@ -205,6 +205,5 @@ them. A bare `rag_lancedb_stem` on the skill is shorthand for a one-entry list.
 
 ## Operating the pipeline
 
-The ingester exposes a control plane on host port ${ingester_port} — `/health`,
-`/jobs`, `/sources`, `/dlq`, `/stats`, and a dashboard at `/`. It requires a
-bearer token; see [Ingester control plane](ingester.md).
+The ingester exposes a dashboard and control plane API behind nginx at
+`/ingester/`. All requests under that path require the bearer token.
