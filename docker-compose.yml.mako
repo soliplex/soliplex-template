@@ -176,8 +176,11 @@ services:
         target: "/app/src"
         read_only: true
 
+% if backend_port:
+    # Direct access to the backend API.
     ports:
-      - "8000:8000"
+      - "${backend_port}:8000"
+% endif
 
     # Temporary: run with '--no-auth-mode'
     command: >-
@@ -289,8 +292,11 @@ services:
         # locations strip it before proxying.
         exec haiku-ingester --config /app/haiku.rag.yaml serve --root-path /ingester
 
+% if ingester_port:
+    # Direct control-plane access; every request carries the bearer.
     ports:
       - "${ingester_port}:8765"  # control plane: /health, /jobs, /sources, /dlq, /stats
+% endif
 
     secrets:
       - ingester_db_password
@@ -414,8 +420,10 @@ services:
     environment:
       DOCLING_SERVE_ENABLE_UI: 1
 
+% if docling_port:
     ports:
       - "${docling_port}:5001"
+% endif
 
     restart: unless-stopped
 
@@ -477,8 +485,10 @@ services:
 % endif
       - source: ingester_db_password
       - source: postgres_password
+% if postgres_port:
     ports:
       - "${postgres_port}:5432"
+% endif
 
 % if include_gitea:
   gitea:
@@ -527,9 +537,17 @@ services:
         target: /etc/localtime
         read_only: true
 
+% if gitea_http_port and gitea_ssh_port:
     ports:
-      - "3000:3000"
-      - "2222:2222"
+      - "${gitea_http_port}:3000"
+      - "${gitea_ssh_port}:2222"
+% elif gitea_http_port:
+    ports:
+      - "${gitea_http_port}:3000"
+% elif gitea_ssh_port:
+    ports:
+      - "${gitea_ssh_port}:2222"
+% endif
 
     restart: unless-stopped
 

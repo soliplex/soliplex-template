@@ -17,7 +17,10 @@
       "nginx_https",
       "ingester_port",
       "docling_port",
-      "postgres_port"
+      "postgres_port",
+      "backend_port",
+      "gitea_http_port",
+      "gitea_ssh_port"
     ],
     "models": [
       "chat_model",

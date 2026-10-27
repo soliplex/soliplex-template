@@ -117,7 +117,10 @@ def t_user_doc(text):
       3. escape Markdown H2+ headings, since Mako reads a leading ``##`` as a
          line comment (the H1 ``#`` is safe);
       4. turn the HTML-comment conditional fences (``<!-- if:gitea -->`` /
-         ``<!-- endif -->``) into Mako ``% if include_gitea:`` / ``% endif``.
+         ``<!-- endif -->``) into Mako ``% if include_gitea:`` / ``% endif``;
+         an ``ifp:X`` fence conditions on a bare parameter instead
+         (``<!-- ifp:ingester_port -->`` → ``% if ingester_port:``), for
+         opt-in port params whose presence means the service is published.
     """
     text = re.sub(
         r"(?ms)^[ \t]*<!-- site-only -->[ \t]*\n"
@@ -139,6 +142,7 @@ def t_user_doc(text):
     text = re.sub(
         r"(?m)^[ \t]*<!-- if:(\w+) -->[ \t]*$", r"% if include_\1:", text
     )
+    text = re.sub(r"(?m)^[ \t]*<!-- ifp:(\w+) -->[ \t]*$", r"% if \1:", text)
     text = re.sub(r"(?m)^[ \t]*<!-- endif -->[ \t]*$", r"% endif", text)
     return text
 
@@ -178,9 +182,20 @@ docker compose down -v       # stop AND wipe the postgres volume
 |------------------|-----------|
 | nginx (HTTP)     | ${nginx_http} |
 | nginx (HTTPS)    | ${nginx_https} |
-| haiku-ingester   | ${ingester_port} |
-| docling-serve    | ${docling_port} |
-| postgres         | ${postgres_port} |
+% if ingester_port:
+| haiku-ingester   | ${ingester_port} (opt-in) |
+% endif
+% if docling_port:
+| docling-serve    | ${docling_port} (opt-in) |
+% endif
+% if postgres_port:
+| postgres         | ${postgres_port} (opt-in) |
+% endif
+
+Only nginx is published by default. Every other service binds only the
+compose network; set its
+`*_port` parameter (ingester_port, docling_port, postgres_port,
+backend_port, gitea_http_port, gitea_ssh_port) to publish one.
 
 Open the app at <http://localhost:${nginx_http}/> (or
 <https://${server_name}:${nginx_https}/> for TLS).
@@ -500,6 +515,9 @@ PROBE = dict(
     ingester_port=3,
     docling_port=4,
     postgres_port=5,
+    backend_port=6,
+    gitea_http_port=7,
+    gitea_ssh_port=8,
     server_name="probe",
     backend_auth_flag="",
     tls_subject="probe",

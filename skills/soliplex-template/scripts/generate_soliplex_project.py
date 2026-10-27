@@ -66,12 +66,16 @@ DEFAULTS: dict[str, object] = {
     # practice.
     "project_name": "soliplex-dojo",
     "setup_id": None,  # derived from project_name if unset
-    # Host ports
+    # Host ports. nginx's publish; the rest publish only when set
+    # (None = unpublished).
     "nginx_http": 9000,
     "nginx_https": 9443,
-    "ingester_port": 8765,
-    "docling_port": 5001,
-    "postgres_port": 5432,
+    "ingester_port": None,
+    "docling_port": None,
+    "postgres_port": None,
+    "backend_port": None,
+    "gitea_http_port": None,
+    "gitea_ssh_port": None,
     # Server / TLS
     "server_name": None,  # derived from project_name if unset
     "tls_subject": None,  # derived from server_name if unset
@@ -127,8 +131,10 @@ DEFAULTS: dict[str, object] = {
     "frontend_version": "0.110",
     # Auth: "no-auth" | "auth"
     "auth_mode": "no-auth",
-    # Gitea service (opt-in): include a local Gitea (postgres-backed,
-    # nginx-proxied at /gitea/) plus scripts/init_gitea.py.
+    # Gitea service (opt-in): nginx-proxied at /gitea/ on HTTPS,
+    # provisioned by scripts/init_gitea.py. Web use needs no published
+    # port; gitea_http_port / gitea_ssh_port serve direct HTTP and
+    # git-over-SSH access.
     "include_gitea": False,
     # TUI service (opt-in): include the textual-serve-backed `tui` service
     # (web TUI at /tui/) plus the tui/ build context. Omitted entirely when
@@ -143,14 +149,26 @@ DEFAULTS: dict[str, object] = {
     "docs_dir": "rag/docs",
 }
 
-PORT_KEYS = (
+# nginx's ports always publish; the optional port params publish only
+# when set.
+NGINX_PORT_KEYS = (
     "nginx_http",
     "nginx_https",
+)
+OPTIONAL_PORT_KEYS = (
     "ingester_port",
     "docling_port",
     "postgres_port",
+    "backend_port",
+    "gitea_http_port",
+    "gitea_ssh_port",
 )
-INT_KEYS = PORT_KEYS + ("rag_embed_dim", "chunk_size")
+PORT_KEYS = NGINX_PORT_KEYS + OPTIONAL_PORT_KEYS
+INT_KEYS = (
+    tuple(k for k in NGINX_PORT_KEYS)
+    + tuple(k for k in OPTIONAL_PORT_KEYS)
+    + ("rag_embed_dim", "chunk_size")
+)
 IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 # Import names the generated package must not claim. "soliplex" is the
 # Soliplex distribution's own: the generated package has no __init__.py, so it
@@ -466,12 +484,50 @@ def load_params(args: argparse.Namespace) -> dict[str, object]:
     return params
 
 
+def _print_report(params: dict[str, object], out) -> None:
+    """Print the post-generation summary (ports/models/auth/flags)."""
+
+    def _port(key: str) -> str:
+        """Format an optional port ('unpublished' when unset)."""
+        val = params.get(key)
+        return str(val) if val else "unpublished"
+
+    print(f"\n✓ Scaffolded {params['project_name']} at {out}\n")
+
+    print(
+        "  ports:    "
+        f"nginx {params['nginx_http']}/{params['nginx_https']}, "
+        f"ingester {_port('ingester_port')}, "
+        f"docling {_port('docling_port')}, "
+        f"postgres {_port('postgres_port')}, "
+        f"backend {_port('backend_port')}"
+    )
+    if params.get("include_gitea"):
+        print(
+            f"            gitea {_port('gitea_http_port')}"
+            f"/{_port('gitea_ssh_port')}" + " (HTTP/SSH)"
+        )
+    print(
+        f"  models:   chat={params['chat_model']} "
+        f"title={params['title_model']} "
+        f"rag-qa={params['rag_qa_model']}"
+    )
+    print(f"  ollama:   {params['ollama_base_url']}")
+    print(f"  auth:     {params['auth_mode']}")
+    print(f"  gitea:    {'yes' if params.get('include_gitea') else 'no'}")
+    print(f"  tui:      {'yes' if params.get('include_tui') else 'no'}")
+    print(f"  sandbox:  {'yes' if params.get('enable_sandbox') else 'no'}")
+
+
 def prompt_interactive(params: dict[str, object]) -> dict[str, object]:
     print("Enter values (blank = keep the shown default).\n")
     for key in DEFAULTS:
         current = params.get(key)
-        shown = "" if current is None else current
-        label = f"  {key} [{shown}]: "
+        if key in OPTIONAL_PORT_KEYS and current is None:
+            label = f"  {key} [unpublished -- blank skips]: "
+        else:
+            shown = "" if current is None else current
+            label = f"  {key} [{shown}]: "
         try:
             answer = input(label).strip()
         except EOFError:
@@ -497,12 +553,17 @@ def _as_bool(value: object, key: str) -> bool:
 
 
 def coerce_and_derive(params: dict[str, object]) -> dict[str, object]:
-    # Integers
+    # Integers. Optional port params may be absent (None = unpublished);
+    # a blank string from the interactive interview means the same.
     for key in INT_KEYS:
+        val = params[key]
+        if key in OPTIONAL_PORT_KEYS and val in (None, ""):
+            params[key] = None
+            continue
         try:
-            params[key] = int(params[key])
+            params[key] = int(val)
         except (TypeError, ValueError) as exc:
-            raise NotAnInteger(key, params[key]) from exc
+            raise NotAnInteger(key, val) from exc
 
     # Import name for the synthesized src/ package: lower-case the project
     # name and turn hyphens into underscores. ``project_name`` itself (which
@@ -626,7 +687,9 @@ def validate(params: dict[str, object]) -> None:
 
     seen: dict[int, str] = {}
     for key in PORT_KEYS:
-        port = params[key]
+        port = params.get(key)
+        if key in OPTIONAL_PORT_KEYS and port is None:
+            continue
         if not (1 <= port <= 65535):
             raise PortOutOfRange(key, port)
         if port in seen:
@@ -751,6 +814,11 @@ def render_manifest(params: dict[str, object], meta: dict[str, str]) -> str:
         "[tool.soliplex-template.params]",
     ]
     for key, value in params.items():
+        if key in OPTIONAL_PORT_KEYS and value is None:
+            # Absent optional port = unpublished: record nothing, so a
+            # later update run reading the manifest does not mistake a
+            # literal "None" for a port.
+            continue
         lines.append(f"{key} = {_toml_scalar(_sanitize_param(key, value))}")
     return "\n".join(lines) + "\n"
 
@@ -987,24 +1055,7 @@ def main(argv: list[str]) -> int:
     ran_secrets = maybe_run_secrets(out, args.generate_secrets)
     did_git = maybe_git_init(out, not args.no_git, args.disable_gpg_sign)
 
-    print(f"\n✓ Scaffolded {params['project_name']} at {out}\n")
-    print(
-        "  ports:    "
-        f"nginx {params['nginx_http']}/{params['nginx_https']}, "
-        f"ingester {params['ingester_port']}, "
-        f"docling {params['docling_port']}, "
-        f"postgres {params['postgres_port']}"
-    )
-    print(
-        f"  models:   chat={params['chat_model']} "
-        f"title={params['title_model']} "
-        f"rag-qa={params['rag_qa_model']}"
-    )
-    print(f"  ollama:   {params['ollama_base_url']}")
-    print(f"  auth:     {params['auth_mode']}")
-    print(f"  gitea:    {'yes' if params['include_gitea'] else 'no'}")
-    print(f"  tui:      {'yes' if params['include_tui'] else 'no'}")
-    print(f"  sandbox:  {'yes' if params['enable_sandbox'] else 'no'}")
+    _print_report(params, out)
     git_status = "initial commit created" if did_git else "not initialized"
     print(f"  git:      {git_status}")
     # Build images explicitly before starting so their output stays legible
