@@ -164,9 +164,10 @@ Init runs **only on an empty data volume**; to re-run it,
 
 A local [Gitea](https://about.gitea.com/) instance (rootless image), backed by
 the `soliplex_gitea` Postgres database. nginx reverse-proxies it under `/gitea/`
-on the HTTPS port — open <https://${server_name}:${nginx_https}/gitea/> — and its
-built-in SSH and HTTP are published on host ports `2222` and `3000`. State lives
-in the `gitea_data` / `gitea_config` named volumes. Provision it after first
-boot with `scripts/init_gitea.py` — see
+on the HTTPS port — open <https://${server_name}:${nginx_https}/gitea/>. Its
+built-in SSH and HTTP are unpublished by default; set `gitea_ssh_port`
+(git-over-SSH clones from the host) or `gitea_http_port` (direct web/HTTP) to
+publish. State lives in the `gitea_data` / `gitea_config` named volumes.
+Provision it after first boot with `scripts/init_gitea.py` — see
 [Provision Gitea](../installation.md#provision-gitea).
 <!-- endif -->

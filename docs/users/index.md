@@ -28,13 +28,23 @@ This site documents *this* project. The quickest path to a running stack is the
 
 ## Exposed ports
 
-| Service | Host port |
-|---------|-----------|
+Only nginx is published by default; every other service binds only the compose network — set a
+`*_port` parameter (`ingester_port`, `docling_port`, `postgres_port`,
+`backend_port`, `gitea_http_port`, `gitea_ssh_port`) to publish one.
+
+| Service | Host port (published) |
+|---------|------------------------|
 | nginx (HTTP) | ${nginx_http} |
 | nginx (HTTPS) | ${nginx_https} |
-| haiku-ingester | ${ingester_port} |
-| docling-serve | ${docling_port} |
-| postgres | ${postgres_port} |
+<!-- ifp:ingester_port -->
+| haiku-ingester | ${ingester_port} (opt-in) |
+<!-- endif -->
+<!-- ifp:docling_port -->
+| docling-serve | ${docling_port} (opt-in) |
+<!-- endif -->
+<!-- ifp:postgres_port -->
+| postgres | ${postgres_port} (opt-in) |
+<!-- endif -->
 
 ## Documentation map
 

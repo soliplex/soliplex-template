@@ -230,7 +230,9 @@ def test_cross_file_consistency(generated_project):
     assert params["agui_db"] in init_sh
     assert params["authz_db"] in installation
     assert params["authz_db"] in init_sh
-    # Every chosen host port lands in the compose mapping.
+    # Every chosen host port lands in the compose mapping. (Optional
+    # ports beyond these five are covered by the dedicated opt-in tests
+    # below, which generate their own projects.)
     for key in (
         "nginx_http",
         "nginx_https",
@@ -239,6 +241,104 @@ def test_cross_file_consistency(generated_project):
         "postgres_port",
     ):
         assert f"{params[key]}:" in compose
+
+
+def _generate(tmp_path, params, refresh_embedded_template=None):
+    """Run the generator once for a bespoke params dict; return the out dir."""
+    params_file = tmp_path / "params.json"
+    params_file.write_text(json.dumps(params), encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(_SCRIPT),
+            "--out",
+            str(tmp_path / "project"),
+            "--params",
+            str(params_file),
+            "--no-generate-secrets",
+            "--no-git",
+            "--disable-gpg-sign",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, (
+        f"generator failed (rc={result.returncode}):\n"
+        f"STDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
+    )
+    return tmp_path / "project"
+
+
+def _base_params():
+    return {
+        "project_name": "port-functest",
+        "ollama_base_url": "http://ollama.invalid:11434",
+    }
+
+
+def test_default_ports_publish_nginx_only(tmp_path, refresh_embedded_template):
+    """Absent optional port params mean unpublished: a default
+    generated stack publishes nothing but nginx's own ports."""
+
+    out = _generate(tmp_path, _base_params())
+
+    services = yaml.safe_load(_read(out, "docker-compose.yml"))["services"]
+    # Exactly nginx carries a ports stanza, with exactly its two ports.
+    for name, svc in services.items():
+        if name == "nginx":
+            assert svc["ports"] == ["9000:9000", "9443:9443"]
+        else:
+            assert "ports" not in svc, f"{name} publishes a port"
+
+    agents = _read(out, "AGENTS.md")
+    assert "Every other service binds only the compose network" in agents
+
+
+def test_opt_in_port_param_publishes_service(
+    tmp_path, refresh_embedded_template
+):
+    params = _base_params()
+    params["ingester_port"] = 18765
+    params["postgres_port"] = 25432
+
+    out = _generate(tmp_path, params)
+
+    services = yaml.safe_load(_read(out, "docker-compose.yml"))["services"]
+    assert services["haiku-ingester"]["ports"] == ["18765:8765"]
+    assert services["postgres"]["ports"] == ["25432:5432"]
+    # Untouched opt-ins stay unpublished, nginx keeps its pair.
+    assert services["docling-serve"].get("ports") is None
+    assert services["backend"].get("ports") is None
+    assert services["nginx"]["ports"] == ["9000:9000", "9443:9443"]
+
+
+@pytest.mark.parametrize(
+    "http_port, ssh_port, expected",
+    [
+        (17300, 17322, ['"17300:3000"', '"17322:2222"']),
+        (17300, None, ['"17300:3000"']),
+        (None, None, []),
+    ],
+    ids=["both", "http-only", "none"],
+)
+def test_gitea_ports_opt_in(
+    tmp_path, refresh_embedded_template, http_port, ssh_port, expected
+):
+    params = _base_params()
+    params["include_gitea"] = True
+    if http_port is not None:
+        params["gitea_http_port"] = http_port
+    if ssh_port is not None:
+        params["gitea_ssh_port"] = ssh_port
+
+    out = _generate(tmp_path, params)
+
+    compose = _read(out, "docker-compose.yml")
+    services = yaml.safe_load(compose)["services"]
+    gitea = services["gitea"]
+    published = [p for p in (gitea.get("ports") or [])]
+    assert published == [w[1:-1] for w in expected]
 
 
 def test_frontend_version_pinned_in_nginx_dockerfile(generated_project):

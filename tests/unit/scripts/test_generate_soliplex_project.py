@@ -405,6 +405,75 @@ def test_validate_port_out_of_range():
         gen.validate(params)
 
 
+def test_coerce_optional_ports_absent_stay_none():
+    params = dict(gen.DEFAULTS)
+    params["ollama_base_url"] = "http://x"
+
+    result = gen.coerce_and_derive(params)
+
+    for key in gen.OPTIONAL_PORT_KEYS:
+        assert result[key] is None
+
+
+def test_coerce_optional_port_blank_string_is_none():
+    params = dict(gen.DEFAULTS)
+    params["ollama_base_url"] = "http://x"
+    params["backend_port"] = ""
+
+    result = gen.coerce_and_derive(params)
+
+    assert result["backend_port"] is None
+
+
+def test_coerce_optional_port_string_value_becomes_int():
+    params = dict(gen.DEFAULTS)
+    params["ollama_base_url"] = "http://x"
+    params["backend_port"] = "18010"
+
+    result = gen.coerce_and_derive(params)
+
+    assert result["backend_port"] == 18010
+
+
+def test_validate_ignores_absent_optional_ports():
+    # Every optional port unset: only nginx's (always-published) ports
+    # get validated; validate() passes.
+    gen.validate(_valid_params())
+
+
+def test_validate_optional_port_out_of_range():
+    params = _valid_params()
+    params["backend_port"] = 0
+
+    with pytest.raises(gen.PortOutOfRange):
+        gen.validate(params)
+
+
+def test_validate_optional_port_collision():
+    params = _valid_params()
+    params["backend_port"] = 18010
+    params["docling_port"] = 18010
+
+    with pytest.raises(gen.PortCollision):
+        gen.validate(params)
+
+
+def test_manifest_omits_unpublished_optional_ports():
+    params = dict(gen.DEFAULTS)
+    params["ollama_base_url"] = "http://x"
+    meta = gen.read_skill_metadata(gen.SKILL_DIR)
+
+    manifest = gen.render_manifest(params, meta)
+
+    for key in gen.OPTIONAL_PORT_KEYS:
+        assert key not in manifest
+
+    params["backend_port"] = 18010
+    manifest = gen.render_manifest(params, meta)
+
+    assert "backend_port = 18010" in manifest
+
+
 def test_validate_duplicate_port():
     params = _valid_params()
     params["nginx_http"] = params["nginx_https"]
@@ -1399,3 +1468,34 @@ def test_render_manifest_blank_skill_fields():
     assert 'skill_version = ""' in out
     assert 'skill_source_commit = ""' in out
     assert 'skill_generated = ""' in out
+
+
+def test_print_report_unpublished_and_gitea_ports(capsys):
+    # The gitea arms of the report print only when include_gitea is set;
+    # unset optional ports read 'unpublished'.
+    params = dict(gen.DEFAULTS)
+    params["ollama_base_url"] = "http://o"
+    params["include_gitea"] = True
+    params["gitea_http_port"] = 17300
+    params["gitea_ssh_port"] = 17322
+
+    gen._print_report(params, "out")
+
+    out = capsys.readouterr().out
+    assert "ingester unpublished" in out
+    assert "backend unpublished" in out
+    assert "gitea 17300/17322 (HTTP/SSH)" in out
+
+
+def test_print_report_published_ports(capsys):
+    params = dict(gen.DEFAULTS)
+    params["ollama_base_url"] = "http://o"
+    params["backend_port"] = 18010
+
+    gen._print_report(params, "out")
+
+    out = capsys.readouterr().out
+    assert "backend 18010" in out
+    # include_gitea false: the gitea ports line does not print at all.
+    assert "(HTTP/SSH)" not in out
+    assert "gitea:    no" in out

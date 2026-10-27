@@ -62,15 +62,33 @@ it takes a few minutes. Subsequent runs are fast.
 |------|---------|---------|
 | `${nginx_http}` | nginx | HTTP — the web frontend |
 | `${nginx_https}` | nginx | HTTPS (self-signed cert) |
-| `8000` | backend | Soliplex backend, direct |
-| `${ingester_port}` | haiku-ingester | Control plane + dashboard |
-| `${docling_port}` | docling-serve | Document converter |
-| `${postgres_port}` | postgres | Database |
-<!-- if:gitea -->
-| `3000` | gitea | Gitea HTTP [^1] |
-| `2222` | gitea | Gitea SSH |
 
-[^1]: nginx also serves Gitea at `/gitea/` on the HTTPS port.
+Only nginx is published by default. Every other service binds only the
+compose network; set its `*_port` parameter
+(`ingester_port`, `docling_port`, `postgres_port`, `backend_port`,
+`gitea_http_port`, `gitea_ssh_port`) to publish a host port for it.
+
+The direct-access rows below render only for ports you published:
+
+<!-- ifp:backend_port -->
+| `${backend_port}` | backend | Soliplex backend, direct |
+<!-- endif -->
+<!-- ifp:ingester_port -->
+| `${ingester_port}` | haiku-ingester | Control plane + dashboard (direct: bearer required) |
+<!-- endif -->
+<!-- ifp:docling_port -->
+| `${docling_port}` | docling-serve | Document converter |
+<!-- endif -->
+<!-- ifp:postgres_port -->
+| `${postgres_port}` | postgres | Database |
+<!-- endif -->
+<!-- if:gitea -->
+<!-- ifp:gitea_http_port -->
+| `${gitea_http_port}` | gitea | Gitea HTTP (direct) -- nginx already serves the forge at `/gitea/` |
+<!-- endif -->
+<!-- ifp:gitea_ssh_port -->
+| `${gitea_ssh_port}` | gitea | Gitea SSH (for git-over-SSH clones from the host) |
+<!-- endif -->
 <!-- endif -->
 
 (Container-internal ports are fixed; these are the host-published sides.)
@@ -79,8 +97,10 @@ it takes a few minutes. Subsequent runs are fast.
 
 ```bash
 docker compose ps
+<!-- ifp:ingester_port -->
 curl -fsS -H "Authorization: Bearer $(cat .secrets/ingester_bearer.gen)" \
   http://localhost:${ingester_port}/ingester/health
+<!-- endif -->
 docker compose logs -f backend
 ```
 

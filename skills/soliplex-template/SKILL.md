@@ -69,8 +69,13 @@ from the user and invoke it.
      `localhost` / `127.0.0.1`, see *A local Ollama on the Docker host* below
      before generating.
    - **ports** — offer "use defaults" vs "customize"; `ports=default`
-     pre-answers this. Customizing collects `nginx_http`, `nginx_https`,
-     `ingester_port`, `docling_port`, `postgres_port`.
+     pre-answers this. nginx's host ports (`nginx_http`, `nginx_https`)
+     are always published; **every other service's external port is
+     opt-in** (unset = the service binds only the compose network). Customizing
+     collects the nginx ports plus whichever opt-ins the user wants:
+     `ingester_port`, `docling_port`, `postgres_port`, `backend_port`,
+     and, when `include_gitea`, `gitea_http_port`/`gitea_ssh_port`.
+     Unset = unpublished.
    - **auth** — `auth_mode`: `no-auth` (default) or `auth`.
    - **models** — offer "use defaults" vs "customize"; `models=default`
      pre-answers this. Whichever way the models are chosen, **probe them

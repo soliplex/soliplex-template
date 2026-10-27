@@ -10,10 +10,13 @@ icon: lucide/shield
     project ships its own copy of this page without this note.
 <!-- endsite-only -->
 
-`haiku-ingester` binds its control plane on `0.0.0.0:8765` so the host port
-mapping works. With a non-loopback bind, haiku.rag **requires a bearer token**
-(`ingester.api.auth_token`); otherwise anyone who can reach the port could
-cancel jobs, retry from the dead-letter queue, and trigger source refreshes.
+`haiku-ingester` binds its control plane on `0.0.0.0:8765`, reachable
+only from the stack network: nginx is its public face at `/ingester/`,
+and the control plane's host port is unpublished unless
+`ingester_port` was set at generation. With a non-loopback bind,
+haiku.rag **requires a bearer token** (`ingester.api.auth_token`);
+otherwise anyone who can reach the port could cancel jobs, retry from
+the dead-letter queue, and trigger source refreshes.
 
 ## How the token gets in
 
@@ -40,6 +43,7 @@ injected at the proxy). In an auth-mode stack open
 not signed in → sign-in page; signed in as an admin → the dashboard; signed
 in as a non-admin → the stack's "access denied" page.
 
+<!-- ifp:ingester_port -->
 **Direct** (the stack's `${ingester_port}` mapping) — for scripts and
 debugging; pass the token yourself:
 
@@ -47,6 +51,8 @@ debugging; pass the token yourself:
 curl -fsS -H "Authorization: Bearer $(cat .secrets/ingester_bearer.gen)" \
   http://localhost:${ingester_port}/stats
 ```
+
+<!-- endif -->
 
 ## Choosing a token
 

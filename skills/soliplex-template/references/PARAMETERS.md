@@ -52,9 +52,12 @@ files carrying `ingester_token` are rejected with a pointer at the file.
 | `setup_id` | `<project_name>-conf` | derived if unset | `installation.yaml` `id:` |
 | `nginx_http` | `9000` | int 1–65535, unique among host ports | compose host port, `README.md` |
 | `nginx_https` | `9443` | int, unique | compose host port, TUI public-url, Gitea `ROOT_URL` port, `README.md` |
-| `ingester_port` | `8765` | int, unique | compose host port |
-| `docling_port` | `5001` | int, unique | compose host port |
-| `postgres_port` | `5432` | int, unique | compose host port |
+| `ingester_port` | *(unpublished)* | opt-in: set an int host port 1–65535 (unique) to publish the control plane directly; absent = compose-network only | compose host port |
+| `docling_port` | *(unpublished)* | opt-in, same rule | compose host port |
+| `postgres_port` | *(unpublished)* | opt-in, same rule | compose host port |
+| `backend_port` | *(unpublished)* | opt-in, same rule (the backend has no default publish) | compose host port |
+| `gitea_http_port` | *(unpublished)* | opt-in, same rule (include_gitea only; web use needs none — nginx serves `/gitea/`) | compose host port |
+| `gitea_ssh_port` | *(unpublished)* | opt-in, same rule (include_gitea only; set for git-over-SSH clones from the host) | compose host port |
 | `server_name` | `<project_name>.localhost` | derived if unset | `nginx.conf` `server_name`, TUI public-url, Gitea `ROOT_URL` host, derived `tls_subject` |
 | `tls_subject` | `/C=US/ST=State/L=City/O=Soliplex/CN=<server_name>` | derived if unset | `nginx/Dockerfile` self-signed cert subject |
 | `ollama_base_url` | *(required)* | non-empty | `.env` |
