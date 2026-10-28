@@ -37,6 +37,21 @@ repos:
         language: system
         pass_filenames: false
         files: ^skills/soliplex-template/
+      - id: lint-version-pairings
+        name: lint version pairings vs generator defaults
+        entry: uv run python scripts/lint_version_pairings.py --verbose
+        language: system
+        pass_filenames: false
+        # The generator's default pins and the published tables agree.
+        files: ^skills/soliplex-template/scripts/generate_soliplex_project\.py$
+          |^skills/soliplex-template/references/version_pairings\.toml$
+          |^docs/getting-started/includes/haiku-rag-pairings\.md$
+      - id: lint-version-pairings-self-test
+        name: lint version pairings (self-test)
+        entry: uv run python scripts/lint_version_pairings.py --self-test
+        language: system
+        pass_filenames: false
+        files: ^scripts/lint_version_pairings\.py$
 
   - repo: https://github.com/jackdewinter/pymarkdown
     rev: v0.9.36
