@@ -26,6 +26,7 @@ import importlib.util
 import json
 import os
 import pathlib
+import posixpath
 import shutil
 import stat
 import subprocess
@@ -635,6 +636,7 @@ def test_runtime_data_stays_gitignored(generated_project):
         "rag/db/haiku.rag.lancedb/chunks.lance",
         "uploads/rooms/secret.pdf",
         "backend/sandbox/workdirs/run1/scratch.py",
+        "src/rooms-provisioned/alice:notes/room_config.yaml",
     ]
 
     ignored = subprocess.run(
@@ -645,6 +647,49 @@ def test_runtime_data_stays_gitignored(generated_project):
     ).stdout.split()
 
     assert set(ignored) == set(data_paths)
+
+
+def test_provisioned_rooms_parent_wiring(generated_project):
+    # The provisioned-rooms parent lives under 'src/', which the backend
+    # mounts read-only at '/app/src'; it lies outside the backend's
+    # config watch ('/environment' and the '--reload-dirs' entries).
+    out, _params = generated_project
+    services = yaml.safe_load(_read(out, "docker-compose.yml"))["services"]
+    installation = yaml.safe_load(
+        _read(out, "backend/environment/installation.yaml")
+    )
+
+    entry = "/app/src/rooms-provisioned"
+    backend_binds = {
+        volume["target"]: volume
+        for volume in services["backend"]["volumes"]
+        if volume["type"] == "bind"
+    }
+    watched = [
+        token.removeprefix("--reload-dirs=")
+        for token in services["backend"]["command"].split()
+        if token.startswith("--reload-dirs=")
+    ]
+
+    assert entry in installation["room_paths"]
+    assert backend_binds["/app/src"]["source"] == "./src"
+    assert backend_binds["/app/src"]["read_only"] is True
+    assert "./src:/app/src" in services["soliplex-dev"]["volumes"]
+    assert watched
+    for root in ["/environment", *watched]:
+        assert not posixpath.normpath(entry).startswith(root.rstrip("/") + "/")
+
+
+@pytest.mark.parametrize("service", ["haiku-ingester", "haiku-rag"])
+def test_room_uploads_mounted_read_only_for_ingestion(
+    generated_project, service
+):
+    out, _params = generated_project
+    services = yaml.safe_load(_read(out, "docker-compose.yml"))["services"]
+
+    volumes = services[service]["volumes"]
+
+    assert "./backend/uploads/rooms:/uploads/rooms:ro" in volumes
 
 
 def test_env_file_written(generated_project):

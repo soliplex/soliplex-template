@@ -32,7 +32,10 @@ same as being unconfigured.
     - `room_paths` in `installation.yaml` lists the directories rooms load
       from. It points at `./rooms`, so every `rooms/<name>/room_config.yaml`
       is loaded; to leave a room out, remove its directory or replace `./rooms`
-      with an explicit list.
+      with an explicit list. It also lists `/app/src/rooms-provisioned`
+      (`src/rooms-provisioned/` on the host): rooms created on request by
+      the provisioner, a git clone of its own that the provisioner alone
+      writes.
     - A filesystem skill must be both present under a `filesystem_skills_paths`
       directory **and** declared in `skill_configs` to be enabled.
 

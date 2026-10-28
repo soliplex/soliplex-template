@@ -372,9 +372,15 @@ skill_configs:
 # To exclude a room -- e.g. one that needs extra secrets (an external model
 # provider, or an MCP registry such as SmitheryAI) -- list the wanted rooms
 # explicitly here instead of './rooms'.
+#
+# '/app/src/rooms-provisioned' holds rooms created on request by the
+# provisioner: a git clone under the stack's 'src/', which it alone writes.
+# It lies outside the config watch; the room-configs reload endpoint picks
+# up new rooms.
 #==========================================================================
 room_paths:
   - "./rooms"
+  - "/app/src/rooms-provisioned"
 
 #==========================================================================
 # Completions configuration

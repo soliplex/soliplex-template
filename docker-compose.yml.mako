@@ -306,6 +306,8 @@ services:
       - ./rag/db:/data
       - ./${docs_dir}:/docs
       - ./haiku.rag/haiku.rag.yaml:/app/haiku.rag.yaml:ro
+      # Room uploads, the corpus of each room's own database.
+      - ./backend/uploads/rooms:/uploads/rooms:ro
 
     environment: &haiku_rag_environment
       OLLAMA_BASE_URL: <%text>${OLLAMA_BASE_URL}</%text>
