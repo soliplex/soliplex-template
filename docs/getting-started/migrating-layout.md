@@ -36,7 +36,7 @@ third-party dependency) into the stack without ignore rules per clone.
 !!! note "Not the only upgrade"
     This page covers the `src/` layout alone. For the dependency and image
     changes in later template releases, see
-    [Upgrading an existing stack](upgrading-stack.md).
+    [Upgrading an existing stack](../upgrades/index.md).
 
 ## Use the script
 

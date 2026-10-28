@@ -9,7 +9,7 @@ cause it to fail outright for some documents.  At such times,
 the `haiku-rag-slim` version may pin the `docling-*` packages to
 versions known to work.
 
-The process outlined in `../docs/getting-started/upgrading-stack`
+The process outlined in `../docs/upgrades/index`
 for keeping `haiku-rag-slim` in sync with `soliplex` doesn't really cover
 this problem directly.
 

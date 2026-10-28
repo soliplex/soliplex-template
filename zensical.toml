@@ -30,7 +30,6 @@ nav = [
     { "Getting started" = [
         "getting-started/generator.md",
         "getting-started/migrating-layout.md",
-        "getting-started/upgrading-stack.md",
     ] },
     { "Tutorials" = [
         "getting-started/tutorials/01-first-steps.md",
@@ -56,6 +55,13 @@ nav = [
         "users/operations/migrations.md",
         "users/operations/ollama.md",
         "users/custom-package.md",
+    ] },
+    { "Upgrading a generated stack" = [
+        "upgrades/index.md",
+        "upgrades/move-to-soliplex-0.85.md",
+        "upgrades/build-on-soliplex-release-images.md",
+        "upgrades/move-to-soliplex-0.86.1.md",
+        "upgrades/move-to-soliplex-0.87.md",
     ] },
     { "Contributing" = [
         "contributing/index.md",
