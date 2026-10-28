@@ -8,9 +8,9 @@ stack being upgraded names the release that generated it in its own
 `[tool.soliplex-template]` manifest — use that one when climbing *from* an
 older shape.
 
-    ```bash
-    uv run <skill>/scripts/skill_versions.py downgrade template-skill-2026.10.26-b57f7ba
-    ```
+```bash
+uv run <skill>/scripts/skill_versions.py downgrade template-skill-2026.10.26-b57f7ba
+```
 
 1. Stop the stack with `docker compose down`, and back up the Postgres
    databases and `rag/db/` before upgrading.
