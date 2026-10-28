@@ -31,6 +31,14 @@ with. (`skill_version` may be empty.)
     and diff the two; see
     [Checking the whole stack against a reference](migrating-layout.md#checking-the-whole-stack-against-a-reference).
 
+!!! note "Which `haiku.rag` pairs with which soliplex?"
+    The two pins are not a free pair: the ingester writes the LanceDB the
+    backend reads, so its `haiku.rag-slim` release must stay inside the
+    range the pinned soliplex release declares — including for
+    `--params` overrides. Every rung below names its pair; the full
+    generated table sits in the [appendix](#pairings-table) at the end
+    of this page.
+
 ## How an upgrade runs
 
 Every upgrade on this page should follow this phased process:
@@ -866,3 +874,28 @@ older shape.
 
 7. Start the stack with `docker compose up -d` and inspect the backend
    logs.  Then [check it](#check-it), and commit.
+
+??? note "Appendix: the generated `soliplex` ↔ `haiku.rag-slim` pairing table"
+
+    <a id="pairings-table"></a>
+
+    The stack couples two pins — the soliplex release and the ingester's
+    `haiku.rag-slim` tag — and they are not a free pair: the ingester
+    writes the LanceDB that the backend reads, so the `haiku.rag-slim`
+    release must stay inside the range the pinned soliplex release
+    declares. The generated table below (extracted from the soliplex
+    repo's own release tags) lists that pin for every release; the rungs
+    pick their pairings from it.
+
+    --8<-- "docs/getting-started/includes/haiku-rag-pairings.md"
+
+    A two-part tag name (e.g. `v0.85`) is the *first* release of its
+    series: later patches tag their own commits and may raise the pin
+    (`0.85` pins `>= 0.95.0, < 0.96`, while `0.85.4` pins
+    `>= 0.97.0, < 0.98`). For the moving image tag
+    (`ghcr.io/soliplex/soliplex-postgres:0.85`), the effective pairing
+    is the newest patch's row.  An out-of-range pair still generates
+    cleanly, and only breaks at run time — so pick every
+    `haiku_rag_version` from this table, not by release number, and let
+    the post-upgrade audit (the **Check it** phase, above) remain the
+    net.

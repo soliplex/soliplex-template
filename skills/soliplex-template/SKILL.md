@@ -465,6 +465,12 @@ nothing to migrate. Do not guess which case a bump is — ask, as below.
 Raising the tag means both `docker-compose.yml` and `haiku.rag/Dockerfile`,
 which must agree.
 
+The pairing is not a free choice: the `haiku.rag-slim` release must stay
+inside the range the target `soliplex` release declares (the ingester
+writes the LanceDB the backend reads). The extracted per-release pins live
+in `references/version_pairings.toml` in this skill -- check the target
+release's row before picking the new tag.
+
 The stack ships `scripts/migrate_rag_dbs.py` for this; it runs the pinned
 image's own `haiku-rag` CLI over every `*.lancedb` under `rag/db/`. Report
 first (read-only, safe while the stack is up, non-zero exit if anything is

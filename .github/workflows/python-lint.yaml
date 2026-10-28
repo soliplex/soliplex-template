@@ -12,8 +12,9 @@ on:
       - 'pyproject.toml'
       - 'uv.lock'
       - 'scripts/**'
-      - 'skill/scripts/**'
+      - 'skills/soliplex-template/**'
       - 'tests/**'
+      - 'docs/getting-started/includes/**'
       - '.github/workflows/python-lint.yaml'
   pull_request:
     branches:
@@ -22,8 +23,9 @@ on:
       - 'pyproject.toml'
       - 'uv.lock'
       - 'scripts/**'
-      - 'skill/scripts/**'
+      - 'skills/soliplex-template/**'
       - 'tests/**'
+      - 'docs/getting-started/includes/**'
       - '.github/workflows/python-lint.yaml'
   workflow_dispatch:
 
@@ -55,6 +57,17 @@ jobs:
           set -o pipefail
           uv run ruff check 2>&1 | tee ruff-check.log
 
+      # The generator's default version pins and the published pairing
+      # tables agree (#229). The self-test runs first, so a check gone
+      # blind fails loudly rather than passing by finding nothing.
+      - name: Check version pairings vs generator defaults
+        run: |
+          set -o pipefail
+          uv run python scripts/lint_version_pairings.py --self-test 2>&1 \
+            | tee lint-version-pairings.log
+          uv run python scripts/lint_version_pairings.py --verbose 2>&1 \
+            | tee -a lint-version-pairings.log
+
       # Slack notification lives in 'ci-failure-notify.yaml', which only
       # links to this run (see #162), so record what failed here.
       - name: Summarize failures
@@ -63,7 +76,8 @@ jobs:
           {
             echo "## Linting failed"
             echo
-            for log in ruff-format.log ruff-check.log; do
+            for log in ruff-format.log ruff-check.log \
+                       lint-version-pairings.log; do
               [ -f "$log" ] || continue
               echo "<details><summary>$log</summary>"
               echo
