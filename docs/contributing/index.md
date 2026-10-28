@@ -129,3 +129,7 @@ simply live outside `docs/users/` (under `docs/getting-started/` and
 As with the stack files, the generated `.mako` are not committed — just edit
 the `docs/users/` `.md`; the build and the functional tests regenerate the
 template from it.
+
+For the working guide — the daily commands, the repository layout, and
+the release/backport procedure — see
+[Development guide](development.md).
