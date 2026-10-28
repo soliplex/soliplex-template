@@ -32,9 +32,10 @@ uv run scripts/generate_secrets.py   # populates .secrets/*.gen (gitignored)
 ```
 
 !!! warning "Don't hand-edit `.secrets/*.gen`"
-    Re-run the script instead. Deleting these files after the Postgres volume
-    already exists breaks the backend's auth to the database. See
-    [Secrets](operations/secrets.md).
+    The script only fills missing files by default; it never rewrites an
+    existing one. Deleting one after the Postgres volume already exists
+    breaks the backend's auth to the database -- rotate the credential with
+    `--rotate` instead. See [Secrets](operations/secrets.md).
 
 The generated `.env` records `PUID` / `PGID` — the uid/gid the containers run
 as and that owns these secret files (defaulted to the operator who scaffolded

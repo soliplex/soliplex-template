@@ -57,6 +57,8 @@ curl -fsS -H "Authorization: Bearer $(cat .secrets/ingester_bearer.gen)" \
 ## Choosing a token
 
 Tokens are generated as 32 alphanumeric characters by
-`scripts/generate_secrets.py` and re-generated on each run — rotation is
-regenerating the files and restarting `haiku-ingester` and `nginx` (the
-token is rendered into nginx's running config).
+`scripts/generate_secrets.py` when `ingester_bearer.gen` is missing -- the
+script never rewrites an existing file. Rotate the token with
+`uv run scripts/generate_secrets.py --rotate ingester_bearer`, then
+restart `haiku-ingester` and `nginx` (the token is rendered into nginx's
+running config).
