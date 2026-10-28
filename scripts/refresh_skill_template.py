@@ -160,8 +160,21 @@ haiku-ingester + Postgres, plus docling-serve and a TUI), scaffolded from the
 
 <%text>## First-time setup</%text>
 
+The stack's credentials live in `.secrets/*.gen`, and its host-specific
+environment variables in `.env`.  All these files get generated when the
+stack is first created by the `soliplex-template` skill.
+
+However, these files contain sensitive or deployment-specific information,
+and are therefore deliberately gitignored. That leaves a **fresh clone**
+of this project (a checkout made later, run as another stack)
+without them.  To recreate them before the first `up`:
+
 ```bash
-uv run scripts/generate_secrets.py   # populates .secrets/*.gen (gitignored)
+uv run scripts/generate_secrets.py   # fresh random .secrets/*.gen files
+uv run scripts/generate_env.py       # .env from the committed generation
+                                     # manifest in pyproject.toml; values
+                                     # are commented out: uncomment what
+                                     # applies
 ```
 
 Set `OLLAMA_BASE_URL` in `.env` if it is not already correct.

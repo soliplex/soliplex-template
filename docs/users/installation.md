@@ -41,6 +41,23 @@ as and that owns these secret files (defaulted to the operator who scaffolded
 the project). If you run services as a different account, set them explicitly
 and rebuild; see [Secrets](operations/secrets.md).
 
+!!! note "Just clone this stack from another one?"
+
+    `.env` and the `.secrets/*.gen` files are gitignored, so a fresh
+    clone of this project (a checkout made later, run as another stack)
+    starts without both.
+
+    Recreate them with the generator pair as described in the project
+    README's "First-time setup":
+
+    ```
+    uv run scripts/generate_secrets.py
+    ```
+    then
+    ```
+    uv run scripts/generate_env.py
+    ```
+
 ## 2. Confirm `OLLAMA_BASE_URL`
 
 The generator wrote `.env` with the `OLLAMA_BASE_URL` you supplied. Confirm it
