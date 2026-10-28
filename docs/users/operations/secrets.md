@@ -24,10 +24,37 @@ initial commit never captures secrets.
 uv run scripts/generate_secrets.py
 ```
 
+By default the script only generates secrets whose `.gen` files are missing;
+existing files are left untouched, so it is safe to re-run at any time -- e.g.
+after adopting a stack feature that declares new secrets.
+
 !!! warning "Don't hand-edit `.secrets/*.gen`"
-    Re-run the script instead. Destroying these files after the Postgres volume
-    already exists breaks the backend's auth to the database — you must also
-    `docker compose down -v` and re-init.
+    Deleting one after the Postgres volume already exists breaks the backend's
+    auth to the database -- rotate the credential with `--rotate` instead, or
+    `docker compose down -v` and re-init (see the caveat below).
+
+### Rotating secrets
+
+Pass secret names (the `.gen` suffix is optional) to replace specific
+credentials:
+
+```bash
+uv run scripts/generate_secrets.py --rotate ingester_bearer
+```
+
+`--rotate-all` replaces every declared secret. Bare `--rotate` (no names)
+replaces nothing: it prints a preview of what `--rotate-all` would do.
+
+Rotation of a secret that feeds a Postgres role password needs one extra
+step, and the script prints it after regenerating: role passwords are read
+only at initdb, so once the `postgres_data` volume exists its roles still
+hold the old passwords. The script prints a ready-to-paste `ALTER ROLE`
+command per affected role (the role names are joined from the compose
+wiring and the `postgres/config` init scripts), or `docker compose down -v`
+as the wipe-everything alternative (see the caveat below).
+
+`--dry-run` turns any invocation into a preview: it prints what the run
+would write and touches nothing.
 
 ## File ownership (`PUID` / `PGID`)
 
