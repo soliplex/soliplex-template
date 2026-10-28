@@ -76,9 +76,9 @@ starts with the previous one unfinished.
    release that generated it, the one the rung moving *from* it
    needs.
 
-   For instance, upgrade rung #1 above specifies the
-   `template-skill-2026.10.10-37f7a2d` skill release.  If that is your
-   rung, ask your agent, e.g.:
+    For instance, upgrade rung #1 above specifies the
+    `template-skill-2026.10.10-37f7a2d` skill release.  If that is your
+    rung, ask your agent, e.g.:
 
     ```text
     Set the installed soliplex-template skill to the `template-skill-2026.10.10-37f7a2d` release.

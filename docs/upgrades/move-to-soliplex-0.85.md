@@ -5,9 +5,9 @@ Part of [Upgrading an existing stack](index.md).
 **Walk this rung with the `template-skill-2026.10.10-37f7a2d` skill release** — its generator produces the rung's end state (Soliplex 0.85 built from PyPI; `uv add`-shaped).  The stack being upgraded names the release that generated it in its own `[tool.soliplex-template]` manifest — use that
   one when climbing *from* an older shape.
 
-    ```bash
-    uv run <skill>/scripts/skill_versions.py downgrade template-skill-2026.10.10-37f7a2d
-    ```
+```bash
+uv run <skill>/scripts/skill_versions.py downgrade template-skill-2026.10.10-37f7a2d
+```
 
 This section keeps the stack's PyPI-built `backend/Dockerfile`; only versions
 and configuration shapes change. Skip the steps that do not apply.

@@ -5,9 +5,9 @@ Part of [Upgrading an existing stack](index.md).
 **Walk this rung with the `template-skill-2026.10.20-a2c13ae` skill release** — its generator produces the rung's end state (the 0.85 *release-image* shape).  The stack being upgraded names the release that generated it in its own `[tool.soliplex-template]` manifest — use that
   one when climbing *from* an older shape.
 
-    ```bash
-    uv run <skill>/scripts/skill_versions.py downgrade template-skill-2026.10.20-a2c13ae
-    ```
+```bash
+uv run <skill>/scripts/skill_versions.py downgrade template-skill-2026.10.20-a2c13ae
+```
 
 From here the backend no longer resolves soliplex from PyPI: it builds on the
 published `ghcr.io/soliplex/soliplex-postgres` image, which already holds
