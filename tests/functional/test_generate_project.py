@@ -189,6 +189,7 @@ def test_key_artifacts_exist(generated_project):
         "backend/environment/installation.yaml",
         "nginx/nginx.conf",
         "postgres/config/init.sh",
+        "scripts/generate_env.py",
         "scripts/generate_secrets.py",
     ]
 
