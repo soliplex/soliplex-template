@@ -140,7 +140,7 @@ from a squash-merged PR against `main`.
 
 4. (optional, for changes which introduce significant changes to the
    structure / configuration of generated stacks) Add the release's rung to
-   [Upgrading an existing stack](../getting-started/upgrading-stack.md):
+   [Upgrading an existing stack](../upgrades/index.md):
    one table row and a section describing the by-hand steps for stacks
    at the previous rung, naming the skill release this tag introduces.
 

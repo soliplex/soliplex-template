@@ -4,7 +4,7 @@
 by its rooms, all depend on a specific, pinned range of `haiku-rag-slim`
 versions. Keeping the version of the image specified in `docker-compose.yml`
 in sync with that range should follow a documented process (see
-`../docs/getting-started/upgrading-stack.md`).
+`../docs/upgrades/index.md`).
 
 ## Using the stock ingester image
 

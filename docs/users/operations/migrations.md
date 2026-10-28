@@ -13,7 +13,7 @@ icon: lucide/database-backup
 <!-- site-only -->
 !!! tip "Upgrading across template releases"
     These migrations are one step of bringing an older stack up to date;
-    [Upgrading an existing stack](../../getting-started/upgrading-stack.md)
+    [Upgrading an existing stack](../../upgrades/index.md)
     lists the by-hand changes to its files that go with them.
 <!-- endsite-only -->
 
