@@ -300,7 +300,10 @@ def test_provision_room_with_gitea_without_concierge(
 
 
 def test_provision_room_refused_admin_access(settings, monkeypatch):
-    _Recorder(monkeypatch, fail={"backend": provision.AdminAccessDenied(403)})
+    _Recorder(
+        monkeypatch,
+        fail={"backend": provision.AdminAccessDenied(403, "provisioner")},
+    )
 
     with pytest.raises(provision.AdminAccessDenied):
         _provision(settings)
@@ -489,7 +492,6 @@ def test_settings_rejects_non_identifier_owner_claim(claim):
 def test_settings_repr_hides_tokens():
     settings = provision.Settings(
         ingester_token="ingester-secret",
-        admin_token="admin-secret",
         gitea=provision.GiteaSettings(host="h", token="gitea-secret"),
     )
 
@@ -599,11 +601,46 @@ def _http_error(code, body=""):
     )
 
 
-@pytest.mark.parametrize("admin_token", [None, "jwt"])
-def test_check_admin_access(monkeypatch, admin_token):
+def _fake_mint(monkeypatch, *, token="minted-token", error=None):
+    """Replaces ``_cli``: minting answers ``token``, or raises ``error``."""
+    calls = []
+
+    def cli(settings, *command, stdin=None):
+        calls.append(command)
+        if error is not None:
+            raise error
+        return f"{token}\n"
+
+    monkeypatch.setattr(provision, "_cli", cli)
+    return calls
+
+
+def test_mint_service_token(monkeypatch):
+    calls = _fake_mint(monkeypatch)
+    settings = provision.Settings(ingester_token="t", service_subject="prov")
+
+    result = provision.mint_service_token(settings)
+
+    assert result == "minted-token"
+    assert calls == [
+        (
+            "service-token",
+            "mint",
+            "/environment",
+            "--claims",
+            '{"sub": "prov"}',
+            "--expires-in",
+            provision.SERVICE_TOKEN_LIFETIME,
+            "--quiet",
+        )
+    ]
+
+
+def test_check_admin_access(monkeypatch):
+    _fake_mint(monkeypatch)
     fake = _FakeUrlopen(response={"id": "test"})
     monkeypatch.setattr(provision.urllib.request, "urlopen", fake)
-    settings = provision.Settings(ingester_token="t", admin_token=admin_token)
+    settings = provision.Settings(ingester_token="t")
 
     result = provision.check_admin_access(settings)
 
@@ -611,11 +648,25 @@ def test_check_admin_access(monkeypatch, admin_token):
     [request] = fake.requests
     assert request.full_url == "http://backend:8000/api/v1/installation"
     assert request.get_method() == "GET"
-    expected = None if admin_token is None else f"Bearer {admin_token}"
-    assert request.get_header("Authorization") == expected
+    assert request.get_header("Authorization") == "Bearer minted-token"
+
+
+def test_check_admin_access_without_a_minted_token(monkeypatch):
+    # e.g. a no-auth backend, on a stack whose signing secret is random
+    _fake_mint(monkeypatch, error=provision.CliFailed(("mint",), "no key"))
+    fake = _FakeUrlopen(response={"id": "test"})
+    monkeypatch.setattr(provision.urllib.request, "urlopen", fake)
+    settings = provision.Settings(ingester_token="t")
+
+    result = provision.check_admin_access(settings)
+
+    assert result is None
+    [request] = fake.requests
+    assert request.get_header("Authorization") is None
 
 
 def test_reload_backend_rooms(monkeypatch):
+    _fake_mint(monkeypatch)
     delta = {"added": [ROOM], "removed": [], "changed": []}
     fake = _FakeUrlopen(response=delta)
     monkeypatch.setattr(provision.urllib.request, "urlopen", fake)
@@ -631,18 +682,28 @@ def test_reload_backend_rooms(monkeypatch):
     assert request.get_method() == "POST"
 
 
-@pytest.mark.parametrize("code", [401, 403])
-def test_backend_denied(monkeypatch, code):
+@pytest.mark.parametrize(
+    "code, mint_error",
+    [(401, None), (403, None), (401, "no stable secret")],
+)
+def test_backend_denied(monkeypatch, code, mint_error):
+    error = None if mint_error is None else provision.CliFailed((), mint_error)
+    _fake_mint(monkeypatch, error=error)
     fake = _FakeUrlopen(error=_http_error(code))
     monkeypatch.setattr(provision.urllib.request, "urlopen", fake)
-    settings = provision.Settings(ingester_token="t")
+    settings = provision.Settings(ingester_token="t", service_subject="prov")
 
     with pytest.raises(provision.ProvisionError) as caught:
         provision.check_admin_access(settings)
 
     assert type(caught.value) is provision.AdminAccessDenied
     assert caught.value.code == code
-    assert "SOLIPLEX_ADMIN_TOKEN" in str(caught.value)
+    assert caught.value.subject == "prov"
+    assert caught.value.mint_error == mint_error
+    assert """'$[?$.sub == "prov"]'""" in str(caught.value)
+    assert ("minting its service token failed" in str(caught.value)) is (
+        mint_error is not None
+    )
 
 
 @pytest.mark.parametrize(
@@ -656,6 +717,7 @@ def test_backend_denied(monkeypatch, code):
     ],
 )
 def test_backend_request_failed(monkeypatch, error, detail):
+    _fake_mint(monkeypatch)
     fake = _FakeUrlopen(error=error)
     monkeypatch.setattr(provision.urllib.request, "urlopen", fake)
     settings = provision.Settings(ingester_token="t")
@@ -708,6 +770,18 @@ def test_cli_failed(fake_cli, monkeypatch):
     assert caught.value.output == "audit rooms"
 
 
+def test_cli_missing(tmp_path):
+    settings = provision.Settings(
+        ingester_token="t", soliplex_cli=str(tmp_path / "no-such-cli")
+    )
+
+    with pytest.raises(provision.ProvisionError) as caught:
+        provision._cli(settings, "audit", "rooms")
+
+    assert type(caught.value) is provision.CliFailed
+    assert "No such file or directory" in caught.value.output
+
+
 def test_provision_room_issue_filing_failed(gitea_settings, monkeypatch):
     recorder = _Recorder(
         monkeypatch, fail={"create_issue": RuntimeError("HTTP 403")}
@@ -743,7 +817,7 @@ def test_settings_from_env_defaults(token_file):
 def test_settings_from_env(token_file):
     environ = {
         "PROVISIONER_INGESTER_TOKEN_FILE": str(token_file),
-        "SOLIPLEX_ADMIN_TOKEN": "jwt",
+        "PROVISIONER_SERVICE_SUBJECT": "ops-provisioner",
         "PROVISIONER_OWNER_CLAIM": "email",
         "PROVISIONER_FLATTEN_OWNER": "True",
         "GITEA_HOST": "https://gitea.example.com",
@@ -757,7 +831,7 @@ def test_settings_from_env(token_file):
 
     assert result == provision.Settings(
         ingester_token="bearer",
-        admin_token="jwt",
+        service_subject="ops-provisioner",
         owner_claim="email",
         flatten_owner=True,
         gitea=provision.GiteaSettings(
@@ -934,10 +1008,10 @@ def test_main_claims_not_an_object(capsys):
 
 def test_main_uses_the_process_environment(token_file, monkeypatch):
     monkeypatch.setenv("PROVISIONER_INGESTER_TOKEN_FILE", str(token_file))
-    monkeypatch.setenv("SOLIPLEX_ADMIN_TOKEN", "from-env")
+    monkeypatch.setenv("PROVISIONER_SERVICE_SUBJECT", "from-env")
     calls = _fake_provision(monkeypatch, error=provision.RoomExists(ROOM))
 
     provision.main(["--claims", json.dumps(CLAIMS), "--name", "Q3 Plans"])
 
     [(_claims, kwargs)] = calls
-    assert kwargs["settings"].admin_token == "from-env"
+    assert kwargs["settings"].service_subject == "from-env"

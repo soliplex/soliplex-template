@@ -627,10 +627,13 @@ first use), which reloads the ingester and the backend. The stack's
        --display-name "Alice Example" --name "Q3 Plans"
    ```
 
-   With OIDC on, the backend admits the provisioner only with an admin
-   user's token in `SOLIPLEX_ADMIN_TOKEN` (in the stack's `.env`, or in the
-   environment of this command); the provisioner checks it before changing
-   anything.
+   The provisioner authenticates with service tokens it mints for itself
+   (subject `soliplex-provisioner`). With OIDC on, the backend admits them
+   only through an `admin_users` entry; the provisioner checks before
+   changing anything, and names the entry it needs. Adding it is the
+   operator's one-time decision (the stack's
+   `docs/operations/room-provisioning.md` gives the command): ask the user
+   rather than adding it yourself.
 
 3. **Read the outcome**: exit `0` means the room is live; `1` means the room
    is committed but a later step failed — relay each printed "still to do"

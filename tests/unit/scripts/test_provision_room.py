@@ -96,7 +96,7 @@ def test_main(stack, fake_run, argv, claims):
     fake_run.returncode = 1
 
     result = provision_room.main(
-        ["--project-dir", str(stack), *argv, "--name", "Q3 Plans"], {}
+        ["--project-dir", str(stack), *argv, "--name", "Q3 Plans"]
     )
 
     assert result == 1
@@ -112,9 +112,7 @@ def test_main(stack, fake_run, argv, claims):
     ]
 
 
-def test_main_room_options_and_admin_token(stack, fake_run):
-    environ = {"SOLIPLEX_ADMIN_TOKEN": "jwt"}
-
+def test_main_room_options(stack, fake_run):
     provision_room.main(
         [
             "--project-dir",
@@ -127,13 +125,10 @@ def test_main_room_options_and_admin_token(stack, fake_run):
             "Plans",
             "--slug",
             "plans",
-        ],
-        environ,
+        ]
     )
 
     [command] = fake_run.calls
-    assert command[8:11] == ["-e", "SOLIPLEX_ADMIN_TOKEN", "soliplex-dev"]
-    assert "jwt" not in command
     assert command[-4:] == ["--description", "Plans", "--slug", "plans"]
 
 
@@ -165,7 +160,7 @@ def test_main_room_options_and_admin_token(stack, fake_run):
 def test_main_errors(stack, fake_run, monkeypatch, capsys, argv, message):
     monkeypatch.chdir(stack)
 
-    result = provision_room.main(argv, {})
+    result = provision_room.main(argv)
 
     assert result == 2
     assert message in capsys.readouterr().err

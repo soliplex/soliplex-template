@@ -17,9 +17,9 @@ Runs the stack's room provisioner (``soliplex-provision-room``, from the
     uv run provision_room.py --claims '{"preferred_username": "alice"}' \\
         --name "Q3 Plans" --slug plans
 
-The stack must be up (backend, ingester). ``SOLIPLEX_ADMIN_TOKEN``, when
-set here, is passed through: a backend running with OIDC needs it to admit
-the provisioner's room-configs reload.
+The stack must be up (backend, ingester). With OIDC on, the backend must
+admit the provisioner's service tokens through an ``admin_users`` entry
+(see the stack's ``docs/operations/room-provisioning.md``).
 
 Exits with the provisioner's status: 0 when the room is live, 1 when steps
 after its commit remain (each is printed), 2 on an error.
@@ -29,14 +29,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import pathlib
 import subprocess
 import sys
 
 SERVICE = "soliplex-dev"
 COMMAND = "/app/.venv/bin/soliplex-provision-room"
-PASSED_THROUGH = ("SOLIPLEX_ADMIN_TOKEN",)
 
 
 class ProvisionRoomError(Exception):
@@ -88,9 +86,7 @@ def requester_claims(args: argparse.Namespace) -> dict:
     return claims
 
 
-def compose_argv(
-    project: pathlib.Path, args: argparse.Namespace, environ
-) -> list[str]:
+def compose_argv(project: pathlib.Path, args: argparse.Namespace) -> list[str]:
     """The ``docker compose run`` command provisioning the room."""
     argv = [
         "docker",
@@ -104,9 +100,6 @@ def compose_argv(
         # which each 'run' re-checks: keep that build's progress quiet.
         "--quiet-build",
     ]
-    for name in PASSED_THROUGH:
-        if environ.get(name):
-            argv += ["-e", name]
     argv += [
         SERVICE,
         COMMAND,
@@ -141,14 +134,13 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv=None, environ=None) -> int:
+def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
-    environ = os.environ if environ is None else environ
     try:
         project = pathlib.Path(args.project_dir).resolve()
         if not (project / "docker-compose.yml").is_file():
             raise NotAStack(project)
-        command = compose_argv(project, args, environ)
+        command = compose_argv(project, args)
     except ProvisionRoomError as error:
         print(f"error: {error}", file=sys.stderr)
         return 2

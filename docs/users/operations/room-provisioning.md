@@ -62,13 +62,30 @@ committed: a step that fails there is reported, with how to finish it.
 `/app/src/rooms-provisioned`. The backend reads it through its read-only
 `src/` mount, outside its config watch.
 
+## With OIDC on
+
+The provisioner authenticates to the backend with service tokens it mints
+for itself (`soliplex-cli service-token mint`, signed with the stack's
+`url_safe_token_secret`): a fresh one for each call, valid for five
+minutes, with the subject `soliplex-provisioner`. Nothing is stored. Admit
+those tokens as an admin once, by their subject:
+
+```bash
+docker compose run --rm --quiet-build soliplex-dev \
+    /app/.venv/bin/soliplex-cli admin-users add /environment \
+    --json-path '$[?$.sub == "soliplex-provisioner"]'
+```
+
+Until then, the provisioner stops before changing anything, naming the
+entry it needs. A backend in no-auth mode admits it without one.
+
 ## Settings
 
 The provisioner reads these from the stack's `.env`:
 
 | Variable | Meaning |
 | --- | --- |
-| `SOLIPLEX_ADMIN_TOKEN` | A bearer token the backend admits as an admin user, for the room-configs reload. Unneeded when the backend runs in no-auth mode; the provisioner checks it before changing anything. `provision_room.py` passes it through from its own environment, too. |
+| `PROVISIONER_SERVICE_SUBJECT` | The subject (`sub` claim) of the provisioner's service tokens (default `soliplex-provisioner`); the `admin_users` entry above must match it. |
 | `PROVISIONER_OWNER_CLAIM` | The claim a room's owner comes from (default `preferred_username`). |
 | `PROVISIONER_FLATTEN_OWNER` | `true` to turn `@` into `_` in the owner, for email-shaped claims. |
 | `GITEA_HOST` / `GITEA_ACCESS_TOKEN` | The Gitea for tracking issues and the provisioned-rooms repository; unset means none. `scripts/init_gitea.py` sets both for the stack's own Gitea. |

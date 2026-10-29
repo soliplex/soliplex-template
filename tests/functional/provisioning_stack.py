@@ -217,17 +217,9 @@ def soliplex_cli(out, *args, stdin=None):
     )
 
 
-def provision(out, *args, admin_token=None):
-    """Run the skill's ``provision_room.py``; return the completed process.
-
-    ``SOLIPLEX_ADMIN_TOKEN`` is passed only as ``admin_token`` gives it.
-    """
-    env = {k: v for k, v in os.environ.items() if k != "SOLIPLEX_ADMIN_TOKEN"}
-    if admin_token is not None:
-        env["SOLIPLEX_ADMIN_TOKEN"] = admin_token
-    return run(
-        sys.executable, PROVISION_ROOM, "--project-dir", out, *args, env=env
-    )
+def provision(out, *args):
+    """Run the skill's ``provision_room.py``; return the completed process."""
+    return run(sys.executable, PROVISION_ROOM, "--project-dir", out, *args)
 
 
 def committed_id(clone) -> str:

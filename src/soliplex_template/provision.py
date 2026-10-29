@@ -23,8 +23,11 @@ on the tracking issue, leaving it open). After the commit the room is
 valid as committed, so a failure there is reported, with what remains to
 do, rather than undone.
 
-Before taking the lock, it checks that the backend accepts the admin token
-(none is needed when the backend runs in no-auth mode).
+It authenticates to the backend with a service token it mints for each
+call (``soliplex-cli service-token mint``, subject ``soliplex-provisioner``
+by default, five minutes' lifetime); an ``admin_users`` entry matching that
+subject admits it. Before taking the lock, it checks that the backend does
+(a backend in no-auth mode admits any caller).
 
 The ``soliplex-provision-room`` console script (:func:`main`) runs it from
 the command line, configured from the environment (see
@@ -59,6 +62,8 @@ from soliplex_template import room_ids
 
 REQUEST_TYPE = "new-room"
 HTTP_TIMEOUT = 30
+DEFAULT_SERVICE_SUBJECT = "soliplex-provisioner"
+SERVICE_TOKEN_LIFETIME = "5m"
 INGESTER_TOKEN_FILE = "/run/secrets/ingester_bearer"
 
 _TRUE = frozenset({"1", "true", "yes", "on"})
@@ -114,12 +119,16 @@ class IssueFilingFailed(ProvisionError):
 
 
 class AdminAccessDenied(ProvisionError):
-    def __init__(self, code):
-        self.code = code
-        super().__init__(
+    def __init__(self, code, subject, mint_error=None):
+        self.code, self.subject, self.mint_error = code, subject, mint_error
+        message = (
             f"the backend refused the provisioner's admin access (HTTP "
-            f"{code}): set SOLIPLEX_ADMIN_TOKEN to an admin user's token"
+            f"{code}): add an 'admin_users' entry matching its service "
+            f"tokens, '$[?$.sub == {json.dumps(subject)}]'"
         )
+        if mint_error is not None:
+            message += f"; minting its service token failed: {mint_error}"
+        super().__init__(message)
 
 
 class BackendRequestFailed(ProvisionError):
@@ -196,7 +205,7 @@ class Settings:
     ingester_data_dir: str = ingester.DEFAULT_DATA_DIR
     ingester_uploads_root: str = ingester.DEFAULT_UPLOADS_ROOT
     backend_url: str = "http://backend:8000"
-    admin_token: str | None = dataclasses.field(default=None, repr=False)
+    service_subject: str = DEFAULT_SERVICE_SUBJECT
     owner_claim: str = room_ids.DEFAULT_OWNER_CLAIM
     flatten_owner: bool = False
     soliplex_cli: str = "/app/.venv/bin/soliplex-cli"
@@ -213,8 +222,8 @@ class Settings:
         - the ingester's bearer token, read from the file
           ``PROVISIONER_INGESTER_TOKEN_FILE`` names (default: the
           ``ingester_bearer`` secret)
-        - ``SOLIPLEX_ADMIN_TOKEN``: a bearer token the backend admits as an
-          admin; unneeded in no-auth mode
+        - ``PROVISIONER_SERVICE_SUBJECT``: the ``sub`` claim of the service
+          tokens the provisioner mints for itself
         - ``PROVISIONER_OWNER_CLAIM`` / ``PROVISIONER_FLATTEN_OWNER``: the
           claim a room's owner comes from, and whether to flatten it
         - ``GITEA_HOST`` / ``GITEA_ACCESS_TOKEN`` / ``GITEA_OWNER`` /
@@ -251,7 +260,9 @@ class Settings:
 
         return cls(
             ingester_token=ingester_token,
-            admin_token=setting("SOLIPLEX_ADMIN_TOKEN"),
+            service_subject=setting(
+                "PROVISIONER_SERVICE_SUBJECT", DEFAULT_SERVICE_SUBJECT
+            ),
             owner_claim=setting(
                 "PROVISIONER_OWNER_CLAIM", room_ids.DEFAULT_OWNER_CLAIM
             ),
@@ -278,11 +289,35 @@ class Provisioned:
 # --------------------------------------------------------------------------
 # Collaborators: the backend's HTTP API, soliplex-cli, the concierge
 # --------------------------------------------------------------------------
+def mint_service_token(settings: Settings) -> str:
+    """A short-lived service token for the provisioner's subject."""
+    minted = _cli(
+        settings,
+        "service-token",
+        "mint",
+        str(settings.environment),
+        "--claims",
+        json.dumps({"sub": settings.service_subject}),
+        "--expires-in",
+        SERVICE_TOKEN_LIFETIME,
+        "--quiet",
+    )
+    return minted.strip()
+
+
 def _backend(settings: Settings, method: str, path: str) -> dict:
+    """Call the backend's API with a freshly minted service token.
+
+    When minting fails, the call goes out without a token (which a backend
+    in no-auth mode accepts); a refusal then reports the minting failure.
+    """
     url = f"{settings.backend_url.rstrip('/')}/api{path}"
     headers = {"Accept": "application/json"}
-    if settings.admin_token:
-        headers["Authorization"] = f"Bearer {settings.admin_token}"
+    mint_error = None
+    try:
+        headers["Authorization"] = f"Bearer {mint_service_token(settings)}"
+    except CliFailed as error:
+        mint_error = error.output
     request = urllib.request.Request(
         url,
         data=b"" if method == "POST" else None,
@@ -294,7 +329,9 @@ def _backend(settings: Settings, method: str, path: str) -> dict:
             return json.load(resp)
     except urllib.error.HTTPError as error:
         if error.code in (401, 403):
-            raise AdminAccessDenied(error.code) from error
+            raise AdminAccessDenied(
+                error.code, settings.service_subject, mint_error
+            ) from error
         body = error.read().decode(errors="replace")
         raise BackendRequestFailed(
             url, f"HTTP {error.code}: {body}"
@@ -304,7 +341,11 @@ def _backend(settings: Settings, method: str, path: str) -> dict:
 
 
 def check_admin_access(settings: Settings) -> None:
-    """Raise :class:`AdminAccessDenied` unless the backend admits us."""
+    """Raise :class:`AdminAccessDenied` unless the backend admits us.
+
+    That is, unless it admits the provisioner's service tokens as an admin's
+    (or runs in no-auth mode).
+    """
     _backend(settings, "GET", "/v1/installation")
 
 
@@ -314,12 +355,15 @@ def reload_backend_rooms(settings: Settings) -> dict:
 
 
 def _cli(settings: Settings, *command: str, stdin: str | None = None) -> str:
-    result = subprocess.run(
-        [settings.soliplex_cli, *command],
-        input=stdin,
-        capture_output=True,
-        text=True,
-    )
+    try:
+        result = subprocess.run(
+            [settings.soliplex_cli, *command],
+            input=stdin,
+            capture_output=True,
+            text=True,
+        )
+    except OSError as error:
+        raise CliFailed(command, str(error)) from error
     if result.returncode != 0:
         raise CliFailed(command, (result.stdout + result.stderr).strip())
     return result.stdout
@@ -438,8 +482,9 @@ def provision_room(
     when omitted) completes the room id ``<owner>:<slug>``. Raises
     :class:`room_ids.RoomIdError` for an unusable owner, name or slug,
     :class:`AdminAccessDenied` before touching anything when the backend
-    refuses the admin token, :class:`RoomExists` for a taken id,
-    :class:`IssueFilingFailed` when the tracking issue cannot be filed, and
+    refuses the provisioner's service token, :class:`RoomExists` for a
+    taken id, :class:`IssueFilingFailed` when the tracking issue cannot be
+    filed, and
     :class:`ProvisioningFailed` (after rolling back) when a step before the
     commit fails.
     """
