@@ -49,10 +49,10 @@ conf/
 # tracked (their bind-mount source must exist on a fresh clone, else the
 # Docker daemon recreates it root-owned and the uid-1000 backend can't
 # write to it) but ignore the uploaded files themselves.
-backend/uploads/rooms/*
-backend/uploads/threads/*
-!backend/uploads/rooms/.gitkeep
-!backend/uploads/threads/.gitkeep
+uploads/rooms/*
+uploads/threads/*
+!uploads/rooms/.gitkeep
+!uploads/threads/.gitkeep
 
 # Per-run sandbox working dirs, created by agents at runtime. Keep the
 # directory tracked (same root-owned-bind-mount reason as above) but

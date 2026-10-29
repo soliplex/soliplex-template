@@ -875,7 +875,7 @@ def render_tree(
 
 def ensure_runtime_dirs(out: pathlib.Path, docs_dir: str) -> None:
     # Gitignored runtime dirs without a tracked placeholder in the template.
-    runtime = ["backend/uploads/rooms", "backend/uploads/threads", docs_dir]
+    runtime = ["uploads/rooms", "uploads/threads", docs_dir]
     for rel in runtime:
         d = out / rel
         d.mkdir(parents=True, exist_ok=True)
