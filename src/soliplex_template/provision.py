@@ -25,19 +25,26 @@ do, rather than undone.
 
 Before taking the lock, it checks that the backend accepts the admin token
 (none is needed when the backend runs in no-auth mode).
+
+The ``soliplex-provision-room`` console script (:func:`main`) runs it from
+the command line, configured from the environment (see
+:meth:`Settings.from_env`).
 """
 
 from __future__ import annotations
 
+import argparse
 import collections.abc
 import contextlib
 import dataclasses
 import datetime
 import json
+import os
 import pathlib
 import re
 import shutil
 import subprocess
+import sys
 import urllib.error
 import urllib.request
 
@@ -52,7 +59,10 @@ from soliplex_template import room_ids
 
 REQUEST_TYPE = "new-room"
 HTTP_TIMEOUT = 30
-DEFAULT_ROOMS_REPO = "rooms-provisioned"
+INGESTER_TOKEN_FILE = "/run/secrets/ingester_bearer"
+
+_TRUE = frozenset({"1", "true", "yes", "on"})
+_FALSE = frozenset({"", "0", "false", "no", "off"})
 
 # A claim usable in an ACL entry's JSONPath query ('$.<claim>').
 _CLAIM_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
@@ -69,6 +79,38 @@ class BadOwnerClaim(ProvisionError):
             f"owner claim {claim!r} must be an identifier "
             f"({_CLAIM_RE.pattern})"
         )
+
+
+class IngesterTokenMissing(ProvisionError):
+    def __init__(self, path):
+        self.path = path
+        super().__init__(
+            f"cannot read the ingester's bearer token from {path} (is the "
+            "'ingester_bearer' secret mounted?)"
+        )
+
+
+class GiteaTokenMissing(ProvisionError):
+    def __init__(self):
+        super().__init__(
+            "GITEA_HOST is set but GITEA_ACCESS_TOKEN is not: the provisioner "
+            "needs a token that may write issues and push the rooms repository"
+        )
+
+
+class BadFlag(ProvisionError):
+    def __init__(self, name, value):
+        self.name, self.value = name, value
+        super().__init__(
+            f"{name}={value!r}: expected one of "
+            f"{', '.join(sorted(_TRUE | _FALSE - {''}))}"
+        )
+
+
+class IssueFilingFailed(ProvisionError):
+    def __init__(self, error):
+        self.error = error
+        super().__init__(f"filing the tracking issue failed: {error}")
 
 
 class AdminAccessDenied(ProvisionError):
@@ -128,7 +170,7 @@ class GiteaSettings:
     token: str = dataclasses.field(repr=False)
     owner: str = gitea.ADMIN_USER
     repo: str = gitea.REPO_NAME
-    rooms_repo: str = DEFAULT_ROOMS_REPO
+    rooms_repo: str = gitea.ROOMS_REPO_NAME
 
     @property
     def origin_url(self) -> str:
@@ -163,6 +205,59 @@ class Settings:
     def __post_init__(self):
         if not _CLAIM_RE.fullmatch(self.owner_claim):
             raise BadOwnerClaim(self.owner_claim)
+
+    @classmethod
+    def from_env(cls, environ: collections.abc.Mapping[str, str]) -> Settings:
+        """Settings for ``soliplex-dev``, from its environment.
+
+        - the ingester's bearer token, read from the file
+          ``PROVISIONER_INGESTER_TOKEN_FILE`` names (default: the
+          ``ingester_bearer`` secret)
+        - ``SOLIPLEX_ADMIN_TOKEN``: a bearer token the backend admits as an
+          admin; unneeded in no-auth mode
+        - ``PROVISIONER_OWNER_CLAIM`` / ``PROVISIONER_FLATTEN_OWNER``: the
+          claim a room's owner comes from, and whether to flatten it
+        - ``GITEA_HOST`` / ``GITEA_ACCESS_TOKEN`` / ``GITEA_OWNER`` /
+          ``GITEA_REPO`` / ``GITEA_ROOMS_REPO``: the Gitea for tracking issues
+          and the provisioned-rooms clone's ``origin``; unset host means none
+        """
+        token_file = pathlib.Path(
+            environ.get("PROVISIONER_INGESTER_TOKEN_FILE")
+            or INGESTER_TOKEN_FILE
+        )
+        try:
+            ingester_token = token_file.read_text().strip()
+        except OSError as error:
+            raise IngesterTokenMissing(token_file) from error
+
+        def setting(name, default=None):
+            return environ.get(name, "").strip() or default
+
+        gitea_settings = None
+        if setting("GITEA_HOST"):
+            if not setting("GITEA_ACCESS_TOKEN"):
+                raise GiteaTokenMissing()
+            gitea_settings = GiteaSettings(
+                host=setting("GITEA_HOST"),
+                token=setting("GITEA_ACCESS_TOKEN"),
+                owner=setting("GITEA_OWNER", gitea.ADMIN_USER),
+                repo=setting("GITEA_REPO", gitea.REPO_NAME),
+                rooms_repo=setting("GITEA_ROOMS_REPO", gitea.ROOMS_REPO_NAME),
+            )
+
+        flatten = setting("PROVISIONER_FLATTEN_OWNER", "").lower()
+        if flatten not in _TRUE | _FALSE:
+            raise BadFlag("PROVISIONER_FLATTEN_OWNER", flatten)
+
+        return cls(
+            ingester_token=ingester_token,
+            admin_token=setting("SOLIPLEX_ADMIN_TOKEN"),
+            owner_claim=setting(
+                "PROVISIONER_OWNER_CLAIM", room_ids.DEFAULT_OWNER_CLAIM
+            ),
+            flatten_owner=flatten in _TRUE,
+            gitea=gitea_settings,
+        )
 
 
 @dataclasses.dataclass(frozen=True)
@@ -343,7 +438,8 @@ def provision_room(
     when omitted) completes the room id ``<owner>:<slug>``. Raises
     :class:`room_ids.RoomIdError` for an unusable owner, name or slug,
     :class:`AdminAccessDenied` before touching anything when the backend
-    refuses the admin token, :class:`RoomExists` for a taken id, and
+    refuses the admin token, :class:`RoomExists` for a taken id,
+    :class:`IssueFilingFailed` when the tracking issue cannot be filed, and
     :class:`ProvisioningFailed` (after rolling back) when a step before the
     commit fails.
     """
@@ -390,16 +486,19 @@ def provision_room(
         issue = None
         if issues is not None:
             create, _comment, _close = issues
-            issue = create(
-                host=settings.gitea.host,
-                token=settings.gitea.token,
-                owner=settings.gitea.owner,
-                repo=settings.gitea.repo,
-                user=claims,
-                title=provision_record.title(request),
-                body=provision_record.render(request, **record_kwargs),
-                request_type=REQUEST_TYPE,
-            )
+            try:
+                issue = create(
+                    host=gitea_settings.host,
+                    token=gitea_settings.token,
+                    owner=gitea_settings.owner,
+                    repo=gitea_settings.repo,
+                    user=claims,
+                    title=provision_record.title(request),
+                    body=provision_record.render(request, **record_kwargs),
+                    request_type=REQUEST_TYPE,
+                )
+            except Exception as error:
+                raise IssueFilingFailed(error) from error
 
         rollback = _Rollback()
         try:
@@ -541,3 +640,68 @@ def _finish(settings, issues, issue, room) -> collections.abc.Iterator[str]:
             )
         except Exception as error:
             yield f"comment on and close {issue.url} ({error})"
+
+
+# --------------------------------------------------------------------------
+# Command line
+# --------------------------------------------------------------------------
+_USER_ERRORS = (
+    ProvisionError,
+    room_ids.RoomIdError,
+    ingester.IngesterError,
+    landing_clone.LandingCloneError,
+)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="soliplex-provision-room",
+        description="Provision a private RAG room for a requester.",
+    )
+    parser.add_argument(
+        "--claims",
+        required=True,
+        type=json.loads,
+        help="the requester's token claims, as a JSON object",
+    )
+    parser.add_argument(
+        "--name", required=True, help="the room's human-readable name"
+    )
+    parser.add_argument("--description", help="defaults to the name")
+    parser.add_argument("--slug", help="defaults to one derived from the name")
+    return parser
+
+
+def main(argv=None, environ=None) -> int:
+    """Provision one room.
+
+    Exits 0 when the room is live, 1 when steps remain, 2 on an error.
+    """
+    args = build_parser().parse_args(argv)
+    if not isinstance(args.claims, dict):
+        print("error: --claims must be a JSON object", file=sys.stderr)
+        return 2
+    try:
+        settings = Settings.from_env(
+            os.environ if environ is None else environ
+        )
+        result = provision_room(
+            args.claims,
+            name=args.name,
+            settings=settings,
+            description=args.description,
+            slug=args.slug,
+        )
+    except _USER_ERRORS as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+
+    print(f"provisioned room {result.room_id!r} (commit {result.commit[:12]})")
+    if result.issue_url is not None:
+        print(f"tracking issue: {result.issue_url}")
+    if result.incomplete:
+        print("still to do:")
+        for step in result.incomplete:
+            print(f"  - {step}")
+        return 1
+    return 0

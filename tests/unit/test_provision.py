@@ -691,3 +691,238 @@ def test_cli_failed(fake_cli, monkeypatch):
     assert type(caught.value) is provision.CliFailed
     assert caught.value.command == ("audit", "rooms")
     assert caught.value.output == "audit rooms"
+
+
+def test_provision_room_issue_filing_failed(gitea_settings, monkeypatch):
+    recorder = _Recorder(
+        monkeypatch, fail={"create_issue": RuntimeError("HTTP 403")}
+    )
+
+    with pytest.raises(provision.ProvisionError) as caught:
+        _provision(gitea_settings)
+
+    assert type(caught.value) is provision.IssueFilingFailed
+    assert str(caught.value.error) == "HTTP 403"
+    assert not (gitea_settings.clone / ROOM).exists()
+    assert recorder.named("reload") == []
+
+
+# ---- Settings.from_env ----
+
+
+@pytest.fixture
+def token_file(tmp_path):
+    path = tmp_path / "ingester_bearer"
+    path.write_text("bearer\n")
+    return path
+
+
+def test_settings_from_env_defaults(token_file):
+    environ = {"PROVISIONER_INGESTER_TOKEN_FILE": str(token_file)}
+
+    result = provision.Settings.from_env(environ)
+
+    assert result == provision.Settings(ingester_token="bearer")
+
+
+def test_settings_from_env(token_file):
+    environ = {
+        "PROVISIONER_INGESTER_TOKEN_FILE": str(token_file),
+        "SOLIPLEX_ADMIN_TOKEN": "jwt",
+        "PROVISIONER_OWNER_CLAIM": "email",
+        "PROVISIONER_FLATTEN_OWNER": "True",
+        "GITEA_HOST": "https://gitea.example.com",
+        "GITEA_ACCESS_TOKEN": "gt",
+        "GITEA_OWNER": "ops",
+        "GITEA_REPO": "requests",
+        "GITEA_ROOMS_REPO": "rooms",
+    }
+
+    result = provision.Settings.from_env(environ)
+
+    assert result == provision.Settings(
+        ingester_token="bearer",
+        admin_token="jwt",
+        owner_claim="email",
+        flatten_owner=True,
+        gitea=provision.GiteaSettings(
+            host="https://gitea.example.com",
+            token="gt",
+            owner="ops",
+            repo="requests",
+            rooms_repo="rooms",
+        ),
+    )
+
+
+def test_settings_from_env_gitea_defaults(token_file):
+    environ = {
+        "PROVISIONER_INGESTER_TOKEN_FILE": str(token_file),
+        "GITEA_HOST": "http://gitea:3000",
+        "GITEA_ACCESS_TOKEN": "gt",
+    }
+
+    result = provision.Settings.from_env(environ)
+
+    assert result.gitea == provision.GiteaSettings(
+        host="http://gitea:3000",
+        token="gt",
+        owner="soliplex-admin",
+        repo="soliplex-requests",
+        rooms_repo="rooms-provisioned",
+    )
+
+
+def test_settings_from_env_reads_the_secret_by_default(monkeypatch):
+    monkeypatch.setattr(provision, "INGESTER_TOKEN_FILE", "/nonexistent/x")
+
+    with pytest.raises(provision.ProvisionError) as caught:
+        provision.Settings.from_env({})
+
+    assert type(caught.value) is provision.IngesterTokenMissing
+    assert caught.value.path == pathlib.Path("/nonexistent/x")
+
+
+@pytest.mark.parametrize(
+    "extra, exc_type",
+    [
+        ({"GITEA_HOST": "http://gitea:3000"}, provision.GiteaTokenMissing),
+        ({"PROVISIONER_FLATTEN_OWNER": "maybe"}, provision.BadFlag),
+        ({"PROVISIONER_OWNER_CLAIM": "a-b"}, provision.BadOwnerClaim),
+    ],
+)
+def test_settings_from_env_rejects(token_file, extra, exc_type):
+    environ = {"PROVISIONER_INGESTER_TOKEN_FILE": str(token_file), **extra}
+
+    with pytest.raises(provision.ProvisionError) as caught:
+        provision.Settings.from_env(environ)
+
+    assert type(caught.value) is exc_type
+
+
+# ---- main ----
+
+
+def _fake_provision(monkeypatch, *, result=None, error=None):
+    calls = []
+
+    def provision_room(claims, **kwargs):
+        calls.append((claims, kwargs))
+        if error is not None:
+            raise error
+        return result
+
+    monkeypatch.setattr(provision, "provision_room", provision_room)
+    return calls
+
+
+def test_main(token_file, monkeypatch, capsys):
+    calls = _fake_provision(
+        monkeypatch,
+        result=provision.Provisioned(
+            room_id=ROOM,
+            room_dir=pathlib.Path("/app/src/rooms-provisioned") / ROOM,
+            commit="0123456789abcdef",
+            issue_url=None,
+        ),
+    )
+    environ = {"PROVISIONER_INGESTER_TOKEN_FILE": str(token_file)}
+
+    result = provision.main(
+        ["--claims", json.dumps(CLAIMS), "--name", "Q3 Plans"], environ
+    )
+
+    assert result == 0
+    [(claims, kwargs)] = calls
+    assert claims == CLAIMS
+    assert kwargs == {
+        "name": "Q3 Plans",
+        "settings": provision.Settings(ingester_token="bearer"),
+        "description": None,
+        "slug": None,
+    }
+    assert capsys.readouterr().out == (
+        f"provisioned room '{ROOM}' (commit 0123456789ab)\n"
+    )
+
+
+def test_main_incomplete(token_file, monkeypatch, capsys):
+    _fake_provision(
+        monkeypatch,
+        result=provision.Provisioned(
+            room_id=ROOM,
+            room_dir=pathlib.Path("/x"),
+            commit="0123456789abcdef",
+            issue_url="https://gitea.example.com/ops/requests/issues/7",
+            incomplete=("push it", "reload it"),
+        ),
+    )
+    environ = {"PROVISIONER_INGESTER_TOKEN_FILE": str(token_file)}
+
+    result = provision.main(
+        [
+            "--claims",
+            json.dumps(CLAIMS),
+            "--name",
+            "Q3 Plans",
+            "--description",
+            "D",
+            "--slug",
+            "plans",
+        ],
+        environ,
+    )
+
+    assert result == 1
+    assert capsys.readouterr().out == (
+        f"provisioned room '{ROOM}' (commit 0123456789ab)\n"
+        "tracking issue: https://gitea.example.com/ops/requests/issues/7\n"
+        "still to do:\n"
+        "  - push it\n"
+        "  - reload it\n"
+    )
+
+
+def test_main_error(token_file, monkeypatch, capsys):
+    _fake_provision(monkeypatch, error=provision.RoomExists(ROOM))
+    environ = {"PROVISIONER_INGESTER_TOKEN_FILE": str(token_file)}
+
+    result = provision.main(
+        ["--claims", json.dumps(CLAIMS), "--name", "Q3 Plans"], environ
+    )
+
+    assert result == 2
+    assert capsys.readouterr().err == (
+        f"error: room '{ROOM}' already exists; choose another name\n"
+    )
+
+
+def test_main_settings_error(tmp_path, capsys):
+    environ = {"PROVISIONER_INGESTER_TOKEN_FILE": str(tmp_path / "missing")}
+
+    result = provision.main(
+        ["--claims", json.dumps(CLAIMS), "--name", "Q3 Plans"], environ
+    )
+
+    assert result == 2
+    assert "cannot read the ingester's bearer token" in capsys.readouterr().err
+
+
+def test_main_claims_not_an_object(capsys):
+    result = provision.main(["--claims", "[1, 2]", "--name", "Q3 Plans"], {})
+
+    assert result == 2
+    assert capsys.readouterr().err == (
+        "error: --claims must be a JSON object\n"
+    )
+
+
+def test_main_uses_the_process_environment(token_file, monkeypatch):
+    monkeypatch.setenv("PROVISIONER_INGESTER_TOKEN_FILE", str(token_file))
+    monkeypatch.setenv("SOLIPLEX_ADMIN_TOKEN", "from-env")
+    calls = _fake_provision(monkeypatch, error=provision.RoomExists(ROOM))
+
+    provision.main(["--claims", json.dumps(CLAIMS), "--name", "Q3 Plans"])
+
+    [(_claims, kwargs)] = calls
+    assert kwargs["settings"].admin_token == "from-env"

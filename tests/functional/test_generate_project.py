@@ -680,6 +680,27 @@ def test_provisioned_rooms_parent_wiring(generated_project):
         assert not posixpath.normpath(entry).startswith(root.rstrip("/") + "/")
 
 
+def test_soliplex_dev_wired_for_the_room_provisioner(generated_project):
+    # The room provisioner runs in 'soliplex-dev': it reloads the ingester
+    # (bearer secret) after registering a room's database in the ingester's
+    # config (mounted read-write), and commits with git (in the image).
+    out, _params = generated_project
+    services = yaml.safe_load(_read(out, "docker-compose.yml"))["services"]
+    dockerfile = _read(out, "soliplex-dev", "Dockerfile")
+
+    soliplex_dev = services["soliplex-dev"]
+
+    assert "ingester_bearer" in soliplex_dev["secrets"]
+    assert (
+        "./haiku.rag/haiku.rag.yaml:/app/haiku.rag.yaml"
+        in soliplex_dev["volumes"]
+    )
+    assert "apt-get install -y --no-install-recommends git" in dockerfile
+    assert (
+        'ARG SOLIPLEX_TEMPLATE="soliplex-template[provisioner]' in dockerfile
+    )
+
+
 @pytest.mark.parametrize("service", ["haiku-ingester", "haiku-rag"])
 def test_room_uploads_mounted_read_only_for_ingestion(
     generated_project, service

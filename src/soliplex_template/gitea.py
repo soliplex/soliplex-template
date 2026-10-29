@@ -8,9 +8,10 @@ opt-in gitea service and delegates here. It ships in the published
 
 Run it AFTER ``docker compose up -d`` (postgres + gitea healthy). It waits for
 Gitea, ensures an admin user (via ``docker compose exec``), mints a scoped
-access token and a tracking repository (over the REST API), and writes
-``GITEA_HOST`` / ``GITEA_ACCESS_TOKEN`` into ``.env`` for downstream consumers.
-Idempotent: re-running resets the admin password and reuses the existing repo.
+access token, a tracking repository and the private provisioned-rooms
+repository (over the REST API), and writes ``GITEA_HOST`` /
+``GITEA_ACCESS_TOKEN`` into ``.env`` for downstream consumers. Idempotent:
+re-running resets the admin password and reuses the existing repos.
 
 Stdlib only -- HTTP via :mod:`urllib.request`, the admin user via
 ``subprocess`` (``docker compose exec``); no ``curl``/``openssl``.
@@ -39,6 +40,8 @@ GITEA_INTERNAL_URL = "http://gitea:3000"
 ADMIN_USER = "soliplex-admin"
 ADMIN_EMAIL = "admin@soliplex.localhost"
 REPO_NAME = "soliplex-requests"
+# The provisioned-rooms clone's origin (see soliplex_template.provision).
+ROOMS_REPO_NAME = "rooms-provisioned"
 
 # Gitea's built-in SSH server (rootless image): host port and in-container
 # port are both 2222, the login user is 'git'. The template hardcodes these
@@ -452,6 +455,7 @@ def _print_summary(webui_user=None, stack_repo=None) -> None:
     print("=== Gitea provisioned ===")
     print(f"  service account : {ADMIN_USER} (rotating; token in .env)")
     print(f"  repository      : {ADMIN_USER}/{REPO_NAME}")
+    print(f"  rooms repository: {ADMIN_USER}/{ROOMS_REPO_NAME} (private)")
     print("  GITEA_HOST / GITEA_ACCESS_TOKEN written to .env")
     if webui_user is not None:
         print(
@@ -518,6 +522,9 @@ def provision_gitea(
 
     print(f"Ensuring repository '{ADMIN_USER}/{REPO_NAME}' ...")
     create_repo(password)
+
+    print(f"Ensuring repository '{ADMIN_USER}/{ROOMS_REPO_NAME}' ...")
+    create_repo(password, name=ROOMS_REPO_NAME, auto_init=False, private=True)
 
     if webui_user is not None:
         print(f"Ensuring web-UI admin user '{webui_user}' ...")

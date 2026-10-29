@@ -7,8 +7,8 @@
 
 Thin front end over ``soliplex_template.gitea`` (provisioned by ``uv run`` from
 the PEP 723 dependency above): it waits for Gitea, ensures an admin user, mints
-a scoped access token and a tracking repository, and writes ``GITEA_HOST`` /
-``GITEA_ACCESS_TOKEN`` into ``.env``.
+a scoped access token, a tracking repository and the private provisioned-rooms
+repository, and writes ``GITEA_HOST`` / ``GITEA_ACCESS_TOKEN`` into ``.env``.
 
 Run it AFTER ``docker compose up -d`` (postgres + gitea healthy)::
 

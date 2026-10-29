@@ -603,6 +603,41 @@ rooms-reload endpoint (soliplex#1475) after `add`, below.
    Then point the user at the generated `room_config.yaml` to uncomment the
    tool/skill examples or refine the prompt.
 
+## Provisioning a room for a requester
+
+To create a private RAG room *on behalf of a user* — its own database fed
+from the room's uploads, access for that user alone, the config committed
+to the stack's `src/rooms-provisioned` repository — run
+`scripts/provision_room.py`. Unlike `add_room.py`, it needs the stack up:
+it runs the provisioner in a one-off `soliplex-dev` container (built on
+first use), which reloads the ingester and the backend. The stack's
+`docs/operations/room-provisioning.md` describes every step and setting.
+
+1. **Gather** the requester (`--username`, plus `--email` and
+   `--display-name` when known; or their claims as JSON with `--claims`)
+   and the room's `--name`, optionally `--description` and `--slug`. The
+   room id is `<username>:<slug>`; the slug defaults to one derived from the
+   name (`"Q3 Plans"` → `q3-plans`).
+
+2. **Run** it from the stack dir, or pass `--project-dir`:
+
+   ```bash
+   uv run scripts/provision_room.py --project-dir /path/to/stack \
+       --username alice --email alice@example.com \
+       --display-name "Alice Example" --name "Q3 Plans"
+   ```
+
+   With OIDC on, the backend admits the provisioner only with an admin
+   user's token in `SOLIPLEX_ADMIN_TOKEN` (in the stack's `.env`, or in the
+   environment of this command); the provisioner checks it before changing
+   anything.
+
+3. **Read the outcome**: exit `0` means the room is live; `1` means the room
+   is committed but a later step failed — relay each printed "still to do"
+   line; `2` is an error, and nothing was left behind (a failure part-way is
+   rolled back). A taken id, or a name that yields no slug, is an error:
+   ask the user for another name or an explicit `--slug`.
+
 ## Cloning another project into a stack's src/
 
 Every entry under a stack's `src/` is a project directory, so a repo the owner

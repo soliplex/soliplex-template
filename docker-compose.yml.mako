@@ -248,6 +248,8 @@ services:
       - agui_db_password
       - authz_db_password
       - url_safe_token_secret
+      # The room provisioner's credential for the ingester's '/reload'.
+      - ingester_bearer
 
     environment: *backend_environment
 
@@ -261,6 +263,13 @@ services:
       - ./rag/db:/db
       # src/ read-WRITE; the backend mounts the same tree read-only.
       - ./src:/app/src
+      # The ingester's config, read-WRITE: the room provisioner registers
+      # each provisioned room's database in it.
+      - ./haiku.rag/haiku.rag.yaml:/app/haiku.rag.yaml
+      # Git policy for the room provisioner's commits (committer identity,
+      # hooks, signing): mount a git config file here and set
+      # 'GIT_CONFIG_GLOBAL=/etc/provisioner/gitconfig' in '.env'.
+      # - ./soliplex-dev/gitconfig:/etc/provisioner/gitconfig:ro
 
   haiku-ingester:
 
