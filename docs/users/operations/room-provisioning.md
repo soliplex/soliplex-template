@@ -41,7 +41,7 @@ provisioner:
    concierge extension is installed
 2. writes `room_config.yaml` and `REQUEST.md` (who asked for what, and
    what is set up) into `src/rooms-provisioned/<room-id>/`
-3. creates the room's uploads directory, `backend/uploads/rooms/<room-id>/`
+3. creates the room's uploads directory, `uploads/rooms/<room-id>/`
 4. registers the room's database in `haiku.rag/haiku.rag.yaml` (an `fs`
    source over the room's uploads, and its place in `lancedb.databases`),
    then has the ingester reload its config, which creates the database

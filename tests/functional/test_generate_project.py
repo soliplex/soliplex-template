@@ -730,7 +730,7 @@ def test_room_uploads_mounted_read_only_for_ingestion(
 
     volumes = services[service]["volumes"]
 
-    assert "./backend/uploads/rooms:/uploads/rooms:ro" in volumes
+    assert "./uploads/rooms:/uploads/rooms:ro" in volumes
 
 
 def test_env_file_written(generated_project):

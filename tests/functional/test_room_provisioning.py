@@ -98,7 +98,7 @@ def test_provision_room_live(provisioned):
     assert f"{_ROOM_ID}/REQUEST.md" in committed
     assert f"{_ROOM_ID}/room_config.yaml" in committed
     assert (out / "rag" / "db" / f"{_ROOM_ID}.lancedb").is_dir()
-    assert (out / "backend" / "uploads" / "rooms" / _ROOM_ID).is_dir()
+    assert (out / "uploads" / "rooms" / _ROOM_ID).is_dir()
 
 
 @pytest.mark.needs_docker

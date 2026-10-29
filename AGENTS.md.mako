@@ -83,7 +83,7 @@ One-off CLI work on a store (`info`, `migrate`, building a separate static datab
 
 To add documents, drop files into `rag/docs/` — the FS source of the `ingester.databases` entry keyed `haiku.rag` in `haiku.rag/haiku.rag.yaml` will pick them up on its next poll. To add other sources (S3, HTTP, WebDAV), append entries under the `ingester.databases` entry keyed `haiku.rag` in the same file and restart the ingester.
 
-The ingester (and the one-shot `haiku-rag` service) also mounts room uploads, `backend/uploads/rooms/`, read-only at `/uploads/rooms`: a room with its own database ingests from `/uploads/rooms/<room_id>/`.
+The ingester (and the one-shot `haiku-rag` service) also mounts room uploads, `uploads/rooms/`, read-only at `/uploads/rooms`: a room with its own database ingests from `/uploads/rooms/<room_id>/`.
 
 ## Gotchas
 
