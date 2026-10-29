@@ -180,10 +180,13 @@ secrets:
         file_path: /run/secrets/authz_db_password
 
   # ----------------------------------------------------------------------
-  # MCP room token generation / validation secret
+  # Signing secret for MCP room tokens and service tokens
   #
-  # If not set in the environment, we generate a random value at startup,
-  # which will invalidate any previously-generated MCP room tokens.
+  # Read from the generated 'url_safe_token_secret' Docker secret, so the
+  # backend and one-off 'soliplex-dev' runs sign and verify with one key.
+  # Failing that, a random value is generated per process: a token minted
+  # in one process then fails to verify in another, and a restart
+  # invalidates every token.
   #
   # To generate:
   #
@@ -191,6 +194,8 @@ secrets:
   # ----------------------------------------------------------------------
   - secret_name: "URL_SAFE_TOKEN_SECRET"
     sources:
+      - kind: "file_path"
+        file_path: /run/secrets/url_safe_token_secret
       - kind: "env_var"
         env_var_name: "SOLIPLEX_URL_SAFE_TOKEN_SECRET"
       - kind: "random_chars"

@@ -680,6 +680,26 @@ def test_provisioned_rooms_parent_wiring(generated_project):
         assert not posixpath.normpath(entry).startswith(root.rstrip("/") + "/")
 
 
+def test_url_safe_token_secret_read_from_its_docker_secret(generated_project):
+    # MCP room tokens and service tokens verify in every process only when
+    # all of them read the one generated secret.
+    out, _params = generated_project
+    installation = yaml.safe_load(
+        _read(out, "backend/environment/installation.yaml")
+    )
+
+    [secret] = [
+        s
+        for s in installation["secrets"]
+        if s["secret_name"] == "URL_SAFE_TOKEN_SECRET"
+    ]
+
+    assert secret["sources"][0] == {
+        "kind": "file_path",
+        "file_path": "/run/secrets/url_safe_token_secret",
+    }
+
+
 def test_soliplex_dev_wired_for_the_room_provisioner(generated_project):
     # The room provisioner runs in 'soliplex-dev': it reloads the ingester
     # (bearer secret) after registering a room's database in the ingester's

@@ -63,6 +63,7 @@ def _compose_prefix(stack):
         "run",
         "--rm",
         "--no-TTY",
+        "--quiet-build",
     ]
 
 
@@ -131,7 +132,7 @@ def test_main_room_options_and_admin_token(stack, fake_run):
     )
 
     [command] = fake_run.calls
-    assert command[7:10] == ["-e", "SOLIPLEX_ADMIN_TOKEN", "soliplex-dev"]
+    assert command[8:11] == ["-e", "SOLIPLEX_ADMIN_TOKEN", "soliplex-dev"]
     assert "jwt" not in command
     assert command[-4:] == ["--description", "Plans", "--slug", "plans"]
 

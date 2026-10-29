@@ -17,7 +17,7 @@ uploads, and access for the requester alone. It runs in a one-off
 (`soliplex-provision-room`), and needs the stack to be up.
 
 ```bash
-docker compose run --rm soliplex-dev \
+docker compose run --rm --quiet-build soliplex-dev \
     /app/.venv/bin/soliplex-provision-room \
     --claims '{"preferred_username": "alice", "email": "alice@example.com", "name": "Alice Example"}' \
     --name "Q3 Plans"

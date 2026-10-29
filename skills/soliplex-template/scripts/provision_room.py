@@ -100,6 +100,9 @@ def compose_argv(
         "run",
         "--rm",
         "--no-TTY",
+        # 'soliplex-dev' builds from the backend's image ('service:backend'),
+        # which each 'run' re-checks: keep that build's progress quiet.
+        "--quiet-build",
     ]
     for name in PASSED_THROUGH:
         if environ.get(name):

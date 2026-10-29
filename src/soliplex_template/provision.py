@@ -613,12 +613,19 @@ def _finish(settings, issues, issue, room) -> collections.abc.Iterator[str]:
             yield f"push the provisioned-rooms clone ({error})"
 
     try:
-        reload_backend_rooms(settings)
+        delta = reload_backend_rooms(settings)
     except ProvisionError as error:
         yield (
             f"reload the backend's rooms: POST /api/v1/installation/reload/"
             f"rooms as an admin, or restart the backend ({error})"
         )
+    else:
+        loaded = [*delta.get("added", ()), *delta.get("changed", ())]
+        if room not in loaded:
+            yield (
+                f"make the backend load room {room!r}: its rooms reload did "
+                f"not (does 'room_paths' list {str(settings.clone)!r}?)"
+            )
 
     if issue is not None:
         _create, comment, close = issues

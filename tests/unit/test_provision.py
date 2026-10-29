@@ -123,6 +123,8 @@ class _Recorder:
         self.fail = fail or {}
         self.check_lock_of = check_lock_of
         self.lock_held = []
+        # The room the backend's rooms reload reports adding.
+        self.loaded = ROOM
         monkeypatch.setattr(provision, "_backend", self._backend)
         monkeypatch.setattr(provision, "_cli", self._cli)
         monkeypatch.setattr(provision.ingester, "reload", self._reload)
@@ -135,6 +137,8 @@ class _Recorder:
 
     def _backend(self, settings, method, path):
         self._record("backend", method, path)
+        if method == "POST":
+            return {"added": [self.loaded], "removed": [], "changed": []}
         return {}
 
     def _cli(self, settings, *command, stdin=None):
@@ -429,6 +433,17 @@ def test_provision_room_reports_incomplete_steps(gitea_settings, monkeypatch):
     assert issue.startswith(f"comment on and close {result.issue_url}")
     assert (result.room_dir / "room_config.yaml").is_file()
     assert result.commit == _git(gitea_settings.clone, "rev-parse", "HEAD")
+
+
+def test_provision_room_backend_did_not_load_the_room(settings, monkeypatch):
+    recorder = _Recorder(monkeypatch)
+    recorder.loaded = "someone:else"
+
+    result = _provision(settings)
+
+    [step] = result.incomplete
+    assert step.startswith(f"make the backend load room '{ROOM}'")
+    assert repr(str(settings.clone)) in step
 
 
 # ---- pieces ----

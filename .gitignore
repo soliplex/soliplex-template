@@ -21,6 +21,10 @@ tmp/
 # CI publishes from here
 /dist/
 
+# setuptools' scratch tree, left by 'uv build' (the functional tests build
+# a wheel of this checkout)
+/build/
+
 # Zensical docs build output (`zensical build`)
 /site/
 
