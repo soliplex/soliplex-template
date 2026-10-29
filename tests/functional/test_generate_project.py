@@ -588,8 +588,8 @@ def test_runtime_dirs_have_gitkeep(generated_project):
     out, params = generated_project
 
     keeps = [
-        "backend/uploads/rooms/.gitkeep",
-        "backend/uploads/threads/.gitkeep",
+        "uploads/rooms/.gitkeep",
+        "uploads/threads/.gitkeep",
         f"{params['docs_dir']}/.gitkeep",
     ]
 
@@ -606,8 +606,8 @@ def test_runtime_bind_mount_dirs_are_git_tracked(generated_project):
     out, params = generated_project
     expected = {
         "rag/db/README.md",
-        "backend/uploads/rooms/.gitkeep",
-        "backend/uploads/threads/.gitkeep",
+        "uploads/rooms/.gitkeep",
+        "uploads/threads/.gitkeep",
         "backend/sandbox/workdirs/README.md",
         f"{params['docs_dir']}/.gitkeep",
     }
@@ -633,7 +633,7 @@ def test_runtime_data_stays_gitignored(generated_project):
     out, _params = generated_project
     data_paths = [
         "rag/db/haiku.rag.lancedb/chunks.lance",
-        "backend/uploads/rooms/secret.pdf",
+        "uploads/rooms/secret.pdf",
         "backend/sandbox/workdirs/run1/scratch.py",
     ]
 

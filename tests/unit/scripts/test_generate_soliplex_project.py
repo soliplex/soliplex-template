@@ -905,10 +905,8 @@ def test_ensure_runtime_dirs(tmp_path):
 
     gen.ensure_runtime_dirs(tmp_path, "rag/docs")
 
-    assert (tmp_path / "backend" / "uploads" / "rooms" / ".gitkeep").is_file()
-    assert (
-        tmp_path / "backend" / "uploads" / "threads" / ".gitkeep"
-    ).is_file()
+    assert (tmp_path / "uploads" / "rooms" / ".gitkeep").is_file()
+    assert (tmp_path / "uploads" / "threads" / ".gitkeep").is_file()
     assert not (tmp_path / "rag" / "docs" / ".gitkeep").exists()
 
 

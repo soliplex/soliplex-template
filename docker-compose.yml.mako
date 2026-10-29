@@ -160,7 +160,7 @@ services:
         target: "/sandbox/workdirs"
 
       - type: bind
-        source: "backend/uploads"
+        source: "uploads"
         target: "/uploads/"
 
       - type: bind
@@ -257,7 +257,7 @@ services:
     volumes:
       - ./backend/environment:/environment/
       - ./backend/sandbox/workdirs:/sandbox/workdirs
-      - ./backend/uploads:/uploads/
+      - ./uploads:/uploads/
       - ./rag/db:/db
       # src/ read-WRITE; the backend mounts the same tree read-only.
       - ./src:/app/src
