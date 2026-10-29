@@ -389,6 +389,11 @@ name = "soliplex-template"
 version = "0.20.dev0"
 source = { editable = "." }
 
+[package.optional-dependencies]
+provisioner = [
+    { name = "soliplex-plumber" },
+]
+
 [package.dev-dependencies]
 dev = [
     { name = "coverage" },
@@ -405,6 +410,8 @@ dev = [
 ]
 
 [package.metadata]
+requires-dist = [{ name = "soliplex-plumber", marker = "extra == 'provisioner'", specifier = ">=0.4" }]
+provides-extras = ["provisioner"]
 
 [package.metadata.requires-dev]
 dev = [

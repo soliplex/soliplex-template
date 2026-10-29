@@ -10,6 +10,11 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = []
 
+# 'soliplex_template.provision' runs inside a stack's 'soliplex-dev'
+# container, which installs 'soliplex-template[provisioner]'.
+[project.optional-dependencies]
+provisioner = ["soliplex-plumber >= 0.4"]
+
 # Tooling for the soliplex-template skill. The scripts also carry PEP 723
 # inline metadata so they can run standalone via `uv run <script>`, but the
 # CI workflow installs this group with `uv sync --frozen --group dev`:
