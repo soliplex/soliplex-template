@@ -200,9 +200,10 @@ from the user and invoke it.
    If `ollama_base_url` itself is unreachable at this point (e.g. a remote
    server that isn't up yet), say so, fall back to the defaults or free-text
    entry, and note that an authoritative check will run after the stack is up
-   (see *Report the result* below). A post-generation live probe is also coming
-   to `soliplex-cli audit ollama` (soliplex#1067); the pre-generation probe here
-   is the skill's own, complementary check.
+   (see *Report the result* below). After generation, `soliplex-cli audit
+   ollama --check-responsive` repeats the probe from inside the stack, against
+   the resolved installation; the probe here catches a bad model before
+   anything is written.
 
    The frontend version (`frontend_version`) and the backend `soliplex`
    release (`soliplex_image_tag`) are **independent choices**: the
@@ -299,11 +300,22 @@ from the user and invoke it.
    set in the interview:
 
    ```bash
-   # reachable / MISSING / OK per configured Ollama URL
-   docker compose run --rm backend /app/.venv/bin/soliplex-cli audit ollama /environment
+   # per configured Ollama URL: ERROR (unreachable), MISSING, UNRESPONSIVE, or OK;
+   # --check-responsive has each model answer on its role's endpoint
+   # (chat on /v1/chat/completions, embeddings on /v1/embeddings)
+   docker compose run --rm backend /app/.venv/bin/soliplex-cli audit ollama \
+       --check-responsive /environment
 
    # if any URL reports MISSING, pull them (run with -n first to preview)
    docker compose run --rm backend /app/.venv/bin/soliplex-cli ollama pull /environment
+   ```
+
+   On success the audit prints only `OK` per URL, not the models it checked.
+   To show the user which models (and roles) the install resolved, ask the
+   backend — an admin-only endpoint, open to anyone in no-auth mode:
+
+   ```bash
+   curl -s http://localhost:<nginx_http>/api/v1/installation/providers | jq
    ```
 
 ### Notes
@@ -364,14 +376,16 @@ that went missing — with the backend's own audit, run from the stack directory
 in a one-off `backend` container the same way as `soliplex_config.py`:
 
 ```bash
-# reachable / MISSING / OK per configured Ollama URL
-docker compose run --rm backend /app/.venv/bin/soliplex-cli audit ollama /environment
+# per configured Ollama URL: ERROR, MISSING, UNRESPONSIVE, or OK
+docker compose run --rm backend /app/.venv/bin/soliplex-cli audit ollama \
+    --check-responsive /environment
 
 # pull whatever the install references (-n previews; -u URL scopes to one server)
 docker compose run --rm backend /app/.venv/bin/soliplex-cli ollama pull /environment
 ```
 
-`audit ollama` exits non-zero when a server is unreachable or missing models,
+`audit ollama` exits non-zero when a server is unreachable or missing models
+(or, with `--check-responsive`, has a model that fails to answer),
 and with `-q` (placed before the `ollama` subcommand) prints a JSON error
 report, so it is scriptable. Both commands need the stack's images built and
 should be run from the directory holding `docker-compose.yml`.
