@@ -21,16 +21,22 @@ uploads:
 configuration, creating it when missing, so the new database records the
 ingester's embedder.
 
-Stdlib only.
+The file is read with PyYAML, through a loader that refuses duplicate
+keys. Edits keep the file's own lines and comments, and each one is
+verified by parsing its result: it must equal the original plus exactly
+the entries added.
 """
 
 from __future__ import annotations
 
+import copy
 import dataclasses
 import json
 import re
 import urllib.error
 import urllib.request
+
+import yaml
 
 from soliplex_template import room_ids
 
@@ -96,6 +102,28 @@ class DefaultDatabaseUnplaced(UnsupportedConfigShape):
         )
 
 
+class UnparsableConfig(UnsupportedConfigShape):
+    def __init__(self, error):
+        self.error = error
+        super().__init__(f"it is not valid YAML: {error}")
+
+
+class DuplicateKey(UnsupportedConfigShape):
+    def __init__(self, key, line):
+        self.key, self.line = key, line
+        super().__init__(
+            f"key {key!r} appears twice in one mapping (line {line})"
+        )
+
+
+class EditNotVerified(UnsupportedConfigShape):
+    def __init__(self):
+        super().__init__(
+            "the edited text does not parse to the original plus the room's "
+            "entries"
+        )
+
+
 class InlineSection(UnsupportedConfigShape):
     def __init__(self, path):
         self.path = path
@@ -128,6 +156,44 @@ class ReloadFailed(IngesterError):
             f"the ingester's reload was {report.get('outcome')}: "
             + ("; ".join(failed) or json.dumps(report))
         )
+
+
+class _UniqueKeyLoader(yaml.SafeLoader):
+    """A safe loader that refuses a key repeated in one mapping.
+
+    PyYAML (and so the ingester) otherwise keeps the last value silently.
+    """
+
+    def construct_mapping(self, node, deep=False):
+        seen = set()
+        for key_node, _value_node in node.value:
+            key = self.construct_object(key_node, deep=deep)
+            try:
+                repeated = key in seen
+            except TypeError:  # an unhashable key: let PyYAML refuse it
+                break
+            if repeated:
+                raise DuplicateKey(key, key_node.start_mark.line + 1)
+            seen.add(key)
+        return super().construct_mapping(node, deep=deep)
+
+
+def _load(text: str):
+    """Parse ``text`` safely, refusing duplicate keys.
+
+    Raises :class:`UnparsableConfig` or :class:`DuplicateKey`.
+    """
+    try:
+        return yaml.load(text, Loader=_UniqueKeyLoader)
+    except yaml.YAMLError as error:
+        raise UnparsableConfig(error) from error
+
+
+def _mapping(tree, *path):
+    """The mapping at ``path`` in ``tree``, or an empty one."""
+    for key in path:
+        tree = tree.get(key) if isinstance(tree, dict) else None
+    return tree if isinstance(tree, dict) else {}
 
 
 @dataclasses.dataclass(frozen=True)
@@ -235,24 +301,26 @@ def _location_line(name: str, indent: int, data_dir: str) -> str:
     return f"{' ' * indent}{_scalar(name)}: {location}\n"
 
 
-def _default_location_line(lines: list[str], indent: int) -> str:
-    """The ``haiku.rag`` entry, placed where haiku.rag places it implicitly.
+def _default_location(tree) -> str:
+    """Where haiku.rag places ``haiku.rag`` implicitly, per ``tree``.
 
-    That is ``<storage.data_dir>/haiku.rag.lancedb``, read from the file
-    being edited. Raises :class:`DefaultDatabaseUnplaced` when the file
-    gives no plain directory there: unset or empty (haiku.rag then uses a
-    platform default), or an interpolated ``${...}`` value.
+    That is ``<storage.data_dir>/haiku.rag.lancedb``. Raises
+    :class:`DefaultDatabaseUnplaced` when the file gives no plain directory
+    there: unset or empty (haiku.rag then uses a platform default), or an
+    interpolated ``${...}`` value.
     """
+    storage = _mapping(tree, "storage")
     data_dir = None
-    storage = _top_level(lines, "storage")
-    if storage is not None and _parse_key(lines[storage]).value is None:
-        _step, keys = _child_keys(lines, storage, "storage")
-        if "data_dir" in keys:
-            value = _parse_key(lines[keys["data_dir"]]).value
-            data_dir = "" if value is None else _scalar_value(value)
-    if not data_dir or "${" in data_dir:
+    if "data_dir" in storage:
+        value = storage["data_dir"]
+        data_dir = "" if value is None else value
+    if not isinstance(data_dir, str) or not data_dir or "${" in data_dir:
         raise DefaultDatabaseUnplaced(data_dir)
-    location = _scalar(f"{data_dir.rstrip('/')}/{DEFAULT_DATABASE_FILENAME}")
+    return f"{data_dir.rstrip('/')}/{DEFAULT_DATABASE_FILENAME}"
+
+
+def _default_location_line(tree, indent: int) -> str:
+    location = _scalar(_default_location(tree))
     return f"{' ' * indent}{_scalar(DEFAULT_DATABASE)}: {location}\n"
 
 
@@ -278,7 +346,9 @@ def _register_source(
     return True
 
 
-def _register_location(lines: list[str], room_id: str, data_dir: str) -> bool:
+def _register_location(
+    lines: list[str], room_id: str, data_dir: str, tree
+) -> bool:
     lancedb = _top_level(lines, "lancedb")
     if lancedb is None:
         lines.extend(
@@ -287,7 +357,7 @@ def _register_location(lines: list[str], room_id: str, data_dir: str) -> bool:
                 "# Databases the ingester writes, by name.\n",
                 "lancedb:\n",
                 "  databases:\n",
-                _default_location_line(lines, 4),
+                _default_location_line(tree, 4),
                 _location_line(room_id, 4, data_dir),
             ]
         )
@@ -299,7 +369,7 @@ def _register_location(lines: list[str], room_id: str, data_dir: str) -> bool:
         at = _block_end(lines, lancedb)
         lines[at:at] = [
             f"{' ' * step}databases:\n",
-            _default_location_line(lines, step * 2),
+            _default_location_line(tree, step * 2),
             _location_line(room_id, step * 2, data_dir),
         ]
         return True
@@ -308,10 +378,12 @@ def _register_location(lines: list[str], room_id: str, data_dir: str) -> bool:
     entry_indent, entries = _child_keys(lines, databases, "lancedb.databases")
     if room_id in entries:
         return False
-    if entry_indent is None:
-        entry_indent = step * 2
+    added = [_location_line(room_id, entry_indent or step * 2, data_dir)]
+    if not entries:
+        # An empty map, about to be non-empty: list 'haiku.rag' too.
+        added.insert(0, _default_location_line(tree, entry_indent or step * 2))
     at = _block_end(lines, databases)
-    lines[at:at] = [_location_line(room_id, entry_indent, data_dir)]
+    lines[at:at] = added
     return True
 
 
@@ -328,58 +400,45 @@ class Registrations:
     locations: dict[str, str | None]
 
 
-def _scalar_value(value: str) -> str:
-    """The string a YAML scalar spells, ignoring a trailing comment."""
-    if value.startswith('"'):
-        decoded, _end = json.JSONDecoder().raw_decode(value)
-        return decoded
-    if value.startswith("'"):
-        return re.match(r"'((?:[^']|'')*)'", value)[1].replace("''", "'")
-    return value.split(" #", 1)[0].strip()
-
-
-def _entries(lines: list[str], section: str) -> dict[str, int]:
-    """``{name: line index}`` of ``<section>.databases``; empty if absent."""
-    top = _top_level(lines, section)
-    if top is None:
-        return {}
-    _require_block(lines, top, section)
-    _step, keys = _child_keys(lines, top, section)
-    if "databases" not in keys:
-        return {}
-    path = f"{section}.databases"
-    _require_block(lines, keys["databases"], path)
-    _entry_indent, entries = _child_keys(lines, keys["databases"], path)
-    return entries
-
-
-def _location(lines: list[str], index: int, path: str) -> str | None:
-    key = _parse_key(lines[index])
-    if key.value is not None:
-        return _scalar_value(key.value)
-    _step, keys = _child_keys(lines, index, path)
-    if "location" not in keys:
-        return None
-    value = _parse_key(lines[keys["location"]]).value
-    return None if value is None else _scalar_value(value)
+def _placed_at(entry) -> str | None:
+    if isinstance(entry, str):
+        return entry
+    location = entry.get("location") if isinstance(entry, dict) else None
+    return location if isinstance(location, str) else None
 
 
 def registrations(text: str) -> Registrations:
     """The databases ingester config ``text`` names, in either map.
 
-    Reads the file the way :func:`register_database` edits it, raising the
-    same :class:`UnsupportedConfigShape` subclasses for a shape it won't
-    edit.
+    Raises :class:`UnparsableConfig` or :class:`DuplicateKey` for a file
+    PyYAML refuses, or one repeating a key.
     """
-    lines = text.splitlines(keepends=True)
-    locations = {
-        name: _location(lines, index, f"lancedb.databases.{name}")
-        for name, index in _entries(lines, "lancedb").items()
-    }
+    tree = _load(text)
     return Registrations(
-        sources=frozenset(_entries(lines, "ingester")),
-        locations=locations,
+        sources=frozenset(_mapping(tree, "ingester", "databases")),
+        locations={
+            name: _placed_at(entry)
+            for name, entry in _mapping(tree, "lancedb", "databases").items()
+        },
     )
+
+
+def _expected(before, name, *, source, location, default_location):
+    """``before`` plus the entries an edit added."""
+    tree = copy.deepcopy(before)
+    if source is not None:
+        ingester = tree["ingester"]
+        if ingester.get("databases") is None:
+            ingester["databases"] = {}
+        ingester["databases"][name] = source
+    if location is not None:
+        if tree.get("lancedb") is None:
+            tree["lancedb"] = {}
+        if tree["lancedb"].get("databases") is None:
+            tree["lancedb"]["databases"] = {}
+            tree["lancedb"]["databases"][DEFAULT_DATABASE] = default_location
+        tree["lancedb"]["databases"][name] = location
+    return tree
 
 
 def register_database(
@@ -397,15 +456,50 @@ def register_database(
     ``ingester.databases``, a section to edit has an inline value, or
     ``lancedb.databases`` must be created but the file's
     ``storage.data_dir`` is no plain directory
-    (:class:`DefaultDatabaseUnplaced`).
+    (:class:`DefaultDatabaseUnplaced`). Raises :class:`UnparsableConfig` or
+    :class:`DuplicateKey` for a file it cannot read, and
+    :class:`EditNotVerified` when the edited text does not parse to the
+    original plus the room's entries.
     """
     if not text.endswith("\n"):
         text += "\n"
+    before = _load(text)
     lines = text.splitlines(keepends=True)
     name = str(room_id)
+    created_map = not _mapping(before, "lancedb", "databases")
     added_source = _register_source(lines, name, uploads_root)
-    added_location = _register_location(lines, name, data_dir)
-    return "".join(lines), added_source or added_location
+    added_location = _register_location(lines, name, data_dir, before)
+    edited = "".join(lines)
+
+    root = f"{uploads_root}/{name}"
+    expected = _expected(
+        before,
+        name,
+        source={
+            "sources": [
+                {
+                    "type": "fs",
+                    "id": name,
+                    "root": root,
+                    "delete_orphans": True,
+                }
+            ]
+        }
+        if added_source
+        else None,
+        location=f"{data_dir}/{name}.lancedb" if added_location else None,
+        default_location=_default_location(before)
+        if added_location and created_map
+        else None,
+    )
+    try:
+        after = _load(edited)
+    except UnsupportedConfigShape as error:
+        # e.g. a key the edit repeated: the original had no such fault
+        raise EditNotVerified() from error
+    if after != expected:
+        raise EditNotVerified()
+    return edited, added_source or added_location
 
 
 def reload(base_url: str, token: str, *, timeout: float = RELOAD_TIMEOUT):
