@@ -11,9 +11,12 @@ requires-python = ">=3.13"
 dependencies = []
 
 # 'soliplex_template.provision' runs inside a stack's 'soliplex-dev'
-# container, which installs 'soliplex-template[provisioner]'.
+# container, which installs 'soliplex-template[provisioner]'. The
+# provisioner's modules (provision, ingester, ...) run only there, so they
+# may use these dependencies; the modules behind the host-side PEP 723
+# shims (secrets, env, gitea, the migrations) stay stdlib-only.
 [project.optional-dependencies]
-provisioner = ["soliplex-plumber >= 0.4"]
+provisioner = ["soliplex-plumber >= 0.4", "pyyaml"]
 
 [project.scripts]
 soliplex-provision-room = "soliplex_template.provision:main"

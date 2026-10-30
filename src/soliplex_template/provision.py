@@ -431,7 +431,9 @@ def check_clashes(settings: Settings, room: str) -> None:
     That is: its database directory, an entry for it in either map of the
     ingester config, another database placed at its location, a non-empty
     uploads directory, or an authz policy. Raises :class:`ResourcesExist`
-    naming each one found.
+    naming each one found. Also refuses, by raising the editor's own
+    :class:`ingester.UnsupportedConfigShape`, an ingester config it could
+    not edit.
     """
     found = []
 
@@ -439,7 +441,16 @@ def check_clashes(settings: Settings, room: str) -> None:
     if database.exists():
         found.append(f"database directory {database}")
 
-    registered = ingester.registrations(settings.ingester_config.read_text())
+    config = settings.ingester_config.read_text()
+    # A dry run: refuses, before anything changes, a config the editor
+    # cannot edit (and verify).
+    ingester.register_database(
+        config,
+        room_ids.parse_room_id(room),
+        data_dir=settings.ingester_data_dir,
+        uploads_root=settings.ingester_uploads_root,
+    )
+    registered = ingester.registrations(config)
     if room in registered.sources:
         found.append(f"ingester config entry 'ingester.databases.{room}'")
     if room in registered.locations:

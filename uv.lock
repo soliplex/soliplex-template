@@ -391,6 +391,7 @@ source = { editable = "." }
 
 [package.optional-dependencies]
 provisioner = [
+    { name = "pyyaml" },
     { name = "soliplex-plumber" },
 ]
 
@@ -410,7 +411,10 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "soliplex-plumber", marker = "extra == 'provisioner'", specifier = ">=0.4" }]
+requires-dist = [
+    { name = "pyyaml", marker = "extra == 'provisioner'" },
+    { name = "soliplex-plumber", marker = "extra == 'provisioner'", specifier = ">=0.4" },
+]
 provides-extras = ["provisioner"]
 
 [package.metadata.requires-dev]

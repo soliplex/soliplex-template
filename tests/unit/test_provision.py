@@ -1128,6 +1128,24 @@ def test_provision_room_refuses_existing_resources(
     assert [command[0] for command, _ in recorder.named("cli")] == ["audit"]
 
 
+def test_provision_room_refuses_an_uneditable_ingester_config(
+    gitea_settings, monkeypatch
+):
+    recorder = _Recorder(monkeypatch)
+    with gitea_settings.ingester_config.open("a") as config:
+        config.write("lancedb: {}\n")
+    config_before = gitea_settings.ingester_config.read_text()
+
+    with pytest.raises(ingester.UnsupportedConfigShape) as caught:
+        _provision(gitea_settings)
+
+    assert type(caught.value) is ingester.InlineSection
+    assert not (gitea_settings.clone / ROOM).exists()
+    assert gitea_settings.ingester_config.read_text() == config_before
+    assert recorder.named("create_issue") == []
+    assert recorder.named("reload") == []
+
+
 def test_provision_room_names_every_clash(settings, monkeypatch):
     recorder = _Recorder(monkeypatch)
     expected = [

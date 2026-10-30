@@ -186,10 +186,16 @@ ingester:
                 },
             },
         ),
-        # an empty 'lancedb.databases' (a comment after the key)
+        # an empty 'lancedb.databases' (a comment after the key): about to be
+        # non-empty, so it lists 'haiku.rag' too
         (
             "lancedb:\n  databases:  # by name\n",
-            {"databases": {"alice:notes": "/data/alice:notes.lancedb"}},
+            {
+                "databases": {
+                    "haiku.rag": "/data/haiku.rag.lancedb",
+                    "alice:notes": "/data/alice:notes.lancedb",
+                },
+            },
         ),
         # keys spelled with quotes
         (
@@ -507,13 +513,13 @@ def test_registrations_without_entries(text):
     assert result == ingester.Registrations(sources=frozenset(), locations={})
 
 
-def test_registrations_refuses_an_inline_section():
+def test_registrations_reads_an_inline_section():
+    # Only the editor refuses inline sections; reading them is fine.
     text = _INGESTER + "lancedb:\n  databases: {}\n"
 
-    with pytest.raises(ingester.InlineSection) as caught:
-        ingester.registrations(text)
+    result = ingester.registrations(text)
 
-    assert caught.value.path == "lancedb.databases"
+    assert result.locations == {}
 
 
 # ---- register_database: placing the implicit 'haiku.rag' database ----
@@ -583,3 +589,76 @@ def test_register_database_needs_no_storage_when_lancedb_lists_databases():
         "haiku.rag": "/elsewhere/h.lancedb",
         "alice:notes": "/data/alice:notes.lancedb",
     }
+
+
+# ---- reading with PyYAML: refusals ----
+
+
+_DUPLICATE = _INGESTER + "lancedb:\n  databases:\n    a: /x\n    a: /y\n"
+
+
+@pytest.mark.parametrize(
+    "read",
+    [
+        ingester.registrations,
+        lambda text: ingester.register_database(text, ROOM),
+    ],
+)
+def test_reading_refuses_a_duplicate_key(read):
+    with pytest.raises(ingester.UnsupportedConfigShape) as caught:
+        read(_DUPLICATE)
+
+    assert type(caught.value) is ingester.DuplicateKey
+    assert caught.value.key == "a"
+    assert caught.value.line == _DUPLICATE.splitlines().index("    a: /y") + 1
+
+
+@pytest.mark.parametrize(
+    "text", ["ingester: [\n", "? [a, b]\n: 1\n"], ids=["unclosed", "list-key"]
+)
+def test_reading_refuses_unparsable_yaml(text):
+    with pytest.raises(ingester.UnsupportedConfigShape) as caught:
+        ingester.registrations(text)
+
+    assert type(caught.value) is ingester.UnparsableConfig
+    assert "not valid YAML" in str(caught.value)
+
+
+# ---- register_database: verifying the edit ----
+
+
+def test_register_database_refuses_an_edit_repeating_a_key():
+    # Review item #4: a comment at column 0 inside 'ingester.databases'
+    # hides the entries below it from the editor, which then adds the room
+    # a second time. The edit is refused rather than written.
+    text = (
+        _INGESTER
+        + "# a column-0 comment\n"
+        + '    "alice:notes":\n'
+        + "      sources:\n"
+        + "        - type: fs\n"
+        + "          root: /uploads/rooms/alice:notes\n"
+    )
+
+    with pytest.raises(ingester.UnsupportedConfigShape) as caught:
+        ingester.register_database(text, ROOM)
+
+    assert type(caught.value) is ingester.EditNotVerified
+    assert type(caught.value.__cause__) is ingester.DuplicateKey
+
+
+def test_register_database_refuses_an_edit_with_unexpected_content(
+    monkeypatch,
+):
+    real = ingester._source_lines
+
+    def wrong_root(room_id, indent, step, uploads_root):
+        return real(room_id, indent, step, "/somewhere/else")
+
+    monkeypatch.setattr(ingester, "_source_lines", wrong_root)
+
+    with pytest.raises(ingester.UnsupportedConfigShape) as caught:
+        ingester.register_database(_shipped_config(), ROOM)
+
+    assert type(caught.value) is ingester.EditNotVerified
+    assert caught.value.__cause__ is None
