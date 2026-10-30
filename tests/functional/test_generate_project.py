@@ -542,18 +542,18 @@ def test_default_stack_image_versions(generated_project):
     services = yaml.safe_load(_read(out, "docker-compose.yml"))["services"]
 
     assert services["haiku-ingester"]["image"] == (
-        "ghcr.io/ggozad/haiku.rag-slim:0.101.0"
+        "ghcr.io/ggozad/haiku.rag-slim:0.104.0"
     )
     assert (
         services["haiku-rag"]["image"] == services["haiku-ingester"]["image"]
     )
-    assert "soliplex-postgres:0.88.3\n" in _read(out, "backend/Dockerfile")
+    assert "soliplex-postgres:0.89\n" in _read(out, "backend/Dockerfile")
     project = tomllib.loads(_read(out, "pyproject.toml"))
     package = tomllib.loads(_read(out, "src/soliplex_functest/pyproject.toml"))
     assert project["project"]["dependencies"] == [
-        "soliplex[postgres-binary] >= 0.88.3, < 0.89"
+        "soliplex[postgres-binary] >= 0.89, < 0.90"
     ]
-    assert package["project"]["dependencies"] == ["soliplex >= 0.88.3, < 0.89"]
+    assert package["project"]["dependencies"] == ["soliplex >= 0.89, < 0.90"]
 
 
 def test_docling_image_matches_haiku_rag(generated_project):

@@ -105,15 +105,15 @@ DEFAULTS: dict[str, object] = {
     # (ghcr.io/soliplex/soliplex-tui) build on: "latest", a moving
     # "<major>.<minor>" (follows patch releases on 'docker compose build
     # --pull'), or an exact "<major>.<minor>.<patch>".
-    "soliplex_image_tag": "0.88.3",
+    "soliplex_image_tag": "0.89",
     # The 'soliplex' requirement in the stack's host-side pyproject.toml files
     # (dev mode, and src/<package>/). Must admit the image tag's release.
-    "soliplex_dev_constraint": ">= 0.88.3, < 0.89",
+    "soliplex_dev_constraint": ">= 0.89, < 0.90",
     # haiku-ingester image tag (ghcr.io/ggozad/haiku.rag-slim). Not a free
     # choice: the soliplex release constrains 'haiku.rag-slim' as a
     # dependency, and the ingester writes the LanceDB the backend reads, so
     # this has to satisfy the range the 'soliplex_image_tag' release implies.
-    "haiku_rag_version": "0.101.0",
+    "haiku_rag_version": "0.104.0",
     # The docling-serve image the converter service runs: the variant the
     # host can use (the 'cpu' variant converts on any host; 'base' and
     # the 'cuNNN' variants want a GPU) and the docling-serve version,
