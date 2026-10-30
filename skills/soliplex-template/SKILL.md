@@ -251,7 +251,7 @@ from the user and invoke it.
    Then set `soliplex_dev_constraint` (the `soliplex` requirement in the
    stack's host-side `pyproject.toml` files) to a range that admits the
    release, e.g. `>= 0.88, < 0.89` for `0.88` or `0.88.1`; the default
-   `>= 0.88.2, < 0.89` admits the default `0.88.2` tag. The generator refuses a
+   `>= 0.88.3, < 0.89` admits the default `0.88.3` tag. The generator refuses a
    tag outside the constraint.
 
 2. **Write the answers to a JSON file** (omit keys to accept defaults), e.g.

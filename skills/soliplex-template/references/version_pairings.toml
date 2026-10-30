@@ -8,6 +8,10 @@
 extracted = "2026-10-29"
 
 [[pairings]]
+version = "0.88.3"
+haiku_rag = ">= 0.101.0, < 0.102"
+
+[[pairings]]
 version = "0.88.2"
 haiku_rag = ">= 0.101.0, < 0.102"
 
