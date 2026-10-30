@@ -10,6 +10,8 @@ tokens, against the configured PEM) locally.
 The provisioner is refused until an ``admin_users`` entry admits its
 tokens' subject -- added with the command the provisioning docs give -- so
 the tests run in file order: the refusal first, then the admitted run.
+Last, the provisioner service provisions a room for a requester admitted
+by a ``__provision__`` policy, and refuses one who is not.
 
 Needs a soliplex with service tokens in the backend image: when the image
 lacks ``soliplex-cli service-token``, the tests skip with a warning. To test
@@ -30,6 +32,7 @@ act exactly once (cases that would repeat it are parametrized or split).
 from __future__ import annotations
 
 import json
+import time
 import warnings
 
 import provisioning_stack as ps
@@ -46,6 +49,20 @@ _USERS = {
     "bob": {"sub": "bob", "preferred_username": "bob"},
 }
 _ROOM_ID = "alice:q3-plans"
+_SERVICE_ROOM_ID = "alice:service-plans"
+_SERVICE_TIMEOUT = 180
+# Admits alice alone to request rooms through the service.
+_ADMISSION_POLICY = {
+    "room_id": "__provision__",
+    "default_allow_deny": "DENY",
+    "acl_entries": [
+        {
+            "allow_deny": "ALLOW",
+            "permission": "WRITE",
+            "json_path": '$[?$.preferred_username == "alice"]',
+        }
+    ],
+}
 
 
 def _skip_without_service_tokens(out):
@@ -169,3 +186,76 @@ def test_provisioned_room_is_private_to_its_owner(
     rooms = _rooms_as(out, tokens[user])
 
     assert (_ROOM_ID in rooms) is sees_room
+
+
+# ---- the provisioner service ----
+
+
+@pytest.fixture(scope="module")
+def service(provisioned):
+    """The provisioner service, up, with alice admitted by policy."""
+    out, tokens, _result = provisioned
+    ps.check(
+        ps.soliplex_cli(
+            out,
+            "room-authz",
+            "from-yaml",
+            "/environment",
+            "__provision__",
+            stdin=json.dumps(_ADMISSION_POLICY),
+        ),
+        "room-authz from-yaml __provision__",
+    )
+    ps.up_provisioner(out)
+    return out, tokens
+
+
+@pytest.fixture(scope="module")
+def service_request(service):
+    """alice's request through the service, and its state once settled."""
+    out, tokens = service
+    accepted = ps.call_service(
+        out, "POST", "/rooms", tokens["alice"], {"name": "Service Plans"}
+    )
+    deadline = time.monotonic() + _SERVICE_TIMEOUT
+    while True:
+        settled = ps.call_service(
+            out, "GET", f"/rooms/{_SERVICE_ROOM_ID}", tokens["alice"]
+        )
+        if settled[1].get("state") != "pending":
+            break
+        assert time.monotonic() < deadline, "the request stayed pending"
+        time.sleep(2)
+    return out, tokens, accepted, settled
+
+
+@pytest.mark.needs_docker
+def test_service_refuses_a_requester_not_admitted(service):
+    out, tokens = service
+
+    status, body = ps.call_service(
+        out, "POST", "/rooms", tokens["bob"], {"name": "Bob Plans"}
+    )
+
+    assert status == 403, body
+    assert not (out / "src" / "rooms-provisioned" / "bob:bob-plans").exists()
+
+
+@pytest.mark.needs_docker
+def test_service_provisions_for_an_admitted_requester(service_request):
+    out, tokens, accepted, settled = service_request
+
+    rooms = _rooms_as(out, tokens["alice"])
+
+    assert accepted == (202, {"room_id": _SERVICE_ROOM_ID, "issue_url": None})
+    assert settled == (
+        200,
+        {
+            "room_id": _SERVICE_ROOM_ID,
+            "state": "live",
+            "issue_url": None,
+            "incomplete": [],
+            "error": None,
+        },
+    )
+    assert _SERVICE_ROOM_ID in rooms

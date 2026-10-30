@@ -136,6 +136,21 @@ class IngesterUnreachable(IngesterError):
         super().__init__(f"cannot reach the ingester at {url}: {reason}")
 
 
+class ReloadTimedOut(IngesterError):
+    """The ingester did not answer the reload in time.
+
+    It may still be applying the config, and may finish after the caller
+    has given up.
+    """
+
+    def __init__(self, url, timeout):
+        self.url, self.timeout = url, timeout
+        super().__init__(
+            f"the ingester at {url} did not answer within {timeout} seconds; "
+            "its reload may still apply"
+        )
+
+
 class ReloadRefused(IngesterError):
     def __init__(self, code, detail):
         self.code, self.detail = code, detail
@@ -507,8 +522,9 @@ def reload(base_url: str, token: str, *, timeout: float = RELOAD_TIMEOUT):
 
     Returns the ingester's reload report when every change applied. Raises
     :class:`ReloadFailed` (with the report) when a database failed,
-    :class:`ReloadRefused` when the ingester refused the new config, and
-    :class:`IngesterUnreachable` when it cannot be reached.
+    :class:`ReloadRefused` when the ingester refused the new config,
+    :class:`ReloadTimedOut` when it does not answer within ``timeout``
+    seconds, and :class:`IngesterUnreachable` when it cannot be reached.
     """
     url = f"{base_url.rstrip('/')}/reload"
     request = urllib.request.Request(
@@ -533,3 +549,5 @@ def reload(base_url: str, token: str, *, timeout: float = RELOAD_TIMEOUT):
         raise ReloadRefused(error.code, detail or body) from error
     except urllib.error.URLError as error:
         raise IngesterUnreachable(url, error.reason) from error
+    except TimeoutError as error:
+        raise ReloadTimedOut(url, timeout) from error

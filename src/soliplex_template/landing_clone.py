@@ -9,7 +9,8 @@ provisioner's commits -- e.g. by pointing ``GIT_CONFIG_GLOBAL`` at a
 mounted file: its ``user.name`` / ``user.email`` make the committer (the
 provisioner's own identity fills in whichever is unset), and its hooks or
 signing settings apply. Every git call uses literal pathspecs (room ids
-carry ':') and never prompts for credentials.
+carry ':') and never prompts for credentials; the one that reaches the
+network, the push, is bounded by a timeout.
 
 Stdlib only -- git via :mod:`subprocess`, the lock via :mod:`fcntl`.
 """
@@ -26,6 +27,7 @@ import subprocess
 BRANCH = "main"
 COMMITTER_NAME = "Soliplex provisioner"
 COMMITTER_EMAIL = "provisioner@soliplex.invalid"
+PUSH_TIMEOUT = 60
 
 
 class LandingCloneError(Exception):
@@ -57,6 +59,12 @@ class PushFailed(LandingCloneError):
         )
 
 
+class PushTimedOut(PushFailed):
+    def __init__(self, timeout):
+        self.timeout = timeout
+        super().__init__(f"timed out after {timeout} seconds")
+
+
 def _env(extra_config: dict[str, str] | None = None) -> dict[str, str]:
     """The environment for one git call.
 
@@ -77,7 +85,9 @@ def _env(extra_config: dict[str, str] | None = None) -> dict[str, str]:
     return env
 
 
-def _git(path, *args, extra_config=None) -> subprocess.CompletedProcess:
+def _git(
+    path, *args, extra_config=None, timeout=None
+) -> subprocess.CompletedProcess:
     if shutil.which("git") is None:
         raise GitMissing()
     return subprocess.run(
@@ -85,6 +95,7 @@ def _git(path, *args, extra_config=None) -> subprocess.CompletedProcess:
         capture_output=True,
         text=True,
         env=_env(extra_config),
+        timeout=timeout,
     )
 
 
@@ -177,23 +188,33 @@ def commit_room(
 
 
 def push(
-    path: pathlib.Path, *, branch: str = BRANCH, token: str | None = None
+    path: pathlib.Path,
+    *,
+    branch: str = BRANCH,
+    token: str | None = None,
+    timeout: float = PUSH_TIMEOUT,
 ) -> None:
     """Push ``branch`` of the clone at ``path`` to ``origin``.
 
     A Gitea ``token`` travels as an ``http.extraHeader`` set through the
     environment, never on the command line or in the clone's config.
+    Raises :class:`PushFailed` when the push fails, and
+    :class:`PushTimedOut` when it takes longer than ``timeout`` seconds.
     """
     extra_config = {}
     if token is not None:
         extra_config["http.extraHeader"] = f"Authorization: token {token}"
-    result = _git(
-        path,
-        "push",
-        "--quiet",
-        "origin",
-        f"{branch}:{branch}",
-        extra_config=extra_config,
-    )
+    try:
+        result = _git(
+            path,
+            "push",
+            "--quiet",
+            "origin",
+            f"{branch}:{branch}",
+            extra_config=extra_config,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as error:
+        raise PushTimedOut(timeout) from error
     if result.returncode != 0:
         raise PushFailed(result.stderr.strip())

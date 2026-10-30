@@ -12,11 +12,17 @@ dependencies = []
 
 # 'soliplex_template.provision' runs inside a stack's 'soliplex-dev'
 # container, which installs 'soliplex-template[provisioner]'. The
-# provisioner's modules (provision, ingester, ...) run only there, so they
-# may use these dependencies; the modules behind the host-side PEP 723
-# shims (secrets, env, gitea, the migrations) stay stdlib-only.
+# provisioner's modules (provision, provision_service, ingester, ...) run
+# only there, so they may use these dependencies; the modules behind the
+# host-side PEP 723 shims (secrets, env, gitea, the migrations) stay
+# stdlib-only.
 [project.optional-dependencies]
-provisioner = ["soliplex-plumber >= 0.4", "pyyaml"]
+provisioner = [
+    "fastapi",  # 'provision_service'
+    "pyyaml",
+    "soliplex-plumber >= 0.4",
+    "uvicorn",  # serves 'provision_service'
+]
 
 [project.scripts]
 soliplex-provision-room = "soliplex_template.provision:main"
@@ -38,6 +44,8 @@ soliplex-provision-room = "soliplex_template.provision:main"
 [dependency-groups]
 dev = [
     "coverage",
+    "fastapi",  # 'provision_service'
+    "httpx",  # fastapi's TestClient
     "mako",
     "packaging",  # 'generate_soliplex_project.py'
     "pyyaml",

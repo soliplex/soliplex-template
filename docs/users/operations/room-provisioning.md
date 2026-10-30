@@ -34,7 +34,7 @@ remain (each is printed), and `2` on an error.
 
 ## What it does
 
-Holding a lock (`src/.rooms-provisioned.lock`) for the whole run, the
+Holding a lock (`src/.rooms-provisioned.lock`) through step 8, the
 provisioner:
 
 1. refuses a room id that anything already uses (see
@@ -58,6 +58,14 @@ provisioner:
 A failure before the commit undoes what the run itself created, and only
 that (and comments on the tracking issue, leaving it open). After the commit, the room is valid as
 committed: a step that fails there is reported, with how to finish it.
+
+Two steps have time limits:
+
+- the ingester's reload (120 seconds): one that times out may still apply
+  after the run has undone its changes, so the failure says to reload the
+  ingester again once it answers, and to remove the room's database
+  directory if one appears
+- the push (60 seconds): one that times out is reported as a step to finish
 
 `src/rooms-provisioned` is a git repository of its own (the stack's
 `src/*` rule ignores it), listed in `room_paths` as
@@ -103,6 +111,57 @@ docker compose run --rm --quiet-build soliplex-dev \
 
 Until then, the provisioner stops before changing anything, naming the
 entry it needs. A backend in no-auth mode admits it without one.
+
+## The provisioner service
+
+The `soliplex-provisioner` service runs the same provisioner over HTTP, on
+a user's behalf. It starts with `docker compose up`, and listens on the
+compose network only, at `http://soliplex-provisioner:8090`:
+
+- `POST /rooms`, with `{"name": ..., "description": ..., "slug": ...}`
+  (the last two optional), answers `202` with `{"room_id": ...,
+  "issue_url": ...}` once the request is admitted, its id is free, and its
+  tracking issue is filed; it then creates the room in the background
+- `GET /rooms/{room_id}` answers the request's state: `pending`, `live`,
+  `incomplete` (with the steps still to do) or `failed` (with the error)
+
+Refusals:
+
+- `400`: an unusable name or slug
+- `401`: a missing or invalid token
+- `403`: a requester who is not admitted
+- `404`: a `GET` for a request that is not the caller's (unless they are
+  an admin), or that the service does not know
+- `409`: a room id already taken, or with a request already pending
+- `500`: a check or the provisioner failed; the service's log has the
+  detail
+
+A caller authenticates *as the requester*: its bearer token is a service
+token carrying the requester's claims, signed with the stack's
+`url_safe_token_secret` (code in the backend can mint one with
+`soliplex.token_mint.mint_service_token`). Keep its lifetime short: the
+backend accepts the same token as that user.
+
+A requester is admitted when they are an admin, or hold WRITE on the
+reserved room id `__provision__`. With no policy for that id, only admins
+are admitted. To admit every signed-in user:
+
+```bash
+docker compose run --rm --quiet-build --no-TTY soliplex-dev \
+    /app/.venv/bin/soliplex-cli room-authz from-yaml /environment \
+    __provision__ <<'EOF'
+room_id: "__provision__"
+default_allow_deny: DENY
+acl_entries:
+  - allow_deny: ALLOW
+    permission: WRITE
+    authenticated: true
+EOF
+```
+
+The service keeps request state in memory: a restart loses it, while the
+tracking issue remains the record. The service needs the same admin entry
+as the command line (see [With OIDC on](#with-oidc-on)).
 
 ## Settings
 

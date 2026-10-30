@@ -284,6 +284,38 @@ def test_push_keeps_config_already_in_the_environment(
     assert env["GIT_CONFIG_VALUE_1"] == "Authorization: token s3cret"
 
 
+def test_push_bounds_the_push_with_a_timeout(clone, origin, monkeypatch):
+    landing_clone.ensure_clone(clone, origin_url=str(origin))
+    _write_room(clone)
+    _commit(clone)
+    calls = []
+    run = subprocess.run
+
+    def spy(argv, **kwargs):
+        calls.append(kwargs["timeout"])
+        return run(argv, **kwargs)
+
+    monkeypatch.setattr(landing_clone.subprocess, "run", spy)
+
+    landing_clone.push(clone)
+
+    assert calls == [landing_clone.PUSH_TIMEOUT]
+
+
+def test_push_timed_out(clone, monkeypatch):
+    def hang(argv, **kwargs):
+        raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
+
+    monkeypatch.setattr(landing_clone.subprocess, "run", hang)
+
+    with pytest.raises(landing_clone.LandingCloneError) as caught:
+        landing_clone.push(clone, timeout=5)
+
+    assert type(caught.value) is landing_clone.PushTimedOut
+    assert caught.value.timeout == 5
+    assert str(caught.value).endswith("failed: timed out after 5 seconds")
+
+
 def test_push_without_origin(clone):
     _write_room(clone)
     _commit(clone)
