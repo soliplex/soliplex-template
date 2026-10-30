@@ -542,7 +542,7 @@ def test_default_stack_image_versions(generated_project):
     services = yaml.safe_load(_read(out, "docker-compose.yml"))["services"]
 
     assert services["haiku-ingester"]["image"] == (
-        "ghcr.io/ggozad/haiku.rag-slim:0.101.0"
+        "ghcr.io/ggozad/haiku.rag-slim:0.104.0"
     )
     assert (
         services["haiku-rag"]["image"] == services["haiku-ingester"]["image"]
