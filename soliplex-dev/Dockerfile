@@ -11,13 +11,32 @@
 # dev requirement that needs a different version fails this build. Skipped
 # while the file holds only comments and blank lines.
 #
+# It also runs the room provisioner ('soliplex-provision-room'), which needs
+# 'git' for the provisioned-rooms clone and the 'soliplex-template' package;
+# that one installs with the same constraints. SOLIPLEX_TEMPLATE overrides the
+# requirement (e.g. with a local wheel's path).
+#
 # The 'uv' tag is the one backend/Dockerfile mounts; keep the two in step.
 FROM ghcr.io/astral-sh/uv:0.12.18 AS uv
 
 FROM backend
 
+ARG SOLIPLEX_TEMPLATE="soliplex-template[provisioner]>=0.20"
+
 # The backend image runs as the 'soliplex' user; installing needs root.
 USER root
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends git && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN --mount=from=uv,source=/uv,target=/usr/local/bin/uv \
+    --mount=type=cache,target=/root/.cache/uv \
+    uv pip freeze --python /app/.venv/bin/python \
+      > /tmp/base-constraints.txt && \
+    uv pip install --python /app/.venv/bin/python \
+      --constraints /tmp/base-constraints.txt \
+      "$SOLIPLEX_TEMPLATE"
 
 COPY --link requirements-dev.txt /tmp/requirements-dev.txt
 

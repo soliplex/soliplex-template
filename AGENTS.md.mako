@@ -63,7 +63,7 @@ The `.secrets/*.gen` files are mode `0600`. They're readable in-container becaus
 ### Soliplex configuration layout (`backend/environment/`, bind-mounted to `/environment`)
 
 - `installation.yaml` — the top-level Soliplex install config (agents, secrets, environment vars, room list, skills, DB URIs, upload/sandbox paths). Start here when reasoning about backend behavior. The file is heavily commented with pointers to <https://soliplex.github.io/soliplex/config/> — those comments describe defaults, so a section being empty/absent is not the same as being unconfigured.
-- `rooms/<name>/room_config.yaml` — per-room agent prompts, tools, skills. `room_paths` in `installation.yaml` points at `./rooms`, so every `rooms/<name>/room_config.yaml` is loaded; to exclude a room, remove its directory or replace `./rooms` with an explicit list of the wanted rooms.
+- `rooms/<name>/room_config.yaml` — per-room agent prompts, tools, skills. `room_paths` in `installation.yaml` points at `./rooms`, so every `rooms/<name>/room_config.yaml` is loaded; to exclude a room, remove its directory or replace `./rooms` with an explicit list of the wanted rooms. `room_paths` also lists `/app/src/rooms-provisioned`: rooms created on request by the provisioner land in `src/rooms-provisioned/`, a git clone of its own that the provisioner alone writes (the backend sees it through its read-only `src/` mount).
 - `skills/<name>/` — filesystem skills discovered via `filesystem_skills_paths`. Must also be declared in `skill_configs` to be enabled.
 - `completions/`, `quizzes/`, `oidc/`, `logging.yaml`, `haiku.rag.yaml` — feature-specific configs referenced from `installation.yaml`.
 
@@ -82,6 +82,8 @@ The `.secrets/*.gen` files are mode `0600`. They're readable in-container becaus
 One-off CLI work on a store (`info`, `migrate`, building a separate static database) runs on the `haiku-rag` service; `skills/soliplex-template/scripts/rag_db.py` drives it for the static-database case.
 
 To add documents, drop files into `rag/docs/` — the FS source of the `ingester.databases` entry keyed `haiku.rag` in `haiku.rag/haiku.rag.yaml` will pick them up on its next poll. To add other sources (S3, HTTP, WebDAV), append entries under the `ingester.databases` entry keyed `haiku.rag` in the same file and restart the ingester.
+
+The ingester (and the one-shot `haiku-rag` service) also mounts room uploads, `uploads/rooms/`, read-only at `/uploads/rooms`: a room with its own database ingests from `/uploads/rooms/<room_id>/`.
 
 ## Gotchas
 

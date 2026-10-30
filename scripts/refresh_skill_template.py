@@ -432,6 +432,7 @@ nav = [
         "operations/secrets.md",
         "operations/rag.md",
         "operations/ingester.md",
+        "operations/room-provisioning.md",
         "operations/migrations.md",
         "operations/ollama.md",
     ] },

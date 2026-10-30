@@ -26,6 +26,7 @@ import importlib.util
 import json
 import os
 import pathlib
+import posixpath
 import shutil
 import stat
 import subprocess
@@ -635,6 +636,7 @@ def test_runtime_data_stays_gitignored(generated_project):
         "rag/db/haiku.rag.lancedb/chunks.lance",
         "uploads/rooms/secret.pdf",
         "backend/sandbox/workdirs/run1/scratch.py",
+        "src/rooms-provisioned/alice:notes/room_config.yaml",
     ]
 
     ignored = subprocess.run(
@@ -645,6 +647,90 @@ def test_runtime_data_stays_gitignored(generated_project):
     ).stdout.split()
 
     assert set(ignored) == set(data_paths)
+
+
+def test_provisioned_rooms_parent_wiring(generated_project):
+    # The provisioned-rooms parent lives under 'src/', which the backend
+    # mounts read-only at '/app/src'; it lies outside the backend's
+    # config watch ('/environment' and the '--reload-dirs' entries).
+    out, _params = generated_project
+    services = yaml.safe_load(_read(out, "docker-compose.yml"))["services"]
+    installation = yaml.safe_load(
+        _read(out, "backend/environment/installation.yaml")
+    )
+
+    entry = "/app/src/rooms-provisioned"
+    backend_binds = {
+        volume["target"]: volume
+        for volume in services["backend"]["volumes"]
+        if volume["type"] == "bind"
+    }
+    watched = [
+        token.removeprefix("--reload-dirs=")
+        for token in services["backend"]["command"].split()
+        if token.startswith("--reload-dirs=")
+    ]
+
+    assert entry in installation["room_paths"]
+    assert backend_binds["/app/src"]["source"] == "./src"
+    assert backend_binds["/app/src"]["read_only"] is True
+    assert "./src:/app/src" in services["soliplex-dev"]["volumes"]
+    assert watched
+    for root in ["/environment", *watched]:
+        assert not posixpath.normpath(entry).startswith(root.rstrip("/") + "/")
+
+
+def test_url_safe_token_secret_read_from_its_docker_secret(generated_project):
+    # MCP room tokens and service tokens verify in every process only when
+    # all of them read the one generated secret.
+    out, _params = generated_project
+    installation = yaml.safe_load(
+        _read(out, "backend/environment/installation.yaml")
+    )
+
+    [secret] = [
+        s
+        for s in installation["secrets"]
+        if s["secret_name"] == "URL_SAFE_TOKEN_SECRET"
+    ]
+
+    assert secret["sources"][0] == {
+        "kind": "file_path",
+        "file_path": "/run/secrets/url_safe_token_secret",
+    }
+
+
+def test_soliplex_dev_wired_for_the_room_provisioner(generated_project):
+    # The room provisioner runs in 'soliplex-dev': it reloads the ingester
+    # (bearer secret) after registering a room's database in the ingester's
+    # config (mounted read-write), and commits with git (in the image).
+    out, _params = generated_project
+    services = yaml.safe_load(_read(out, "docker-compose.yml"))["services"]
+    dockerfile = _read(out, "soliplex-dev", "Dockerfile")
+
+    soliplex_dev = services["soliplex-dev"]
+
+    assert "ingester_bearer" in soliplex_dev["secrets"]
+    assert (
+        "./haiku.rag/haiku.rag.yaml:/app/haiku.rag.yaml"
+        in soliplex_dev["volumes"]
+    )
+    assert "apt-get install -y --no-install-recommends git" in dockerfile
+    assert (
+        'ARG SOLIPLEX_TEMPLATE="soliplex-template[provisioner]' in dockerfile
+    )
+
+
+@pytest.mark.parametrize("service", ["haiku-ingester", "haiku-rag"])
+def test_room_uploads_mounted_read_only_for_ingestion(
+    generated_project, service
+):
+    out, _params = generated_project
+    services = yaml.safe_load(_read(out, "docker-compose.yml"))["services"]
+
+    volumes = services[service]["volumes"]
+
+    assert "./uploads/rooms:/uploads/rooms:ro" in volumes
 
 
 def test_env_file_written(generated_project):

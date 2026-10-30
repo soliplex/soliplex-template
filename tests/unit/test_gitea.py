@@ -307,11 +307,22 @@ def test_provision_gitea_writes_env(tmp_path, monkeypatch):
     monkeypatch.setattr(st_gitea, "wait_for_gitea", lambda **kw: True)
     monkeypatch.setattr(st_gitea, "ensure_admin_user", ensure)
     monkeypatch.setattr(st_gitea, "mint_token", mint)
-    monkeypatch.setattr(st_gitea, "create_repo", mock.Mock())
+    create = mock.Mock()
+    monkeypatch.setattr(st_gitea, "create_repo", create)
 
     result = st_gitea.provision_gitea(tmp_path)
 
     assert result is None
+    # the requests repo, then the private provisioned-rooms origin.
+    assert create.call_args_list == [
+        mock.call(mock.ANY),
+        mock.call(
+            mock.ANY,
+            name=st_gitea.ROOMS_REPO_NAME,
+            auto_init=False,
+            private=True,
+        ),
+    ]
     env_text = (tmp_path / ".env").read_text()
     assert f"GITEA_HOST={st_gitea.GITEA_INTERNAL_URL}" in env_text
     assert "GITEA_ACCESS_TOKEN=tok999" in env_text
