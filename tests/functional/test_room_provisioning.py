@@ -148,3 +148,26 @@ def test_provision_room_again_is_refused(provisioned):
     assert result.returncode == 2
     assert f"room '{_ROOM_ID}' already exists" in result.stderr
     assert ps.committed_id(clone) == head
+
+
+@pytest.mark.needs_docker
+def test_provision_room_after_its_directory_was_removed(provisioned):
+    # A room whose directory was removed by hand leaves its database, its
+    # ingester entries and its authz policy behind; provisioning the same
+    # id again refuses, naming them, rather than adopting them. (Runs last:
+    # it removes the room the earlier tests check.)
+    out, _first = provisioned
+    clone = out / "src" / "rooms-provisioned"
+    ps.check(ps.run("git", "-C", clone, "rm", "-r", "-q", _ROOM_ID), "git rm")
+    config_before = (out / "haiku.rag" / "haiku.rag.yaml").read_text()
+
+    result = _provision(out)
+
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert f"room '{_ROOM_ID}' was not provisioned" in result.stderr
+    assert f"/db/{_ROOM_ID}.lancedb" in result.stderr
+    assert f"'ingester.databases.{_ROOM_ID}'" in result.stderr
+    assert f"'lancedb.databases.{_ROOM_ID}'" in result.stderr
+    assert f"an authz policy for '{_ROOM_ID}'" in result.stderr
+    assert not (clone / _ROOM_ID).exists()
+    assert (out / "haiku.rag" / "haiku.rag.yaml").read_text() == config_before

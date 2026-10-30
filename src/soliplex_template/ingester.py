@@ -275,6 +275,73 @@ def _register_location(lines: list[str], room_id: str, data_dir: str) -> bool:
     return True
 
 
+@dataclasses.dataclass(frozen=True)
+class Registrations:
+    """The databases an ingester config already names.
+
+    ``sources`` holds the names in ``ingester.databases``; ``locations``
+    maps each name in ``lancedb.databases`` to its location (``None`` when
+    the entry's form names none this reader recognizes).
+    """
+
+    sources: frozenset[str]
+    locations: dict[str, str | None]
+
+
+def _scalar_value(value: str) -> str:
+    """The string a YAML scalar spells, ignoring a trailing comment."""
+    if value.startswith('"'):
+        decoded, _end = json.JSONDecoder().raw_decode(value)
+        return decoded
+    if value.startswith("'"):
+        return re.match(r"'((?:[^']|'')*)'", value)[1].replace("''", "'")
+    return value.split(" #", 1)[0].strip()
+
+
+def _entries(lines: list[str], section: str) -> dict[str, int]:
+    """``{name: line index}`` of ``<section>.databases``; empty if absent."""
+    top = _top_level(lines, section)
+    if top is None:
+        return {}
+    _require_block(lines, top, section)
+    _step, keys = _child_keys(lines, top, section)
+    if "databases" not in keys:
+        return {}
+    path = f"{section}.databases"
+    _require_block(lines, keys["databases"], path)
+    _entry_indent, entries = _child_keys(lines, keys["databases"], path)
+    return entries
+
+
+def _location(lines: list[str], index: int, path: str) -> str | None:
+    key = _parse_key(lines[index])
+    if key.value is not None:
+        return _scalar_value(key.value)
+    _step, keys = _child_keys(lines, index, path)
+    if "location" not in keys:
+        return None
+    value = _parse_key(lines[keys["location"]]).value
+    return None if value is None else _scalar_value(value)
+
+
+def registrations(text: str) -> Registrations:
+    """The databases ingester config ``text`` names, in either map.
+
+    Reads the file the way :func:`register_database` edits it, raising the
+    same :class:`UnsupportedConfigShape` subclasses for a shape it won't
+    edit.
+    """
+    lines = text.splitlines(keepends=True)
+    locations = {
+        name: _location(lines, index, f"lancedb.databases.{name}")
+        for name, index in _entries(lines, "lancedb").items()
+    }
+    return Registrations(
+        sources=frozenset(_entries(lines, "ingester")),
+        locations=locations,
+    )
+
+
 def register_database(
     text: str,
     room_id: room_ids.RoomId,

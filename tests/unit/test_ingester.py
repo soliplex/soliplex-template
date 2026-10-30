@@ -431,3 +431,79 @@ def test_reload_unreachable(monkeypatch):
     assert type(caught.value) is ingester.IngesterUnreachable
     assert caught.value.url == "http://haiku-ingester:8765/reload"
     assert caught.value.reason == "Name or service not known"
+
+
+# ---- registrations ----
+
+
+def test_registrations_in_shipped_config():
+    text = _shipped_config()
+
+    result = ingester.registrations(text)
+
+    assert result == ingester.Registrations(
+        sources=frozenset({"haiku.rag"}), locations={}
+    )
+
+
+def test_registrations_after_register_database():
+    text, _changed = ingester.register_database(_shipped_config(), ROOM)
+
+    result = ingester.registrations(text)
+
+    assert result == ingester.Registrations(
+        sources=frozenset({"haiku.rag", "alice:notes"}),
+        locations={
+            "haiku.rag": "/data/haiku.rag.lancedb",
+            "alice:notes": "/data/alice:notes.lancedb",
+        },
+    )
+
+
+def test_registrations_location_forms():
+    text = (
+        _INGESTER
+        + "lancedb:\n"
+        + "  databases:\n"
+        + '    "dq": "/data/dq.lancedb"  # a comment\n'
+        + "    'sq': '/data/it''s.lancedb'\n"
+        + "    plain: /data/plain.lancedb # note\n"
+        + "    tagged:\n"
+        + "      location: /data/tagged.lancedb\n"
+        + "      tag: v1\n"
+        + "    unplaced:\n"
+        + "      tag: v1\n"
+    )
+
+    result = ingester.registrations(text)
+
+    assert result.locations == {
+        "dq": "/data/dq.lancedb",
+        "sq": "/data/it's.lancedb",
+        "plain": "/data/plain.lancedb",
+        "tagged": "/data/tagged.lancedb",
+        "unplaced": None,
+    }
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "storage:\n  data_dir: /data\n",
+        "ingester:\n  queue:\n    namespace: x\n",
+        "ingester:\n  databases:\n",
+    ],
+)
+def test_registrations_without_entries(text):
+    result = ingester.registrations(text)
+
+    assert result == ingester.Registrations(sources=frozenset(), locations={})
+
+
+def test_registrations_refuses_an_inline_section():
+    text = _INGESTER + "lancedb:\n  databases: {}\n"
+
+    with pytest.raises(ingester.InlineSection) as caught:
+        ingester.registrations(text)
+
+    assert caught.value.path == "lancedb.databases"

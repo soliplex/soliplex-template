@@ -37,21 +37,23 @@ remain (each is printed), and `2` on an error.
 Holding a lock (`src/.rooms-provisioned.lock`) for the whole run, the
 provisioner:
 
-1. files a `new-room` tracking issue, when a Gitea is configured and the
+1. refuses a room id that anything already uses (see
+   [Before anything changes](#before-anything-changes))
+2. files a `new-room` tracking issue, when a Gitea is configured and the
    concierge extension is installed
-2. writes `room_config.yaml` and `REQUEST.md` (who asked for what, and
+3. writes `room_config.yaml` and `REQUEST.md` (who asked for what, and
    what is set up) into `src/rooms-provisioned/<room-id>/`
-3. creates the room's uploads directory, `uploads/rooms/<room-id>/`
-4. registers the room's database in `haiku.rag/haiku.rag.yaml` (an `fs`
+4. creates the room's uploads directory, `uploads/rooms/<room-id>/`
+5. registers the room's database in `haiku.rag/haiku.rag.yaml` (an `fs`
    source over the room's uploads, and its place in `lancedb.databases`),
    then has the ingester reload its config, which creates the database
-5. makes the room private, granting READ and WRITE to the requester's
+6. makes the room private, granting READ and WRITE to the requester's
    claim value
-6. audits the installation's rooms
-7. commits the room in `src/rooms-provisioned` (the requester as author),
+7. audits the installation's rooms
+8. commits the room in `src/rooms-provisioned` (the requester as author),
    and pushes it when a Gitea is configured
-8. has the backend reload its room configs, which makes the room live
-9. comments on and closes the tracking issue
+9. has the backend reload its room configs, which makes the room live
+10. comments on and closes the tracking issue
 
 A failure before the commit undoes the earlier steps (and comments on the
 tracking issue, leaving it open). After the commit, the room is valid as
@@ -61,6 +63,21 @@ committed: a step that fails there is reported, with how to finish it.
 `src/*` rule ignores it), listed in `room_paths` as
 `/app/src/rooms-provisioned`. The backend reads it through its read-only
 `src/` mount, outside its config watch.
+
+### Before anything changes
+
+The provisioner refuses a room id when any resource named for it already
+exists:
+
+- its directory in the clone
+- its database directory (`rag/db/<room-id>.lancedb`)
+- an entry for it in either map of `haiku.rag/haiku.rag.yaml` (or another
+  database placed at its location)
+- a non-empty uploads directory
+- a room authorization policy
+
+The refusal names each one found, and changes nothing: remove them, or
+choose another name.
 
 ## With OIDC on
 

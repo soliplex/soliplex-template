@@ -112,6 +112,11 @@ def gitea_settings(tmp_path, settings):
     )
 
 
+def _cli_label(command):
+    """'room-authz', or 'audit <what>' for an audit."""
+    return f"audit {command[2]}" if command[0] == "audit" else command[0]
+
+
 class _Recorder:
     """Stands in for the provisioner's collaborators, recording calls.
 
@@ -123,6 +128,8 @@ class _Recorder:
         self.fail = fail or {}
         self.check_lock_of = check_lock_of
         self.lock_held = []
+        # Ids 'audit room-authz' reports as stale policies.
+        self.stale = []
         # The room the backend's rooms reload reports adding.
         self.loaded = ROOM
         monkeypatch.setattr(provision, "_backend", self._backend)
@@ -141,15 +148,17 @@ class _Recorder:
             return {"added": [self.loaded], "removed": [], "changed": []}
         return {}
 
-    def _cli(self, settings, *command, stdin=None):
+    def _cli(self, settings, *command, stdin=None, ok_codes=(0,)):
         if self.check_lock_of is not None:
             lock = landing_clone.lock_path(self.check_lock_of)
             with lock.open("a") as other:
                 try:
                     fcntl.flock(other, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 except BlockingIOError:
-                    self.lock_held.append(command[0])
+                    self.lock_held.append(_cli_label(command))
         self._record("cli", command, stdin)
+        if command[:3] == ("audit", "--quiet", "room-authz") and self.stale:
+            return json.dumps({"room_authz": {"stale_rooms": self.stale}})
         return ""
 
     def _reload(self, url, token):
@@ -210,7 +219,15 @@ def test_provision_room(settings, monkeypatch):
     assert recorder.named("reload") == [
         ("http://haiku-ingester:8765", "bearer")
     ]
-    [(policy_cmd, policy), (audit_cmd, _stdin)] = recorder.named("cli")
+    [(stale_cmd, _), (policy_cmd, policy), (audit_cmd, _)] = recorder.named(
+        "cli"
+    )
+    assert stale_cmd == (
+        "audit",
+        "--quiet",
+        "room-authz",
+        str(settings.environment),
+    )
     assert policy_cmd == (
         "room-authz",
         "from-yaml",
@@ -243,7 +260,11 @@ def test_provision_room_holds_the_lock(settings, monkeypatch):
 
     _provision(settings)
 
-    assert recorder.lock_held == ["room-authz", "audit"]
+    assert recorder.lock_held == [
+        "audit room-authz",
+        "room-authz",
+        "audit rooms",
+    ]
 
 
 def test_provision_room_with_explicit_slug(settings, monkeypatch):
@@ -339,17 +360,24 @@ def test_provision_room_bad_name(settings, monkeypatch):
 def test_provision_room_rolls_back(gitea_settings, monkeypatch):
     original = gitea_settings.ingester_config.read_text()
     db = gitea_settings.db_dir / f"{ROOM}.lancedb"
-    db.mkdir()  # as the ingester's reload creates it
     fail = provision.CliFailed(("audit",), "room broken")
     calls_before_audit = []
 
-    def fail_audit(settings, *command, stdin=None):
-        calls_before_audit.append(command[0])
-        if command[0] == "audit":
+    def fail_audit(settings, *command, stdin=None, ok_codes=(0,)):
+        calls_before_audit.append(_cli_label(command))
+        if command[:3] == ("audit", "--quiet", "rooms"):
             raise fail
+        return ""
+
+    def reload_creating_the_database(url, token):
+        db.mkdir(exist_ok=True)  # as the ingester's reload does
+        recorder.calls.append(("reload", url, token))
 
     recorder = _Recorder(monkeypatch)
     monkeypatch.setattr(provision, "_cli", fail_audit)
+    monkeypatch.setattr(
+        provision.ingester, "reload", reload_creating_the_database
+    )
 
     with pytest.raises(provision.ProvisionError) as caught:
         _provision(gitea_settings)
@@ -363,7 +391,12 @@ def test_provision_room_rolls_back(gitea_settings, monkeypatch):
     assert gitea_settings.ingester_config.read_text() == original
     assert not db.exists()
     assert len(recorder.named("reload")) == 2
-    assert calls_before_audit == ["room-authz", "audit", "room-authz"]
+    assert calls_before_audit == [
+        "audit room-authz",
+        "room-authz",
+        "audit rooms",
+        "room-authz",
+    ]
     assert _git(gitea_settings.clone, "log", "--all", "--oneline") == ""
     [(number, comment)] = recorder.named("comment_issue")
     assert number == 7
@@ -1015,3 +1048,179 @@ def test_main_uses_the_process_environment(token_file, monkeypatch):
 
     [(_claims, kwargs)] = calls
     assert kwargs["settings"].service_subject == "from-env"
+
+
+# ---- provision_room: clashing resources ----
+
+
+def _db_dir_exists(settings, recorder):
+    (settings.db_dir / f"{ROOM}.lancedb").mkdir()
+    return [f"database directory {settings.db_dir / f'{ROOM}.lancedb'}"]
+
+
+def _registered_in_both_maps(settings, recorder):
+    text = settings.ingester_config.read_text()
+    registered, _changed = ingester.register_database(
+        text, room_ids.parse_room_id(ROOM)
+    )
+    settings.ingester_config.write_text(registered)
+    return [
+        f"ingester config entry 'ingester.databases.{ROOM}'",
+        f"ingester config entry 'lancedb.databases.{ROOM}'",
+    ]
+
+
+def _another_name_at_its_location(settings, recorder):
+    location = f"/data/{ROOM}.lancedb"
+    with settings.ingester_config.open("a") as config:
+        config.write(
+            "lancedb:\n"
+            "  databases:\n"
+            "    haiku.rag: /data/haiku.rag.lancedb\n"
+            f'    squatter: "{location}"\n'
+        )
+    return [
+        f"ingester config entry 'lancedb.databases.squatter' "
+        f"placed at {location}"
+    ]
+
+
+def _non_empty_uploads(settings, recorder):
+    uploads = settings.uploads_dir / ROOM
+    uploads.mkdir(parents=True)
+    (uploads / "left-behind.pdf").write_text("x")
+    return [f"non-empty uploads directory {uploads}"]
+
+
+def _policy_exists(settings, recorder):
+    recorder.stale = [ROOM]
+    return [f"an authz policy for '{ROOM}'"]
+
+
+@pytest.mark.parametrize(
+    "clash",
+    [
+        _db_dir_exists,
+        _registered_in_both_maps,
+        _another_name_at_its_location,
+        _non_empty_uploads,
+        _policy_exists,
+    ],
+)
+def test_provision_room_refuses_existing_resources(
+    gitea_settings, monkeypatch, clash
+):
+    recorder = _Recorder(monkeypatch)
+    expected = clash(gitea_settings, recorder)
+    config_before = gitea_settings.ingester_config.read_text()
+
+    with pytest.raises(provision.ProvisionError) as caught:
+        _provision(gitea_settings)
+
+    assert type(caught.value) is provision.ResourcesExist
+    assert caught.value.room_id == ROOM
+    assert caught.value.found == tuple(expected)
+    assert "Remove them, or choose another name" in str(caught.value)
+    assert not (gitea_settings.clone / ROOM).exists()
+    assert gitea_settings.ingester_config.read_text() == config_before
+    assert recorder.named("create_issue") == []
+    assert recorder.named("reload") == []
+    assert [command[0] for command, _ in recorder.named("cli")] == ["audit"]
+
+
+def test_provision_room_names_every_clash(settings, monkeypatch):
+    recorder = _Recorder(monkeypatch)
+    expected = [
+        *_db_dir_exists(settings, recorder),
+        *_non_empty_uploads(settings, recorder),
+        *_policy_exists(settings, recorder),
+    ]
+
+    with pytest.raises(provision.ResourcesExist) as caught:
+        _provision(settings)
+
+    assert caught.value.found == tuple(expected)
+
+
+def test_provision_room_reuses_an_empty_uploads_directory(
+    settings, monkeypatch
+):
+    _Recorder(monkeypatch)
+    (settings.uploads_dir / ROOM).mkdir(parents=True)
+
+    result = _provision(settings)
+
+    assert result.room_id == ROOM
+
+
+# ---- stale_policy_ids ----
+
+
+@pytest.mark.parametrize(
+    "output, expected",
+    [
+        ("", set()),
+        ("\n", set()),
+        (
+            json.dumps(
+                {"room_authz": {"stale_rooms": [ROOM, "__provision__"]}}
+            ),
+            {ROOM, "__provision__"},
+        ),
+        (
+            json.dumps({"room_authz": {"invalid_acls": {"x": [["$[", "e"]]}}}),
+            set(),
+        ),
+        (json.dumps({"other_section": {}}), set()),
+    ],
+)
+def test_stale_policy_ids(monkeypatch, output, expected):
+    calls = []
+
+    def cli(settings, *command, stdin=None, ok_codes=(0,)):
+        calls.append((command, ok_codes))
+        return output
+
+    monkeypatch.setattr(provision, "_cli", cli)
+    settings = provision.Settings(ingester_token="t")
+
+    result = provision.stale_policy_ids(settings)
+
+    assert result == expected
+    assert calls == [
+        (("audit", "--quiet", "room-authz", "/environment"), (0, 1))
+    ]
+
+
+@pytest.mark.parametrize(
+    "output, detail",
+    [
+        (
+            json.dumps({"room_authz": {"unreachable": "connection refused"}}),
+            "connection refused",
+        ),
+        ("not json", "not json"),
+        ("[1, 2]", "[1, 2]"),
+    ],
+)
+def test_stale_policy_ids_fails(monkeypatch, output, detail):
+    monkeypatch.setattr(
+        provision, "_cli", lambda settings, *command, **kwargs: output
+    )
+    settings = provision.Settings(ingester_token="t")
+
+    with pytest.raises(provision.CliFailed) as caught:
+        provision.stale_policy_ids(settings)
+
+    assert caught.value.output == detail
+
+
+def test_cli_accepts_listed_exit_codes(fake_cli, monkeypatch):
+    monkeypatch.setenv("FAKE_RC", "1")
+    settings = provision.Settings(
+        ingester_token="t", soliplex_cli=str(fake_cli)
+    )
+
+    result = provision._cli(settings, "audit", ok_codes=(0, 1))
+
+    assert result == "audit \n"

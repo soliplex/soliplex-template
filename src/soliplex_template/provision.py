@@ -6,17 +6,27 @@ where the backend's installation tree is ``/environment``, the stack's
 (optionally) Gitea are reachable over the compose network. Holding the
 provisioned-rooms clone's lock throughout, it:
 
-1. files the tracking issue, when a Gitea is configured and the concierge
+1. refuses the room, changing nothing, when anything named for its id
+   already exists (:func:`check_clashes`):
+
+   - its directory in the clone
+   - its database directory
+   - an entry for it in either map of the ingester config (or another
+     database placed at its location)
+   - a non-empty uploads directory
+   - an authz policy
+
+2. files the tracking issue, when a Gitea is configured and the concierge
    is installed
-2. writes the room's ``room_config.yaml`` and ``REQUEST.md`` into the clone
-3. creates the room's uploads directory
-4. registers the room's database with the ingester and reloads it (which
+3. writes the room's ``room_config.yaml`` and ``REQUEST.md`` into the clone
+4. creates the room's uploads directory
+5. registers the room's database with the ingester and reloads it (which
    creates the database)
-5. makes the room private, granting the requester READ and WRITE
-6. audits the installation's rooms
-7. commits the room (the requester as author) and pushes the clone
-8. reloads the backend's room configs
-9. comments on and closes the tracking issue
+6. makes the room private, granting the requester READ and WRITE
+7. audits the installation's rooms
+8. commits the room (the requester as author) and pushes the clone
+9. reloads the backend's room configs
+10. comments on and closes the tracking issue
 
 A failure before the commit undoes what was done (and comments the failure
 on the tracking issue, leaving it open). After the commit the room is
@@ -44,6 +54,7 @@ import datetime
 import json
 import os
 import pathlib
+import posixpath
 import re
 import shutil
 import subprocess
@@ -142,6 +153,22 @@ class RoomExists(ProvisionError):
         self.room_id = room_id
         super().__init__(
             f"room {room_id!r} already exists; choose another name"
+        )
+
+
+class ResourcesExist(ProvisionError):
+    """Resources named for the room already exist, so it is not created.
+
+    ``found`` describes each one; an operator decides whether to remove
+    them before the room is provisioned again.
+    """
+
+    def __init__(self, room_id, found):
+        self.room_id, self.found = room_id, tuple(found)
+        super().__init__(
+            f"room {room_id!r} was not provisioned: resources named for it "
+            f"already exist: {'; '.join(self.found)}. Remove them, or choose "
+            "another name"
         )
 
 
@@ -354,7 +381,12 @@ def reload_backend_rooms(settings: Settings) -> dict:
     return _backend(settings, "POST", "/v1/installation/reload/rooms")
 
 
-def _cli(settings: Settings, *command: str, stdin: str | None = None) -> str:
+def _cli(
+    settings: Settings,
+    *command: str,
+    stdin: str | None = None,
+    ok_codes: tuple[int, ...] = (0,),
+) -> str:
     try:
         result = subprocess.run(
             [settings.soliplex_cli, *command],
@@ -364,9 +396,74 @@ def _cli(settings: Settings, *command: str, stdin: str | None = None) -> str:
         )
     except OSError as error:
         raise CliFailed(command, str(error)) from error
-    if result.returncode != 0:
+    if result.returncode not in ok_codes:
         raise CliFailed(command, (result.stdout + result.stderr).strip())
     return result.stdout
+
+
+def stale_policy_ids(settings: Settings) -> set[str]:
+    """The ids of authz policies for rooms that are not configured.
+
+    ``audit room-authz`` reports them as "stale", exiting 1 with a JSON
+    error report (``--quiet``); a clean audit prints nothing.
+    """
+    command = (
+        "audit",
+        "--quiet",
+        "room-authz",
+        str(settings.environment),
+    )
+    output = _cli(settings, *command, ok_codes=(0, 1))
+    if not output.strip():
+        return set()
+    try:
+        report = json.loads(output).get("room_authz", {})
+    except (json.JSONDecodeError, AttributeError) as error:
+        raise CliFailed(command, output.strip()) from error
+    if "unreachable" in report:
+        raise CliFailed(command, report["unreachable"])
+    return set(report.get("stale_rooms", ()))
+
+
+def check_clashes(settings: Settings, room: str) -> None:
+    """Refuse ``room`` when anything named for it already exists.
+
+    That is: its database directory, an entry for it in either map of the
+    ingester config, another database placed at its location, a non-empty
+    uploads directory, or an authz policy. Raises :class:`ResourcesExist`
+    naming each one found.
+    """
+    found = []
+
+    database = settings.db_dir / f"{room}.lancedb"
+    if database.exists():
+        found.append(f"database directory {database}")
+
+    registered = ingester.registrations(settings.ingester_config.read_text())
+    if room in registered.sources:
+        found.append(f"ingester config entry 'ingester.databases.{room}'")
+    if room in registered.locations:
+        found.append(f"ingester config entry 'lancedb.databases.{room}'")
+    location = posixpath.normpath(
+        f"{settings.ingester_data_dir}/{room}.lancedb"
+    )
+    for name, placed in sorted(registered.locations.items()):
+        if name != room and placed is not None:
+            if posixpath.normpath(placed) == location:
+                found.append(
+                    f"ingester config entry 'lancedb.databases.{name}' "
+                    f"placed at {location}"
+                )
+
+    uploads = settings.uploads_dir / room
+    if uploads.is_dir() and any(uploads.iterdir()):
+        found.append(f"non-empty uploads directory {uploads}")
+
+    if room in stale_policy_ids(settings):
+        found.append(f"an authz policy for {room!r}")
+
+    if found:
+        raise ResourcesExist(room, found)
 
 
 def owner_policy(room_id: str, owner: room_ids.RoomOwner) -> str:
@@ -483,7 +580,8 @@ def provision_room(
     :class:`room_ids.RoomIdError` for an unusable owner, name or slug,
     :class:`AdminAccessDenied` before touching anything when the backend
     refuses the provisioner's service token, :class:`RoomExists` for a
-    taken id, :class:`IssueFilingFailed` when the tracking issue cannot be
+    taken id, :class:`ResourcesExist` when resources named for the id
+    already exist, :class:`IssueFilingFailed` when the tracking issue cannot be
     filed, and
     :class:`ProvisioningFailed` (after rolling back) when a step before the
     commit fails.
@@ -527,6 +625,7 @@ def provision_room(
         )
         if room_dir.exists():
             raise RoomExists(room)
+        check_clashes(settings, room)
 
         issue = None
         if issues is not None:

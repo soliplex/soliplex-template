@@ -653,7 +653,11 @@ first use), which reloads the ingester and the backend. The stack's
    is committed but a later step failed — relay each printed "still to do"
    line; `2` is an error, and nothing was left behind (a failure part-way is
    rolled back). A taken id, or a name that yields no slug, is an error:
-   ask the user for another name or an explicit `--slug`.
+   ask the user for another name or an explicit `--slug`. So is an id whose
+   database, ingester entries, uploads or authz policy already exist (left
+   from a room removed by hand): the error names each one. Report them to
+   the user, who decides whether to remove them; never delete them
+   yourself to get past the refusal.
 
 ## Cloning another project into a stack's src/
 
