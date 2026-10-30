@@ -3,8 +3,15 @@
 :func:`provision_room` runs inside the stack's ``soliplex-dev`` container,
 where the backend's installation tree is ``/environment``, the stack's
 ``src/`` is ``/app/src`` (read-write), and the backend, the ingester and
-(optionally) Gitea are reachable over the compose network. Holding the
-provisioned-rooms clone's lock throughout, it:
+(optionally) Gitea are reachable over the compose network. It runs in
+two phases:
+
+- admission (:func:`admit_room`, steps 1-2)
+- creation (:func:`create_room`, steps 3-10)
+
+Each phase takes the provisioned-rooms clone's lock for itself, so another
+run may take it between them: creation therefore repeats step 1's check
+first. The steps:
 
 1. refuses the room, changing nothing, when anything named for its id
    already exists (:func:`check_clashes`):
@@ -33,8 +40,8 @@ that (and comments the failure on the tracking issue, leaving it open).
 An ingester reload that times out may still apply after that undo, which
 the failure says. After the commit the room is valid as committed, so a
 failure in the steps that follow is reported, with what remains to do,
-rather than undone. The lock is released once the clone is pushed: the
-backend's reload and the tracking issue's update run without it.
+rather than undone. Creation releases the lock once the clone is pushed:
+the backend's reload and the tracking issue's update run without it.
 
 It authenticates to the backend with a service token it mints for each
 call (``soliplex-cli service-token mint``, subject ``soliplex-provisioner``
@@ -62,6 +69,7 @@ import re
 import shutil
 import subprocess
 import sys
+import typing
 import urllib.error
 import urllib.request
 
@@ -329,7 +337,7 @@ class Provisioned:
 # --------------------------------------------------------------------------
 def mint_service_token(settings: Settings) -> str:
     """A short-lived service token for the provisioner's subject."""
-    minted = _cli(
+    minted = run_cli(
         settings,
         "service-token",
         "mint",
@@ -392,12 +400,17 @@ def reload_backend_rooms(settings: Settings) -> dict:
     return _backend(settings, "POST", "/v1/installation/reload/rooms")
 
 
-def _cli(
+def run_cli(
     settings: Settings,
     *command: str,
     stdin: str | None = None,
     ok_codes: tuple[int, ...] = (0,),
 ) -> str:
+    """Run ``soliplex-cli <command>``; return its standard output.
+
+    Raises :class:`CliFailed` when it cannot run, or exits with a code not
+    in ``ok_codes``.
+    """
     try:
         result = subprocess.run(
             [settings.soliplex_cli, *command],
@@ -424,7 +437,7 @@ def stale_policy_ids(settings: Settings) -> set[str]:
         "room-authz",
         str(settings.environment),
     )
-    output = _cli(settings, *command, ok_codes=(0, 1))
+    output = run_cli(settings, *command, ok_codes=(0, 1))
     if not output.strip():
         return set()
     try:
@@ -512,7 +525,7 @@ def owner_policy(room_id: str, owner: room_ids.RoomOwner) -> str:
 
 
 def _set_policy(settings: Settings, room_id: str, policy: str) -> None:
-    _cli(
+    run_cli(
         settings,
         "room-authz",
         "from-yaml",
@@ -523,23 +536,35 @@ def _set_policy(settings: Settings, room_id: str, policy: str) -> None:
 
 
 def _audit_rooms(settings: Settings) -> None:
-    _cli(settings, "audit", "--quiet", "rooms", str(settings.environment))
+    run_cli(settings, "audit", "--quiet", "rooms", str(settings.environment))
 
 
-def concierge_issues():
+class GiteaClient(typing.NamedTuple):
+    """The concierge's functions for the tracking issues on a Gitea."""
+
+    create_issue: collections.abc.Callable
+    comment_issue: collections.abc.Callable
+    close_issue: collections.abc.Callable
+
+
+def concierge_gitea_client() -> GiteaClient | None:
     """The concierge's Gitea functions, or None when it is not installed.
 
-    Returns ``(create_gitea_issue_sync, comment_issue, close_issue)``;
-    concierge releases before 0.12 lack the first, and count as absent.
+    Concierge releases before 0.12 lack ``create_gitea_issue_sync``, and
+    count as absent.
     """
     try:
         from soliplex_concierge import gitea_admin
         from soliplex_concierge.tools import gitea as concierge_gitea
 
-        create = concierge_gitea.create_gitea_issue_sync
+        create_issue = concierge_gitea.create_gitea_issue_sync
     except (ImportError, AttributeError):
         return None
-    return create, gitea_admin.comment_issue, gitea_admin.close_issue
+    return GiteaClient(
+        create_issue=create_issue,
+        comment_issue=gitea_admin.comment_issue,
+        close_issue=gitea_admin.close_issue,
+    )
 
 
 # --------------------------------------------------------------------------
@@ -593,7 +618,36 @@ def _undo_ingester(
         shutil.rmtree(database, ignore_errors=True)
 
 
-def provision_room(
+@dataclasses.dataclass(frozen=True)
+class RoomPlan:
+    """A room request, worked out; see :func:`plan_room`."""
+
+    claims: collections.abc.Mapping
+    owner: room_ids.RoomOwner
+    room_id: room_ids.RoomId
+    name: str
+    config_text: str
+    request: provision_record.RoomRequest
+
+    @property
+    def room(self) -> str:
+        return str(self.room_id)
+
+
+@dataclasses.dataclass(frozen=True)
+class Admission:
+    """An admitted room request; see :func:`admit_room`.
+
+    ``issue`` is the tracking issue, filed with ``gitea_client``; both are
+    None without a Gitea or the concierge.
+    """
+
+    plan: RoomPlan
+    gitea_client: GiteaClient | None = None
+    issue: object | None = None
+
+
+def plan_room(
     claims: collections.abc.Mapping,
     *,
     name: str,
@@ -601,19 +655,13 @@ def provision_room(
     description: str | None = None,
     slug: str | None = None,
     now: datetime.datetime | None = None,
-) -> Provisioned:
-    """Provision a private RAG room for the requester ``claims`` name.
+) -> RoomPlan:
+    """Work out the room the requester ``claims`` name asks for.
 
     ``name`` is the room's human-readable name; ``slug`` (derived from it
-    when omitted) completes the room id ``<owner>:<slug>``. Raises
-    :class:`room_ids.RoomIdError` for an unusable owner, name or slug,
-    :class:`AdminAccessDenied` before touching anything when the backend
-    refuses the provisioner's service token, :class:`RoomExists` for a
-    taken id, :class:`ResourcesExist` when resources named for the id
-    already exist, :class:`IssueFilingFailed` when the tracking issue cannot be
-    filed, and
-    :class:`ProvisioningFailed` (after rolling back) when a step before the
-    commit fails.
+    when omitted) completes the room id ``<owner>:<slug>``. Changes
+    nothing. Raises :class:`room_ids.RoomIdError` for an unusable owner,
+    name or slug.
     """
     owner = room_ids.owner_from_claims(
         claims,
@@ -624,54 +672,124 @@ def provision_room(
         owner, slug if slug is not None else room_ids.slugify(name)
     )
     description = name if description is None else description
-    config_text = provisioned_room.render_room_config(
-        room_id, name=name, description=description
-    )
-    request = provision_record.RoomRequest(
+    return RoomPlan(
+        claims=claims,
         owner=owner,
         room_id=room_id,
         name=name,
-        description=description,
-        requested_at=now or datetime.datetime.now(datetime.UTC),
-        requester_name=str(claims["name"]) if claims.get("name") else None,
+        config_text=provisioned_room.render_room_config(
+            room_id, name=name, description=description
+        ),
+        request=provision_record.RoomRequest(
+            owner=owner,
+            room_id=room_id,
+            name=name,
+            description=description,
+            requested_at=now or datetime.datetime.now(datetime.UTC),
+            requester_name=(
+                str(claims["name"]) if claims.get("name") else None
+            ),
+        ),
     )
-    record_kwargs = {
+
+
+def _record_kwargs(settings: Settings) -> dict:
+    return {
         "data_dir": settings.ingester_data_dir,
         "uploads_root": settings.ingester_uploads_root,
     }
 
+
+def _check_free(settings: Settings, room: str) -> None:
+    """Refuse ``room`` when it, or anything named for it, already exists."""
+    if (settings.clone / room).exists():
+        raise RoomExists(room)
+    check_clashes(settings, room)
+
+
+def _comment(settings: Settings, admission: Admission, body: str) -> None:
+    """Comment on the tracking issue, if any, ignoring a failure."""
+    if admission.issue is not None:
+        with contextlib.suppress(Exception):
+            admission.gitea_client.comment_issue(
+                settings.gitea.host,
+                settings.gitea.token,
+                settings.gitea.owner,
+                settings.gitea.repo,
+                admission.issue.number,
+                body,
+            )
+
+
+def admit_room(plan: RoomPlan, settings: Settings) -> Admission:
+    """Admit ``plan``: check that its room can be created, and file its issue.
+
+    Holding the clone's lock, makes sure the clone exists, refuses a room
+    whose id anything already uses, and files the tracking issue (when a
+    Gitea is configured and the concierge is installed). Raises
+    :class:`AdminAccessDenied` before taking the lock when the backend
+    refuses the provisioner's service token, :class:`RoomExists` for a
+    taken id, :class:`ResourcesExist` when resources named for the id
+    already exist, and :class:`IssueFilingFailed` when the tracking issue
+    cannot be filed.
+    """
     check_admin_access(settings)
 
     gitea_settings = settings.gitea
-    issues = concierge_issues() if gitea_settings is not None else None
-    room = str(room_id)
-    room_dir = settings.clone / room
+    gitea_client = (
+        concierge_gitea_client() if gitea_settings is not None else None
+    )
 
     with landing_clone.locked(settings.clone):
         landing_clone.ensure_clone(
             settings.clone,
             origin_url=gitea_settings.origin_url if gitea_settings else None,
         )
-        if room_dir.exists():
-            raise RoomExists(room)
-        check_clashes(settings, room)
+        _check_free(settings, plan.room)
 
-        issue = None
-        if issues is not None:
-            create, _comment, _close = issues
-            try:
-                issue = create(
-                    host=gitea_settings.host,
-                    token=gitea_settings.token,
-                    owner=gitea_settings.owner,
-                    repo=gitea_settings.repo,
-                    user=claims,
-                    title=provision_record.title(request),
-                    body=provision_record.render(request, **record_kwargs),
-                    request_type=REQUEST_TYPE,
-                )
-            except Exception as error:
-                raise IssueFilingFailed(error) from error
+        if gitea_client is None:
+            return Admission(plan=plan)
+
+        try:
+            issue = gitea_client.create_issue(
+                host=gitea_settings.host,
+                token=gitea_settings.token,
+                owner=gitea_settings.owner,
+                repo=gitea_settings.repo,
+                user=plan.claims,
+                title=provision_record.title(plan.request),
+                body=provision_record.render(
+                    plan.request, **_record_kwargs(settings)
+                ),
+                request_type=REQUEST_TYPE,
+            )
+        except Exception as error:
+            raise IssueFilingFailed(error) from error
+
+    return Admission(plan=plan, gitea_client=gitea_client, issue=issue)
+
+
+def create_room(admission: Admission, settings: Settings) -> Provisioned:
+    """Create the room ``admission`` admitted.
+
+    Holding the clone's lock, checks again that the room's id is free
+    (raising as :func:`admit_room` does, after commenting on the tracking
+    issue), then creates and commits the room. Raises
+    :class:`ProvisioningFailed` (after rolling back) when a step before the
+    commit fails; steps after it that fail are named in the result's
+    ``incomplete``.
+    """
+    plan = admission.plan
+    room = plan.room
+    room_dir = settings.clone / room
+    issue = admission.issue
+
+    with landing_clone.locked(settings.clone):
+        try:
+            _check_free(settings, room)
+        except ProvisionError as error:
+            _comment(settings, admission, str(error))
+            raise
 
         rollback = _Rollback()
         try:
@@ -679,14 +797,14 @@ def provision_room(
                 environment=settings.environment,
                 parent_path=str(settings.clone),
                 room_id=room,
-                config_text=config_text,
+                config_text=plan.config_text,
             )
             rollback.add("remove the room directory", shutil.rmtree, room_dir)
             (room_dir / provision_record.RECORD_FILE).write_text(
                 provision_record.render(
-                    request,
+                    plan.request,
                     issue_url=issue.url if issue else None,
-                    **record_kwargs,
+                    **_record_kwargs(settings),
                 )
             )
 
@@ -707,7 +825,7 @@ def provision_room(
             original = settings.ingester_config.read_text()
             registered, changed = ingester.register_database(
                 original,
-                room_id,
+                plan.room_id,
                 data_dir=settings.ingester_data_dir,
                 uploads_root=settings.ingester_uploads_root,
             )
@@ -727,7 +845,7 @@ def provision_room(
             # END: ingester integration
             # -----------------------------------------------------------------
 
-            _set_policy(settings, room, owner_policy(room, owner))
+            _set_policy(settings, room, owner_policy(room, plan.owner))
             rollback.add(
                 "remove the room's authz policy",
                 _set_policy,
@@ -738,35 +856,25 @@ def provision_room(
 
             _audit_rooms(settings)
 
-            author_name, author_email = _author(claims, owner)
+            author_name, author_email = _author(plan.claims, plan.owner)
             commit = landing_clone.commit_room(
                 settings.clone,
                 room,
                 author_name=author_name,
                 author_email=author_email,
                 message=_commit_message(
-                    room, name, gitea_settings, issue and issue.number
+                    room, plan.name, settings.gitea, issue and issue.number
                 ),
             )
         except Exception as error:
             failures = rollback.run()
             failed = ProvisioningFailed(room, error, failures)
-            if issue is not None:
-                _create, comment, _close = issues
-                with contextlib.suppress(Exception):
-                    comment(
-                        gitea_settings.host,
-                        gitea_settings.token,
-                        gitea_settings.owner,
-                        gitea_settings.repo,
-                        issue.number,
-                        str(failed),
-                    )
+            _comment(settings, admission, str(failed))
             raise failed from error
 
         incomplete = list(_push(settings))
 
-    incomplete.extend(_finish(settings, issues, issue, room))
+    incomplete.extend(_finish(settings, admission, room))
 
     return Provisioned(
         room_id=room,
@@ -775,6 +883,31 @@ def provision_room(
         issue_url=issue.url if issue else None,
         incomplete=tuple(incomplete),
     )
+
+
+def provision_room(
+    claims: collections.abc.Mapping,
+    *,
+    name: str,
+    settings: Settings,
+    description: str | None = None,
+    slug: str | None = None,
+    now: datetime.datetime | None = None,
+) -> Provisioned:
+    """Provision a private RAG room for the requester ``claims`` name.
+
+    Plans the room (:func:`plan_room`), admits it (:func:`admit_room`),
+    then creates it (:func:`create_room`), raising as each of them does.
+    """
+    plan = plan_room(
+        claims,
+        name=name,
+        settings=settings,
+        description=description,
+        slug=slug,
+        now=now,
+    )
+    return create_room(admit_room(plan, settings), settings)
 
 
 def _rmdir_if_empty(path: pathlib.Path) -> None:
@@ -791,7 +924,7 @@ def _push(settings) -> collections.abc.Iterator[str]:
             yield f"push the provisioned-rooms clone ({error})"
 
 
-def _finish(settings, issues, issue, room) -> collections.abc.Iterator[str]:
+def _finish(settings, admission, room) -> collections.abc.Iterator[str]:
     """Run the steps after the push; yield how to finish each that fails.
 
     They run without the clone's lock, so a slow backend or Gitea holds up
@@ -812,10 +945,11 @@ def _finish(settings, issues, issue, room) -> collections.abc.Iterator[str]:
                 f"not (does 'room_paths' list {str(settings.clone)!r}?)"
             )
 
+    issue = admission.issue
     if issue is not None:
-        _create, comment, close = issues
+        gitea_client = admission.gitea_client
         try:
-            comment(
+            gitea_client.comment_issue(
                 settings.gitea.host,
                 settings.gitea.token,
                 settings.gitea.owner,
@@ -823,7 +957,7 @@ def _finish(settings, issues, issue, room) -> collections.abc.Iterator[str]:
                 issue.number,
                 f"Provisioned room `{room}`.",
             )
-            close(
+            gitea_client.close_issue(
                 settings.gitea.host,
                 settings.gitea.token,
                 settings.gitea.owner,
@@ -837,7 +971,7 @@ def _finish(settings, issues, issue, room) -> collections.abc.Iterator[str]:
 # --------------------------------------------------------------------------
 # Command line
 # --------------------------------------------------------------------------
-_USER_ERRORS = (
+USER_ERRORS = (
     ProvisionError,
     room_ids.RoomIdError,
     ingester.IngesterError,
@@ -884,7 +1018,7 @@ def main(argv=None, environ=None) -> int:
             description=args.description,
             slug=args.slug,
         )
-    except _USER_ERRORS as error:
+    except USER_ERRORS as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
 

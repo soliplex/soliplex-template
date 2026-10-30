@@ -136,9 +136,11 @@ class _Recorder:
         # The room the backend's rooms reload reports adding.
         self.loaded = ROOM
         monkeypatch.setattr(provision, "_backend", self._backend)
-        monkeypatch.setattr(provision, "_cli", self._cli)
+        monkeypatch.setattr(provision, "run_cli", self._cli)
         monkeypatch.setattr(provision.ingester, "reload", self._reload)
-        monkeypatch.setattr(provision, "concierge_issues", self._concierge)
+        monkeypatch.setattr(
+            provision, "concierge_gitea_client", self._concierge
+        )
 
     def _record(self, name, *args):
         self.calls.append((name, *args))
@@ -179,7 +181,11 @@ class _Recorder:
         self._record("reload", url, token)
 
     def _concierge(self):
-        return self._create, self._comment, self._close
+        return provision.GiteaClient(
+            create_issue=self._create,
+            comment_issue=self._comment,
+            close_issue=self._close,
+        )
 
     def _create(self, **kwargs):
         self._record("create_issue", kwargs)
@@ -235,9 +241,14 @@ def test_provision_room(settings, monkeypatch):
     assert recorder.named("reload") == [
         ("http://haiku-ingester:8765", "bearer")
     ]
-    [(stale_cmd, _), (policy_cmd, policy), (audit_cmd, _)] = recorder.named(
-        "cli"
-    )
+    # The clash check runs on admission, then again on creation.
+    [
+        (stale_cmd, _),
+        (recheck_cmd, _),
+        (policy_cmd, policy),
+        (audit_cmd, _),
+    ] = recorder.named("cli")
+    assert recheck_cmd == stale_cmd
     assert stale_cmd == (
         "audit",
         "--quiet",
@@ -286,6 +297,7 @@ def test_provision_room_holds_the_lock_until_the_push(
     _provision(gitea_settings)
 
     assert recorder.lock_held == [
+        "audit room-authz",
         "audit room-authz",
         "room-authz",
         "audit rooms",
@@ -339,7 +351,7 @@ def test_provision_room_with_gitea_without_concierge(
     gitea_settings, monkeypatch
 ):
     recorder = _Recorder(monkeypatch)
-    monkeypatch.setattr(provision, "concierge_issues", lambda: None)
+    monkeypatch.setattr(provision, "concierge_gitea_client", lambda: None)
 
     result = _provision(gitea_settings)
 
@@ -377,6 +389,24 @@ def test_provision_room_existing_room(settings, monkeypatch):
     assert settings.ingester_config.read_text() == original
 
 
+def test_create_room_rechecks_the_room_is_free(gitea_settings, monkeypatch):
+    recorder = _Recorder(monkeypatch)
+    plan = provision.plan_room(
+        CLAIMS, name="Q3 Plans", settings=gitea_settings, now=NOW
+    )
+    admission = provision.admit_room(plan, gitea_settings)
+    # Another run creates the room once this one is admitted.
+    (gitea_settings.clone / ROOM).mkdir()
+
+    with pytest.raises(provision.ProvisionError) as caught:
+        provision.create_room(admission, gitea_settings)
+
+    assert type(caught.value) is provision.RoomExists
+    assert recorder.named("comment_issue") == [(7, str(caught.value))]
+    assert recorder.named("close_issue") == []
+    assert recorder.named("reload") == []
+
+
 def test_provision_room_bad_name(settings, monkeypatch):
     recorder = _Recorder(monkeypatch)
 
@@ -406,7 +436,7 @@ def test_provision_room_rolls_back(gitea_settings, monkeypatch):
         recorder.calls.append(("reload", url, token))
 
     recorder = _Recorder(monkeypatch)
-    monkeypatch.setattr(provision, "_cli", fail_audit)
+    monkeypatch.setattr(provision, "run_cli", fail_audit)
     monkeypatch.setattr(
         provision.ingester, "reload", reload_creating_the_database
     )
@@ -424,6 +454,7 @@ def test_provision_room_rolls_back(gitea_settings, monkeypatch):
     assert not db.exists()
     assert len(recorder.named("reload")) == 2
     assert calls_before_audit == [
+        "audit room-authz",
         "audit room-authz",
         "room-authz",
         "audit rooms",
@@ -613,13 +644,13 @@ def test_author(claims, expected):
     assert result == expected
 
 
-# ---- concierge_issues ----
+# ---- concierge_gitea_client ----
 
 
-def test_concierge_issues_absent(monkeypatch):
+def test_concierge_gitea_client_absent(monkeypatch):
     monkeypatch.setitem(sys.modules, "soliplex_concierge", None)
 
-    result = provision.concierge_issues()
+    result = provision.concierge_gitea_client()
 
     assert result is None
 
@@ -643,22 +674,22 @@ def _fake_concierge(monkeypatch, *, with_sync):
     return tools_gitea, gitea_admin
 
 
-def test_concierge_issues_present(monkeypatch):
+def test_concierge_gitea_client_present(monkeypatch):
     tools_gitea, gitea_admin = _fake_concierge(monkeypatch, with_sync=True)
 
-    result = provision.concierge_issues()
+    result = provision.concierge_gitea_client()
 
-    assert result == (
-        tools_gitea.create_gitea_issue_sync,
-        gitea_admin.comment_issue,
-        gitea_admin.close_issue,
+    assert result == provision.GiteaClient(
+        create_issue=tools_gitea.create_gitea_issue_sync,
+        comment_issue=gitea_admin.comment_issue,
+        close_issue=gitea_admin.close_issue,
     )
 
 
-def test_concierge_issues_too_old(monkeypatch):
+def test_concierge_gitea_client_too_old(monkeypatch):
     _fake_concierge(monkeypatch, with_sync=False)
 
-    result = provision.concierge_issues()
+    result = provision.concierge_gitea_client()
 
     assert result is None
 
@@ -685,7 +716,7 @@ def _http_error(code, body=""):
 
 
 def _fake_mint(monkeypatch, *, token="minted-token", error=None):
-    """Replaces ``_cli``: minting answers ``token``, or raises ``error``."""
+    """Replaces ``run_cli``: minting answers ``token``, or raises ``error``."""
     calls = []
 
     def cli(settings, *command, stdin=None):
@@ -694,7 +725,7 @@ def _fake_mint(monkeypatch, *, token="minted-token", error=None):
             raise error
         return f"{token}\n"
 
-    monkeypatch.setattr(provision, "_cli", cli)
+    monkeypatch.setattr(provision, "run_cli", cli)
     return calls
 
 
@@ -834,7 +865,7 @@ def test_cli(fake_cli):
         ingester_token="t", soliplex_cli=str(fake_cli)
     )
 
-    result = provision._cli(settings, "audit", "rooms", stdin="null")
+    result = provision.run_cli(settings, "audit", "rooms", stdin="null")
 
     assert result == "audit rooms null\n"
 
@@ -846,7 +877,7 @@ def test_cli_failed(fake_cli, monkeypatch):
     )
 
     with pytest.raises(provision.ProvisionError) as caught:
-        provision._cli(settings, "audit", "rooms")
+        provision.run_cli(settings, "audit", "rooms")
 
     assert type(caught.value) is provision.CliFailed
     assert caught.value.command == ("audit", "rooms")
@@ -859,7 +890,7 @@ def test_cli_missing(tmp_path):
     )
 
     with pytest.raises(provision.ProvisionError) as caught:
-        provision._cli(settings, "audit", "rooms")
+        provision.run_cli(settings, "audit", "rooms")
 
     assert type(caught.value) is provision.CliFailed
     assert "No such file or directory" in caught.value.output
@@ -1249,7 +1280,7 @@ def test_stale_policy_ids(monkeypatch, output, expected):
         calls.append((command, ok_codes))
         return output
 
-    monkeypatch.setattr(provision, "_cli", cli)
+    monkeypatch.setattr(provision, "run_cli", cli)
     settings = provision.Settings(ingester_token="t")
 
     result = provision.stale_policy_ids(settings)
@@ -1273,7 +1304,7 @@ def test_stale_policy_ids(monkeypatch, output, expected):
 )
 def test_stale_policy_ids_fails(monkeypatch, output, detail):
     monkeypatch.setattr(
-        provision, "_cli", lambda settings, *command, **kwargs: output
+        provision, "run_cli", lambda settings, *command, **kwargs: output
     )
     settings = provision.Settings(ingester_token="t")
 
@@ -1289,7 +1320,7 @@ def test_cli_accepts_listed_exit_codes(fake_cli, monkeypatch):
         ingester_token="t", soliplex_cli=str(fake_cli)
     )
 
-    result = provision._cli(settings, "audit", ok_codes=(0, 1))
+    result = provision.run_cli(settings, "audit", ok_codes=(0, 1))
 
     assert result == "audit \n"
 
@@ -1306,7 +1337,7 @@ def _fail_audit_rooms(monkeypatch):
             raise fail
         return ""
 
-    monkeypatch.setattr(provision, "_cli", cli)
+    monkeypatch.setattr(provision, "run_cli", cli)
 
 
 def _skip_clash_checks(monkeypatch):
