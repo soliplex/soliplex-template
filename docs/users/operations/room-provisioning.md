@@ -79,6 +79,14 @@ exists:
 The refusal names each one found, and changes nothing: remove them, or
 choose another name.
 
+## The provisioned rooms' agent
+
+Every provisioned room uses the `provisioned_rag` agent config from
+`backend/environment/installation.yaml` as its agent's template, adding no
+prompt of its own. Edit that entry's `model_name` or `system_prompt` to
+change the agent of every provisioned room at once. Without the entry,
+provisioning fails its rooms audit and rolls back.
+
 ## With OIDC on
 
 The provisioner authenticates to the backend with service tokens it mints

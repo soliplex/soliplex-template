@@ -37,6 +37,8 @@ import warnings
 import pytest
 import yaml
 
+from soliplex_template import provisioned_room
+
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _SCRIPT = (
     _REPO_ROOT
@@ -678,6 +680,21 @@ def test_provisioned_rooms_parent_wiring(generated_project):
     assert watched
     for root in ["/environment", *watched]:
         assert not posixpath.normpath(entry).startswith(root.rstrip("/") + "/")
+
+
+def test_provisioned_rooms_agent_config(generated_project):
+    # Provisioned rooms name their agent config by id and carry no prompt
+    # of their own: the installation must define it, prompt included.
+    out, _params = generated_project
+    installation = yaml.safe_load(
+        _read(out, "backend/environment/installation.yaml")
+    )
+
+    configs = {c["id"]: c for c in installation["agent_configs"]}
+
+    agent = configs[provisioned_room.AGENT_TEMPLATE]
+    assert agent["model_name"] == configs["default_chat"]["model_name"]
+    assert agent["system_prompt"].strip()
 
 
 def test_url_safe_token_secret_read_from_its_docker_secret(generated_project):
