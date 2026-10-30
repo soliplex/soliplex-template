@@ -34,7 +34,7 @@ remain (each is printed), and `2` on an error.
 
 ## What it does
 
-Holding a lock (`src/.rooms-provisioned.lock`) for the whole run, the
+Holding a lock (`src/.rooms-provisioned.lock`) through step 8, the
 provisioner:
 
 1. refuses a room id that anything already uses (see
@@ -58,6 +58,14 @@ provisioner:
 A failure before the commit undoes what the run itself created, and only
 that (and comments on the tracking issue, leaving it open). After the commit, the room is valid as
 committed: a step that fails there is reported, with how to finish it.
+
+Two steps have time limits:
+
+- the ingester's reload (120 seconds): one that times out may still apply
+  after the run has undone its changes, so the failure says to reload the
+  ingester again once it answers, and to remove the room's database
+  directory if one appears
+- the push (60 seconds): one that times out is reported as a step to finish
 
 `src/rooms-provisioned` is a git repository of its own (the stack's
 `src/*` rule ignores it), listed in `room_paths` as

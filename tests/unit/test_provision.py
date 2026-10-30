@@ -120,7 +120,9 @@ def _cli_label(command):
 class _Recorder:
     """Stands in for the provisioner's collaborators, recording calls.
 
-    ``fail`` maps a call name to the exception that call raises.
+    ``fail`` maps a call name to the exception that call raises. With
+    ``check_lock_of``, each call is also noted in ``lock_held`` or
+    ``lock_free``: whether that clone's lock was held when it was made.
     """
 
     def __init__(self, monkeypatch, *, fail=None, check_lock_of=None):
@@ -128,6 +130,7 @@ class _Recorder:
         self.fail = fail or {}
         self.check_lock_of = check_lock_of
         self.lock_held = []
+        self.lock_free = []
         # Ids 'audit room-authz' reports as stale policies.
         self.stale = []
         # The room the backend's rooms reload reports adding.
@@ -142,20 +145,31 @@ class _Recorder:
         if name in self.fail:
             raise self.fail.pop(name)
 
+    def note_lock(self, label):
+        if self.check_lock_of is None:
+            return
+        lock = landing_clone.lock_path(self.check_lock_of)
+        if not lock.exists():
+            self.lock_free.append(label)
+            return
+        with lock.open("a") as other:
+            try:
+                fcntl.flock(other, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                self.lock_held.append(label)
+            else:
+                fcntl.flock(other, fcntl.LOCK_UN)
+                self.lock_free.append(label)
+
     def _backend(self, settings, method, path):
+        self.note_lock(f"{method} {path}")
         self._record("backend", method, path)
         if method == "POST":
             return {"added": [self.loaded], "removed": [], "changed": []}
         return {}
 
     def _cli(self, settings, *command, stdin=None, ok_codes=(0,)):
-        if self.check_lock_of is not None:
-            lock = landing_clone.lock_path(self.check_lock_of)
-            with lock.open("a") as other:
-                try:
-                    fcntl.flock(other, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                except BlockingIOError:
-                    self.lock_held.append(_cli_label(command))
+        self.note_lock(_cli_label(command))
         self._record("cli", command, stdin)
         if command[:3] == ("audit", "--quiet", "room-authz") and self.stale:
             return json.dumps({"room_authz": {"stale_rooms": self.stale}})
@@ -174,9 +188,11 @@ class _Recorder:
         )
 
     def _comment(self, host, token, owner, repo, number, body):
+        self.note_lock("comment_issue")
         self._record("comment_issue", number, body)
 
     def _close(self, host, token, owner, repo, number):
+        self.note_lock("close_issue")
         self._record("close_issue", number)
 
     def named(self, name):
@@ -255,15 +271,31 @@ def test_provision_room(settings, monkeypatch):
     assert _git(settings.clone, "status", "--porcelain") == ""
 
 
-def test_provision_room_holds_the_lock(settings, monkeypatch):
-    recorder = _Recorder(monkeypatch, check_lock_of=settings.clone)
+def test_provision_room_holds_the_lock_until_the_push(
+    gitea_settings, monkeypatch
+):
+    recorder = _Recorder(monkeypatch, check_lock_of=gitea_settings.clone)
+    push = landing_clone.push
 
-    _provision(settings)
+    def noting_push(path, **kwargs):
+        recorder.note_lock("push")
+        push(path, **kwargs)
+
+    monkeypatch.setattr(provision.landing_clone, "push", noting_push)
+
+    _provision(gitea_settings)
 
     assert recorder.lock_held == [
         "audit room-authz",
         "room-authz",
         "audit rooms",
+        "push",
+    ]
+    assert recorder.lock_free == [
+        "GET /v1/installation",
+        "POST /v1/installation/reload/rooms",
+        "comment_issue",
+        "close_issue",
     ]
 
 
@@ -421,6 +453,24 @@ def test_provision_room_reports_failed_rollback(settings, monkeypatch):
     [failure] = caught.value.rollback_failures
     assert failure.startswith("restore the ingester config")
     assert "these steps failed" in str(caught.value)
+    assert not (settings.clone / ROOM).exists()
+
+
+def test_provision_room_reload_timed_out(settings, monkeypatch):
+    original = settings.ingester_config.read_text()
+    timed_out = ingester.ReloadTimedOut("http://haiku-ingester:8765", 120)
+    recorder = _Recorder(monkeypatch, fail={"reload": timed_out})
+
+    with pytest.raises(provision.ProvisioningFailed) as caught:
+        _provision(settings)
+
+    assert caught.value.error is timed_out
+    assert caught.value.rollback_failures == ()
+    message = str(caught.value)
+    assert "rolled back; the timed-out reload may still apply" in message
+    assert "remove the room's database directory" in message
+    assert settings.ingester_config.read_text() == original
+    assert len(recorder.named("reload")) == 2
     assert not (settings.clone / ROOM).exists()
 
 

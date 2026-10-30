@@ -30,8 +30,11 @@ provisioned-rooms clone's lock throughout, it:
 
 A failure before the commit undoes what the run itself created, and only
 that (and comments the failure on the tracking issue, leaving it open).
-After the commit the room is valid as committed, so a failure there is
-reported, with what remains to do, rather than undone.
+An ingester reload that times out may still apply after that undo, which
+the failure says. After the commit the room is valid as committed, so a
+failure in the steps that follow is reported, with what remains to do,
+rather than undone. The lock is released once the clone is pushed: the
+backend's reload and the tracking issue's update run without it.
 
 It authenticates to the backend with a service token it mints for each
 call (``soliplex-cli service-token mint``, subject ``soliplex-provisioner``
@@ -184,7 +187,9 @@ class ProvisioningFailed(ProvisionError):
     """A step before the commit failed; what was done has been undone.
 
     ``rollback_failures`` names each undo step that itself failed, which
-    leaves its part for an operator to clean up.
+    leaves its part for an operator to clean up. When the failure is an
+    ingester reload that timed out, the message says what that reload may
+    still leave behind.
     """
 
     def __init__(self, room_id, error, rollback_failures=()):
@@ -197,6 +202,12 @@ class ProvisioningFailed(ProvisionError):
             )
         else:
             message += "; rolled back"
+        if isinstance(error, ingester.ReloadTimedOut):
+            message += (
+                "; the timed-out reload may still apply: once the ingester "
+                "answers, reload it again and remove the room's database "
+                "directory if one appears"
+            )
         super().__init__(message)
 
 
@@ -753,7 +764,9 @@ def provision_room(
                     )
             raise failed from error
 
-        incomplete = list(_finish(settings, issues, issue, room))
+        incomplete = list(_push(settings))
+
+    incomplete.extend(_finish(settings, issues, issue, room))
 
     return Provisioned(
         room_id=room,
@@ -769,14 +782,21 @@ def _rmdir_if_empty(path: pathlib.Path) -> None:
         path.rmdir()
 
 
-def _finish(settings, issues, issue, room) -> collections.abc.Iterator[str]:
-    """Run the steps after the commit; yield how to finish each that fails."""
+def _push(settings) -> collections.abc.Iterator[str]:
+    """Push the clone, when it has a remote; yield how to finish a failure."""
     if settings.gitea is not None:
         try:
             landing_clone.push(settings.clone, token=settings.gitea.token)
         except landing_clone.LandingCloneError as error:
             yield f"push the provisioned-rooms clone ({error})"
 
+
+def _finish(settings, issues, issue, room) -> collections.abc.Iterator[str]:
+    """Run the steps after the push; yield how to finish each that fails.
+
+    They run without the clone's lock, so a slow backend or Gitea holds up
+    no other run.
+    """
     try:
         delta = reload_backend_rooms(settings)
     except ProvisionError as error:

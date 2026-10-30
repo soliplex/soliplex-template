@@ -446,6 +446,19 @@ def test_reload_unreachable(monkeypatch):
     assert caught.value.reason == "Name or service not known"
 
 
+def test_reload_timed_out(monkeypatch):
+    fake = _FakeUrlopen(error=TimeoutError("timed out"))
+    monkeypatch.setattr(ingester.urllib.request, "urlopen", fake)
+
+    with pytest.raises(ingester.IngesterError) as caught:
+        ingester.reload("http://haiku-ingester:8765", "s3cret", timeout=7)
+
+    assert type(caught.value) is ingester.ReloadTimedOut
+    assert caught.value.url == "http://haiku-ingester:8765/reload"
+    assert caught.value.timeout == 7
+    assert "may still apply" in str(caught.value)
+
+
 # ---- registrations ----
 
 
