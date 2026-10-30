@@ -12,6 +12,7 @@ requesting user's claims, and sends it as the bearer token:
 - ``GET /rooms/{room_id}`` answers the request's state: ``pending``,
   ``live``, ``incomplete`` (with the steps still to do) or ``failed`` (with
   the error)
+- ``GET /ok`` answers ``OK``, for health checks
 
 A requester is admitted when they are an admin, or hold WRITE on the
 reserved room id ``__provision__``. Tokens and admission are checked with
@@ -267,6 +268,12 @@ def _create(
 
 
 router = fastapi.APIRouter()
+
+
+@router.get("/ok", response_class=fastapi.responses.PlainTextResponse)
+def health_check() -> str:
+    """Is the service up?"""
+    return "OK"
 
 
 @router.post("/rooms", status_code=202)

@@ -223,7 +223,7 @@ services:
     # The backend's image plus every src/ project's 'dev' dependency group
     # (see soliplex-dev/Dockerfile): 'service:backend' is the image compose
     # builds for that service, so this one never drifts from it.
-    build:
+    build: &soliplex_dev_build
       context: soliplex-dev
       additional_contexts:
         backend: "service:backend"
@@ -244,7 +244,7 @@ services:
       postgres:
         condition: service_healthy
 
-    secrets:
+    secrets: &soliplex_dev_secrets
       - agui_db_password
       - authz_db_password
       - url_safe_token_secret
@@ -256,7 +256,7 @@ services:
     # Short volume form throughout, deliberately: the long form of the
     # 'rag/db/' bind is the anchor scripts/refresh_skill_template.py uses to
     # find the *backend* service, and that anchor has to stay unique.
-    volumes:
+    volumes: &soliplex_dev_volumes
       - ./backend/environment:/environment/
       - ./backend/sandbox/workdirs:/sandbox/workdirs
       - ./uploads:/uploads/
@@ -270,6 +270,50 @@ services:
       # hooks, signing): mount a git config file here and set
       # 'GIT_CONFIG_GLOBAL=/etc/provisioner/gitconfig' in '.env'.
       # - ./soliplex-dev/gitconfig:/etc/provisioner/gitconfig:ro
+
+  # The room provisioner's HTTP service: provisions rooms on a user's behalf
+  # for callers holding the stack's 'url_safe_token_secret' (see
+  # docs/operations/room-provisioning.md). Reachable on the compose network
+  # only, at 'http://soliplex-provisioner:8090'. The very image, secrets,
+  # environment and mounts of 'soliplex-dev' (YAML aliases), so the two
+  # provision alike.
+  soliplex-provisioner:
+
+    build: *soliplex_dev_build
+
+    env_file: ".env"
+    user: "<%text>${PUID:-1000}</%text>:<%text>${PGID:-1000}</%text>"
+
+    working_dir: /app/src
+
+    command:
+      - /app/.venv/bin/uvicorn
+      - --factory
+      - soliplex_template.provision_service:create_app
+      - --host=0.0.0.0
+      - --port=8090
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    healthcheck:
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8090/ok', timeout=5).status == 200 else 1)"
+      interval: 30s
+      timeout: 10s
+      retries: 4
+
+    restart: unless-stopped
+
+    secrets: *soliplex_dev_secrets
+
+    environment: *backend_environment
+
+    volumes: *soliplex_dev_volumes
 
   haiku-ingester:
 

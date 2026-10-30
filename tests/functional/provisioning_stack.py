@@ -1,7 +1,8 @@
 """Shared steps of the room provisioner's end-to-end tests.
 
-A test stack is generated from the template, its ``soliplex-dev`` image is
-built with ``soliplex-template`` installed from a wheel of this checkout,
+A test stack is generated from the template, its ``soliplex-dev`` and
+``soliplex-provisioner`` images are built with ``soliplex-template``
+installed from a wheel of this checkout,
 and only the services the provisioner talks to are brought up (``--no-deps``:
 an empty room's database needs no document conversion, so ``docling-serve``
 stays down).
@@ -141,7 +142,9 @@ def _soliplex_override(work: pathlib.Path) -> pathlib.Path | None:
 
 
 def build_images(out: pathlib.Path, work: pathlib.Path) -> None:
-    """Build ``backend`` (any soliplex override) and ``soliplex-dev``."""
+    """Build ``backend`` (any soliplex override), ``soliplex-dev`` and
+    ``soliplex-provisioner`` (which shares the latter's build).
+    """
     wheels = _soliplex_override(work)
     if wheels is not None:
         shutil.copytree(wheels, out / "backend" / "soliplex-wheel")
@@ -178,8 +181,9 @@ def build_images(out: pathlib.Path, work: pathlib.Path) -> None:
             "--build-arg",
             f"SOLIPLEX_TEMPLATE={requirement}",
             "soliplex-dev",
+            "soliplex-provisioner",
         ),
-        "building soliplex-dev",
+        "building soliplex-dev / soliplex-provisioner",
     )
 
 
@@ -200,6 +204,66 @@ def up(out: pathlib.Path) -> None:
         ),
         "backend / haiku-ingester up",
     )
+
+
+def up_provisioner(out: pathlib.Path) -> None:
+    """Bring up the provisioner service (after :func:`up`)."""
+    check(
+        compose(
+            out,
+            "up",
+            "-d",
+            "--no-deps",
+            "--wait",
+            "soliplex-provisioner",
+        ),
+        "soliplex-provisioner up",
+    )
+
+
+# Run inside the provisioner service's container: one HTTP call, described
+# on stdin, answered as '{"status": ..., "body": ...}' on stdout.
+_SERVICE_CALL = """\
+import json, sys, urllib.error, urllib.request
+call = json.load(sys.stdin)
+data = None if call["body"] is None else json.dumps(call["body"]).encode()
+request = urllib.request.Request(
+    "http://localhost:8090" + call["path"],
+    data=data,
+    method=call["method"],
+    headers={
+        "Authorization": "Bearer " + call["token"],
+        "Content-Type": "application/json",
+    },
+)
+try:
+    with urllib.request.urlopen(request, timeout=60) as response:
+        status, text = response.status, response.read().decode()
+except urllib.error.HTTPError as error:
+    status, text = error.code, error.read().decode()
+json.dump({"status": status, "body": json.loads(text)}, sys.stdout)
+"""
+
+
+def call_service(out, method, path, token, body=None) -> tuple[int, dict]:
+    """Call the provisioner service as ``token``'s user: (status, body)."""
+    call = {"method": method, "path": path, "token": token, "body": body}
+    answer = json.loads(
+        check(
+            compose(
+                out,
+                "exec",
+                "-T",
+                "soliplex-provisioner",
+                "python",
+                "-c",
+                _SERVICE_CALL,
+                stdin=json.dumps(call),
+            ),
+            f"{method} {path}",
+        )
+    )
+    return answer["status"], answer["body"]
 
 
 def soliplex_cli(out, *args, stdin=None):

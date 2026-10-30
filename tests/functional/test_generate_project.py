@@ -682,6 +682,27 @@ def test_provisioned_rooms_parent_wiring(generated_project):
         assert not posixpath.normpath(entry).startswith(root.rstrip("/") + "/")
 
 
+def test_provisioner_service_wiring(generated_project):
+    # The service runs with every 'docker compose up' (no profile), as
+    # 'soliplex-dev' runs the provisioner: same image, secrets, environment
+    # and mounts, unpublished.
+    out, _params = generated_project
+    services = yaml.safe_load(_read(out, "docker-compose.yml"))["services"]
+
+    service = services["soliplex-provisioner"]
+
+    dev = services["soliplex-dev"]
+    assert "profiles" not in service
+    assert "ports" not in service
+    for key in ("build", "secrets", "environment", "volumes", "user"):
+        assert service[key] == dev[key], key
+    assert service["command"][:3] == [
+        "/app/.venv/bin/uvicorn",
+        "--factory",
+        "soliplex_template.provision_service:create_app",
+    ]
+
+
 def test_provisioned_rooms_agent_config(generated_project):
     # Provisioned rooms name their agent config by id and carry no prompt
     # of their own: the installation must define it, prompt included.

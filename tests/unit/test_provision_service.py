@@ -351,6 +351,16 @@ def test_get_room_with_an_invalid_token(app, client, cli):
     assert response.status_code == 401
 
 
+# ---- GET /ok ----
+
+
+def test_health_check(client):
+    response = client.get("/ok")
+
+    assert response.status_code == 200
+    assert response.text == "OK"
+
+
 # ---- pieces ----
 
 
