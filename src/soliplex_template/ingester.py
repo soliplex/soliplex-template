@@ -11,7 +11,10 @@ uploads:
   ``<data_dir>/<room_id>.lancedb``; when the file has no
   ``lancedb.databases`` yet, it is created with the ``haiku.rag`` database
   the ingester otherwise places implicitly, since haiku.rag requires every
-  ingested database to be listed there once the map is non-empty
+  ingested database to be listed there once the map is non-empty; that
+  entry goes where haiku.rag places it,
+  ``<storage.data_dir>/haiku.rag.lancedb``, as the file itself sets
+  ``storage.data_dir``
 
 :func:`reload` then asks the running ingester to apply the change
 (``POST /reload``). The ingester opens each added database with its own
@@ -32,6 +35,8 @@ import urllib.request
 from soliplex_template import room_ids
 
 DEFAULT_DATABASE = "haiku.rag"
+# Where haiku.rag places DEFAULT_DATABASE: this file, in 'storage.data_dir'.
+DEFAULT_DATABASE_FILENAME = "haiku.rag.lancedb"
 DEFAULT_DATA_DIR = "/data"
 DEFAULT_UPLOADS_ROOT = "/uploads/rooms"
 RELOAD_TIMEOUT = 120
@@ -75,6 +80,20 @@ class NotAMapping(UnsupportedConfigShape):
     def __init__(self, path):
         self.path = path
         super().__init__(f"'{path}' is not a mapping")
+
+
+class DefaultDatabaseUnplaced(UnsupportedConfigShape):
+    def __init__(self, data_dir):
+        self.data_dir = data_dir
+        what = (
+            "is not set"
+            if data_dir is None
+            else f"is {data_dir!r}, not a plain directory"
+        )
+        super().__init__(
+            "the 'haiku.rag' database must be listed in 'lancedb.databases', "
+            f"but its location is unknown: 'storage.data_dir' {what}"
+        )
 
 
 class InlineSection(UnsupportedConfigShape):
@@ -216,6 +235,27 @@ def _location_line(name: str, indent: int, data_dir: str) -> str:
     return f"{' ' * indent}{_scalar(name)}: {location}\n"
 
 
+def _default_location_line(lines: list[str], indent: int) -> str:
+    """The ``haiku.rag`` entry, placed where haiku.rag places it implicitly.
+
+    That is ``<storage.data_dir>/haiku.rag.lancedb``, read from the file
+    being edited. Raises :class:`DefaultDatabaseUnplaced` when the file
+    gives no plain directory there: unset or empty (haiku.rag then uses a
+    platform default), or an interpolated ``${...}`` value.
+    """
+    data_dir = None
+    storage = _top_level(lines, "storage")
+    if storage is not None and _parse_key(lines[storage]).value is None:
+        _step, keys = _child_keys(lines, storage, "storage")
+        if "data_dir" in keys:
+            value = _parse_key(lines[keys["data_dir"]]).value
+            data_dir = "" if value is None else _scalar_value(value)
+    if not data_dir or "${" in data_dir:
+        raise DefaultDatabaseUnplaced(data_dir)
+    location = _scalar(f"{data_dir.rstrip('/')}/{DEFAULT_DATABASE_FILENAME}")
+    return f"{' ' * indent}{_scalar(DEFAULT_DATABASE)}: {location}\n"
+
+
 def _register_source(
     lines: list[str], room_id: str, uploads_root: str
 ) -> bool:
@@ -247,7 +287,7 @@ def _register_location(lines: list[str], room_id: str, data_dir: str) -> bool:
                 "# Databases the ingester writes, by name.\n",
                 "lancedb:\n",
                 "  databases:\n",
-                _location_line(DEFAULT_DATABASE, 4, data_dir),
+                _default_location_line(lines, 4),
                 _location_line(room_id, 4, data_dir),
             ]
         )
@@ -259,7 +299,7 @@ def _register_location(lines: list[str], room_id: str, data_dir: str) -> bool:
         at = _block_end(lines, lancedb)
         lines[at:at] = [
             f"{' ' * step}databases:\n",
-            _location_line(DEFAULT_DATABASE, step * 2, data_dir),
+            _default_location_line(lines, step * 2),
             _location_line(room_id, step * 2, data_dir),
         ]
         return True
@@ -354,7 +394,10 @@ def register_database(
     Returns the new text and whether it changed: a database already
     registered (in either map) is left as it is. Raises a subclass of
     :class:`UnsupportedConfigShape` when the file lacks
-    ``ingester.databases``, or a section to edit has an inline value.
+    ``ingester.databases``, a section to edit has an inline value, or
+    ``lancedb.databases`` must be created but the file's
+    ``storage.data_dir`` is no plain directory
+    (:class:`DefaultDatabaseUnplaced`).
     """
     if not text.endswith("\n"):
         text += "\n"

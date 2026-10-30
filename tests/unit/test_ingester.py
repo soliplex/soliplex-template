@@ -136,8 +136,10 @@ def test_register_database_honors_data_dir_and_uploads_root():
     assert after["ingester"]["databases"]["alice:notes"] == _room_source(
         "alice:notes", uploads_root="/srv/uploads"
     )
+    # The room goes under the given data_dir; 'haiku.rag' stays where the
+    # file's own 'storage.data_dir' (/data) places it.
     assert after["lancedb"]["databases"] == {
-        "haiku.rag": "/srv/db/haiku.rag.lancedb",
+        "haiku.rag": "/data/haiku.rag.lancedb",
         "alice:notes": "/srv/db/alice:notes.lancedb",
     }
 
@@ -146,6 +148,8 @@ def test_register_database_honors_data_dir_and_uploads_root():
 
 
 _INGESTER = """\
+storage:
+  data_dir: /data
 ingester:
   queue:
     namespace: soliplex
@@ -209,7 +213,10 @@ def test_register_database_lancedb_shapes(lancedb, expected):
 
 
 def test_register_database_into_empty_ingester_databases():
-    text = "ingester:\n  queue:\n    namespace: soliplex\n  databases:\n"
+    text = (
+        "storage:\n  data_dir: /data\n"
+        "ingester:\n  queue:\n    namespace: soliplex\n  databases:\n"
+    )
 
     result, changed = ingester.register_database(text, ROOM)
 
@@ -507,3 +514,72 @@ def test_registrations_refuses_an_inline_section():
         ingester.registrations(text)
 
     assert caught.value.path == "lancedb.databases"
+
+
+# ---- register_database: placing the implicit 'haiku.rag' database ----
+
+
+# _INGESTER without its 'storage' section.
+_INGESTER_ONLY = _INGESTER[_INGESTER.index("ingester:") :]
+
+
+@pytest.mark.parametrize(
+    "storage, expected",
+    [
+        ("storage:\n  data_dir: /var/lib/rag\n", "/var/lib/rag"),
+        ('storage:\n  data_dir: "/var/lib/rag/"\n', "/var/lib/rag"),
+        (
+            "storage:\n  vacuum_retention_seconds: 1\n  data_dir: /r  # x\n",
+            "/r",
+        ),
+    ],
+)
+def test_register_database_places_haiku_rag_from_storage_data_dir(
+    storage, expected
+):
+    text = storage + _INGESTER_ONLY
+
+    result, _changed = ingester.register_database(
+        text, ROOM, data_dir="/srv/db"
+    )
+
+    assert yaml.safe_load(result)["lancedb"]["databases"] == {
+        "haiku.rag": f"{expected}/haiku.rag.lancedb",
+        "alice:notes": "/srv/db/alice:notes.lancedb",
+    }
+
+
+@pytest.mark.parametrize(
+    "storage, data_dir",
+    [
+        ("", None),
+        ("storage:\n  vacuum_retention_seconds: 1\n", None),
+        ('storage:\n  data_dir: ""\n', ""),
+        ("storage:\n  data_dir:\n", ""),
+        ("storage:\n  data_dir: ${RAG_DATA_DIR}\n", "${RAG_DATA_DIR}"),
+    ],
+)
+def test_register_database_refuses_an_unplaced_haiku_rag(storage, data_dir):
+    text = storage + _INGESTER_ONLY
+
+    with pytest.raises(ingester.UnsupportedConfigShape) as caught:
+        ingester.register_database(text, ROOM)
+
+    assert type(caught.value) is ingester.DefaultDatabaseUnplaced
+    assert caught.value.data_dir == data_dir
+    assert "'storage.data_dir'" in str(caught.value)
+
+
+def test_register_database_needs_no_storage_when_lancedb_lists_databases():
+    text = (
+        _INGESTER_ONLY
+        + "lancedb:\n  databases:\n    haiku.rag: /elsewhere/h.lancedb\n"
+    )
+
+    result, changed = ingester.register_database(text, ROOM)
+
+    assert changed is True
+    assert yaml.safe_load(result)["lancedb"]["databases"] == {
+        "haiku.rag": "/elsewhere/h.lancedb",
+        "alice:notes": "/data/alice:notes.lancedb",
+    }
