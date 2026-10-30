@@ -55,8 +55,8 @@ provisioner:
 9. has the backend reload its room configs, which makes the room live
 10. comments on and closes the tracking issue
 
-A failure before the commit undoes the earlier steps (and comments on the
-tracking issue, leaving it open). After the commit, the room is valid as
+A failure before the commit undoes what the run itself created, and only
+that (and comments on the tracking issue, leaving it open). After the commit, the room is valid as
 committed: a step that fails there is reported, with how to finish it.
 
 `src/rooms-provisioned` is a git repository of its own (the stack's

@@ -1224,3 +1224,76 @@ def test_cli_accepts_listed_exit_codes(fake_cli, monkeypatch):
     result = provision._cli(settings, "audit", ok_codes=(0, 1))
 
     assert result == "audit \n"
+
+
+# ---- provision_room: rollback undoes only what the run created ----
+
+
+def _fail_audit_rooms(monkeypatch):
+    """Make the 'audit rooms' step fail, after everything before it ran."""
+    fail = provision.CliFailed(("audit",), "room broken")
+
+    def cli(settings, *command, stdin=None, ok_codes=(0,)):
+        if command[:3] == ("audit", "--quiet", "rooms"):
+            raise fail
+        return ""
+
+    monkeypatch.setattr(provision, "_cli", cli)
+
+
+def _skip_clash_checks(monkeypatch):
+    """Reach states the clash checks refuse, to test rollback alone."""
+    monkeypatch.setattr(
+        provision, "check_clashes", lambda settings, room: None
+    )
+
+
+def test_rollback_keeps_a_database_that_predates_the_run(
+    settings, monkeypatch
+):
+    recorder = _Recorder(monkeypatch)
+    _skip_clash_checks(monkeypatch)
+    _fail_audit_rooms(monkeypatch)
+    database = settings.db_dir / f"{ROOM}.lancedb"
+    database.mkdir()
+    original = settings.ingester_config.read_text()
+
+    with pytest.raises(provision.ProvisioningFailed):
+        _provision(settings)
+
+    assert database.is_dir()
+    assert settings.ingester_config.read_text() == original
+    assert len(recorder.named("reload")) == 2
+
+
+def test_rollback_leaves_an_unchanged_ingester_config(settings, monkeypatch):
+    recorder = _Recorder(monkeypatch)
+    _skip_clash_checks(monkeypatch)
+    _fail_audit_rooms(monkeypatch)
+    registered, _changed = ingester.register_database(
+        settings.ingester_config.read_text(), room_ids.parse_room_id(ROOM)
+    )
+    settings.ingester_config.write_text(registered)
+    database = settings.db_dir / f"{ROOM}.lancedb"
+    database.mkdir()
+
+    with pytest.raises(provision.ProvisioningFailed):
+        _provision(settings)
+
+    assert settings.ingester_config.read_text() == registered
+    assert database.is_dir()
+    assert len(recorder.named("reload")) == 1
+
+
+def test_rollback_keeps_an_uploads_directory_that_predates_the_run(
+    settings, monkeypatch
+):
+    _Recorder(monkeypatch)
+    _fail_audit_rooms(monkeypatch)
+    uploads = settings.uploads_dir / ROOM
+    uploads.mkdir(parents=True)
+
+    with pytest.raises(provision.ProvisioningFailed):
+        _provision(settings)
+
+    assert uploads.is_dir()

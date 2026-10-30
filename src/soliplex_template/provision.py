@@ -28,10 +28,10 @@ provisioned-rooms clone's lock throughout, it:
 9. reloads the backend's room configs
 10. comments on and closes the tracking issue
 
-A failure before the commit undoes what was done (and comments the failure
-on the tracking issue, leaving it open). After the commit the room is
-valid as committed, so a failure there is reported, with what remains to
-do, rather than undone.
+A failure before the commit undoes what the run itself created, and only
+that (and comments the failure on the tracking issue, leaving it open).
+After the commit the room is valid as committed, so a failure there is
+reported, with what remains to do, rather than undone.
 
 It authenticates to the backend with a service token it mints for each
 call (``soliplex-cli service-token mint``, subject ``soliplex-provisioner``
@@ -558,10 +558,17 @@ def _commit_message(room_id, name, gitea_settings, issue_number) -> str:
     return message
 
 
-def _undo_ingester(settings: Settings, original: str, room_id: str) -> None:
+def _undo_ingester(
+    settings: Settings, original: str, database: pathlib.Path | None
+) -> None:
+    """Restore the ingester config and reload it.
+
+    Removes ``database`` too, when given: the run's reload created it.
+    """
     settings.ingester_config.write_text(original)
     ingester.reload(settings.ingester_url, settings.ingester_token)
-    shutil.rmtree(settings.db_dir / f"{room_id}.lancedb", ignore_errors=True)
+    if database is not None:
+        shutil.rmtree(database, ignore_errors=True)
 
 
 def provision_room(
@@ -662,10 +669,11 @@ def provision_room(
             )
 
             uploads = settings.uploads_dir / room
-            uploads.mkdir(parents=True, exist_ok=True)
-            rollback.add(
-                "remove the uploads directory", _rmdir_if_empty, uploads
-            )
+            if not uploads.exists():
+                uploads.mkdir(parents=True)
+                rollback.add(
+                    "remove the uploads directory", _rmdir_if_empty, uploads
+                )
 
             # -----------------------------------------------------------------
             # BEGIN: ingester integration
@@ -675,21 +683,23 @@ def provision_room(
             # that we rely on:  it ensures that the empty database is created.
             # -----------------------------------------------------------------
             original = settings.ingester_config.read_text()
-            registered, _changed = ingester.register_database(
+            registered, changed = ingester.register_database(
                 original,
                 room_id,
                 data_dir=settings.ingester_data_dir,
                 uploads_root=settings.ingester_uploads_root,
             )
-            # Write in place: the config is a single-file bind mount.
-            settings.ingester_config.write_text(registered)
-            rollback.add(
-                "restore the ingester config",
-                _undo_ingester,
-                settings,
-                original,
-                room,
-            )
+            if changed:
+                # Write in place: the config is a single-file bind mount.
+                settings.ingester_config.write_text(registered)
+                database = settings.db_dir / f"{room}.lancedb"
+                rollback.add(
+                    "restore the ingester config",
+                    _undo_ingester,
+                    settings,
+                    original,
+                    None if database.exists() else database,
+                )
             ingester.reload(settings.ingester_url, settings.ingester_token)
             # -----------------------------------------------------------------
             # END: ingester integration
