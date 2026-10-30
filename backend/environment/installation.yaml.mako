@@ -288,6 +288,17 @@ agent_configs:
 
       Always provide code or examples in Markdown blocks.
 
+  # The agent of every room the provisioner creates (by template_id, with
+  # no prompt of its own): editing it changes all of them.
+  - id: "provisioned_rag"
+    model_name: "${chat_model}"
+    system_prompt: |
+      You are a helpful agent.
+
+      Answer from this room's knowledge base: use the 'rag' skill to ground
+      every answer, and cite the documents you used. If the knowledge base
+      does not contain the answer, say so plainly.
+
   - id: "title"
     model_name: "${title_model}"
 

@@ -2,7 +2,9 @@
 
 A provisioned room is a conversational RAG room over its own database: the
 ``haiku.rag.skills.rag`` skill searches the LanceDB whose stem is the room
-id, alongside evidence compaction and the citation policy.
+id, alongside evidence compaction and the citation policy. Its agent is
+the installation's ``provisioned_rag`` agent config, which carries the model
+and system prompt shared by every provisioned room.
 
 Every requester-supplied string is emitted with :func:`json.dumps`: a JSON
 string is a valid YAML double-quoted scalar, so no value can escape its
@@ -18,15 +20,7 @@ import json
 
 from soliplex_template import room_ids
 
-AGENT_TEMPLATE = "default_chat"
-
-SYSTEM_PROMPT = (
-    "You are a helpful agent.\n"
-    "\n"
-    "Answer from this room's knowledge base: use the 'rag' skill to ground "
-    "every answer, and cite the documents you used. If the knowledge base "
-    "does not contain the answer, say so plainly."
-)
+AGENT_TEMPLATE = "provisioned_rag"
 
 _CONFIG = """\
 # Created by the soliplex-template provisioner.
@@ -36,7 +30,6 @@ description: {description}
 
 agent:
   template_id: {agent_template}
-  system_prompt: {system_prompt}
 
 tools:
   - tool_name: "soliplex.tools.get_current_datetime"
@@ -84,5 +77,4 @@ def render_room_config(
         name=_scalar(name),
         description=_scalar(name if description is None else description),
         agent_template=_scalar(AGENT_TEMPLATE),
-        system_prompt=_scalar(SYSTEM_PROMPT),
     )

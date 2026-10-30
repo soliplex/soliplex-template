@@ -30,10 +30,7 @@ def test_render_room_config():
         "id": "alice:q3-marketing-plans",
         "name": "Q3 Marketing Plans",
         "description": "Plans and briefs for the Q3 campaign",
-        "agent": {
-            "template_id": provisioned_room.AGENT_TEMPLATE,
-            "system_prompt": provisioned_room.SYSTEM_PROMPT,
-        },
+        "agent": {"template_id": "provisioned_rag"},
         "tools": [
             {"tool_name": "soliplex.tools.get_current_datetime"},
             {"tool_name": "soliplex.tools.get_current_user"},
