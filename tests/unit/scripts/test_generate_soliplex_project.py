@@ -537,7 +537,7 @@ def test_validate_accepts_default_project_name():
 
 @pytest.mark.parametrize(
     "frontend_version",
-    ["", "v 1", 'has"quote', "0", "0.110.0+96", "0.110-96", "latest-ish"],
+    ["", "v 1", 'has"quote', "0", "0.114.0+101", "0.114-101", "latest-ish"],
 )
 def test_validate_bad_frontend_version(frontend_version):
     params = _valid_params()
@@ -551,7 +551,7 @@ def test_validate_bad_frontend_version(frontend_version):
 # built from the published image -- is refused, naming the image tag to use.
 @pytest.mark.parametrize(
     "frontend_version, image_tag",
-    [("v0.110.0+96", "'0.110.0-96'"), ("v0.110.0", "'0.110.0'")],
+    [("v0.114.0+101", "'0.114.0-101'"), ("v0.114.0", "'0.114.0'")],
 )
 def test_validate_release_tag_names_the_image_tag(frontend_version, image_tag):
     params = _valid_params()
@@ -566,7 +566,7 @@ def test_validate_release_tag_names_the_image_tag(frontend_version, image_tag):
 
 
 @pytest.mark.parametrize(
-    "frontend_version", ["latest", "0.110", "0.110.0", "0.110.0-96"]
+    "frontend_version", ["latest", "0.114", "0.114.0", "0.114.0-101"]
 )
 def test_validate_accepts_frontend_version(frontend_version):
     params = _valid_params()
@@ -578,7 +578,7 @@ def test_validate_accepts_frontend_version(frontend_version):
 def test_default_frontend_version_is_a_moving_minor_tag():
     result = gen.DEFAULTS["frontend_version"]
 
-    assert result == "0.110"
+    assert result == "0.114"
 
 
 def test_validate_dbs_must_differ():

@@ -128,7 +128,7 @@ DEFAULTS: dict[str, object] = {
     # nginx serves: a moving "<major>.<minor>" (follows patch releases on
     # 'docker compose build --pull'), an exact "<major>.<minor>.<patch>" or
     # "<major>.<minor>.<patch>-<build>", or "latest".
-    "frontend_version": "0.110",
+    "frontend_version": "0.114",
     # Auth: "no-auth" | "auth"
     "auth_mode": "no-auth",
     # Gitea service (opt-in): nginx-proxied at /gitea/ on HTTPS,
@@ -181,7 +181,7 @@ RESERVED_PACKAGE_NAMES = frozenset({"soliplex"})
 # "<major>.<minor>", or an exact "<major>.<minor>.<patch>" with an optional
 # "-<build>" (the release tag's "+<build>", which a Docker tag cannot carry).
 FRONTEND_VERSION_RE = re.compile(r"^(latest|\d+\.\d+(\.\d+(-\d+)?)?)$")
-# A soliplex/frontend *release* tag ("v0.110.0+96"), as the parameter took
+# A soliplex/frontend *release* tag ("v0.114.0+101"), as the parameter took
 # before nginx built from the image: rejected, with the image tag to use.
 _FRONTEND_RELEASE_TAG_RE = re.compile(r"^v(\d+\.\d+\.\d+)(?:\+(\d+))?$")
 # Tags the soliplex image workflow publishes: "latest", a moving
