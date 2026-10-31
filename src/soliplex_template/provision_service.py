@@ -15,8 +15,9 @@ requesting user's claims, and sends it as the bearer token:
 - ``GET /ok`` answers ``OK``, for health checks
 
 A requester is admitted when they are an admin, or hold WRITE on the
-reserved room id ``__provision__``. Tokens and admission are checked with
-``soliplex-cli``: ``service-token validate``, ``admin-users check`` and
+reserved room id ``__provision__``. The token is validated in-process,
+against the stack's ``url_safe_token_secret`` as the backend reads it;
+admission is checked with ``soliplex-cli``'s ``admin-users check`` and
 ``room-authz check``, each reading the token on stdin.
 
 Request state lives in memory: a restart loses it, while the tracking
@@ -69,24 +70,18 @@ class CheckFailed(provision.ProvisionError):
 def validate_token(settings: provision.Settings, token: str) -> dict:
     """The claims of the service token ``token``.
 
-    Raises :class:`TokenInvalid` when it is not valid.
+    Raises :class:`TokenInvalid` when it is not valid, and
+    :class:`provision.SigningSecretUnreadable` when the signing secret
+    cannot be read.
     """
-    command = (
-        "service-token",
-        "validate",
-        str(settings.environment),
-        "--quiet",
-    )
-    try:
-        output = provision.run_cli(settings, *command, stdin=token)
-    except provision.CliFailed as error:
-        raise TokenInvalid(error.output) from error
-    try:
-        claims = json.loads(output)
-    except json.JSONDecodeError as error:
-        raise TokenInvalid(output.strip()) from error
-    if not isinstance(claims, dict):
-        raise TokenInvalid(output.strip())
+    # Imported here: soliplex is in the stack's image, where this runs,
+    # not among this package's dependencies.
+    from soliplex import token_mint
+
+    secret = provision.service_token_secret(settings)
+    claims, reason = token_mint.load_service_token(secret, token)
+    if claims is None:
+        raise TokenInvalid(reason)
     return claims
 
 
@@ -245,6 +240,9 @@ def _claims(settings: provision.Settings, token: str) -> dict:
             detail="the service token is not valid",
             headers={"WWW-Authenticate": "Bearer"},
         ) from error
+    except provision.SigningSecretUnreadable as error:
+        logger.exception("validating a service token failed")
+        raise _http_error(500, error) from error
 
 
 def _create(

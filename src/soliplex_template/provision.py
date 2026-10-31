@@ -45,10 +45,11 @@ rather than undone. Creation releases the lock once the clone is pushed:
 the backend's reload and the tracking issue's update run without it.
 
 It authenticates to the backend with a service token it mints for each
-call (``soliplex-cli service-token mint``, subject ``soliplex-provisioner``
-by default, five minutes' lifetime); an ``admin_users`` entry matching that
-subject admits it. Before taking the lock, it checks that the backend does
-(a backend in no-auth mode admits any caller).
+call (subject ``soliplex-provisioner`` by default, five minutes'
+lifetime), signed with the stack's ``url_safe_token_secret`` as the backend
+reads it; an ``admin_users`` entry matching that subject admits it. Before
+taking the lock, it checks that the backend does (a backend in no-auth mode
+admits any caller).
 
 The ``soliplex-provision-room`` console script (:func:`main`) runs it from
 the command line, configured from the environment (see
@@ -86,7 +87,8 @@ from soliplex_template import room_ids
 REQUEST_TYPE = "new-room"
 HTTP_TIMEOUT = 30
 DEFAULT_SERVICE_SUBJECT = "soliplex-provisioner"
-SERVICE_TOKEN_LIFETIME = "5m"
+SERVICE_TOKEN_LIFETIME = 300
+SERVICE_TOKEN_SECRET_FILE = "/run/secrets/url_safe_token_secret"
 INGESTER_TOKEN_FILE = "/run/secrets/ingester_bearer"
 
 _TRUE = frozenset({"1", "true", "yes", "on"})
@@ -139,6 +141,15 @@ class IssueFilingFailed(ProvisionError):
     def __init__(self, error):
         self.error = error
         super().__init__(f"filing the tracking issue failed: {error}")
+
+
+class SigningSecretUnreadable(ProvisionError):
+    def __init__(self, path):
+        self.path = path
+        super().__init__(
+            f"cannot read the service-token signing secret from {path} (is "
+            "the 'url_safe_token_secret' secret mounted?)"
+        )
 
 
 class AdminAccessDenied(ProvisionError):
@@ -271,6 +282,9 @@ class Settings:
     owner_claim: str = room_ids.DEFAULT_OWNER_CLAIM
     flatten_owner: bool = False
     soliplex_cli: str = "/app/.venv/bin/soliplex-cli"
+    service_token_secret_file: pathlib.Path = pathlib.Path(
+        SERVICE_TOKEN_SECRET_FILE
+    )
     gitea: GiteaSettings | None = None
 
     def __post_init__(self):
@@ -351,20 +365,31 @@ class Provisioned:
 # --------------------------------------------------------------------------
 # Collaborators: the backend's HTTP API, soliplex-cli, the concierge
 # --------------------------------------------------------------------------
+def service_token_secret(settings: Settings) -> str:
+    """The stack's service-token signing secret, as the backend reads it.
+
+    That is, the file's text, stripped. Raises
+    :class:`SigningSecretUnreadable` when it cannot be read.
+    """
+    try:
+        return settings.service_token_secret_file.read_text().strip()
+    except OSError as error:
+        raise SigningSecretUnreadable(
+            settings.service_token_secret_file
+        ) from error
+
+
 def mint_service_token(settings: Settings) -> str:
     """A short-lived service token for the provisioner's subject."""
-    minted = run_cli(
-        settings,
-        "service-token",
-        "mint",
-        str(settings.environment),
-        "--claims",
-        json.dumps({"sub": settings.service_subject}),
-        "--expires-in",
-        SERVICE_TOKEN_LIFETIME,
-        "--quiet",
+    # Imported here: soliplex is in the stack's image, where this runs,
+    # not among this package's dependencies.
+    from soliplex import token_mint
+
+    return token_mint.mint_service_token(
+        service_token_secret(settings),
+        {"sub": settings.service_subject},
+        expires_in=SERVICE_TOKEN_LIFETIME,
     )
-    return minted.strip()
 
 
 def _backend(settings: Settings, method: str, path: str) -> dict:
@@ -378,8 +403,8 @@ def _backend(settings: Settings, method: str, path: str) -> dict:
     mint_error = None
     try:
         headers["Authorization"] = f"Bearer {mint_service_token(settings)}"
-    except CliFailed as error:
-        mint_error = error.output
+    except SigningSecretUnreadable as error:
+        mint_error = str(error)
     request = urllib.request.Request(
         url,
         data=b"" if method == "POST" else None,

@@ -662,7 +662,8 @@ def test_settings_repr_hides_tokens():
 
     result = repr(settings)
 
-    assert "secret" not in result
+    assert "ingester-secret" not in result
+    assert "gitea-secret" not in result
 
 
 def test_gitea_settings_origin_url():
@@ -766,46 +767,44 @@ def _http_error(code, body=""):
     )
 
 
-def _fake_mint(monkeypatch, *, token="minted-token", error=None):
-    """Replaces ``run_cli``: minting answers ``token``, or raises ``error``."""
-    calls = []
-
-    def cli(settings, *command, stdin=None):
-        calls.append(command)
-        if error is not None:
-            raise error
-        return f"{token}\n"
-
-    monkeypatch.setattr(provision, "run_cli", cli)
-    return calls
+def _signing(secret_file, **kwargs):
+    return provision.Settings(
+        ingester_token="t", service_token_secret_file=secret_file, **kwargs
+    )
 
 
-def test_mint_service_token(monkeypatch):
-    calls = _fake_mint(monkeypatch)
-    settings = provision.Settings(ingester_token="t", service_subject="prov")
+def test_service_token_secret_is_stripped(secret_file):
+    result = provision.service_token_secret(_signing(secret_file))
+
+    assert result == "s3cret"
+
+
+def test_service_token_secret_unreadable(tmp_path):
+    missing = tmp_path / "missing"
+
+    with pytest.raises(provision.ProvisionError) as caught:
+        provision.service_token_secret(_signing(missing))
+
+    assert type(caught.value) is provision.SigningSecretUnreadable
+    assert caught.value.path == missing
+    assert "'url_safe_token_secret'" in str(caught.value)
+
+
+def test_mint_service_token(token_mint, secret_file):
+    settings = _signing(secret_file, service_subject="prov")
 
     result = provision.mint_service_token(settings)
 
     assert result == "minted-token"
-    assert calls == [
-        (
-            "service-token",
-            "mint",
-            "/environment",
-            "--claims",
-            '{"sub": "prov"}',
-            "--expires-in",
-            provision.SERVICE_TOKEN_LIFETIME,
-            "--quiet",
-        )
+    assert token_mint.minted == [
+        ("s3cret", {"sub": "prov"}, provision.SERVICE_TOKEN_LIFETIME)
     ]
 
 
-def test_check_admin_access(monkeypatch):
-    _fake_mint(monkeypatch)
+def test_check_admin_access(monkeypatch, token_mint, secret_file):
     fake = _FakeUrlopen(response={"id": "test"})
     monkeypatch.setattr(provision.urllib.request, "urlopen", fake)
-    settings = provision.Settings(ingester_token="t")
+    settings = _signing(secret_file)
 
     result = provision.check_admin_access(settings)
 
@@ -816,12 +815,13 @@ def test_check_admin_access(monkeypatch):
     assert request.get_header("Authorization") == "Bearer minted-token"
 
 
-def test_check_admin_access_without_a_minted_token(monkeypatch):
-    # e.g. a no-auth backend, on a stack whose signing secret is random
-    _fake_mint(monkeypatch, error=provision.CliFailed(("mint",), "no key"))
+def test_check_admin_access_without_a_minted_token(
+    monkeypatch, token_mint, tmp_path
+):
+    # e.g. a no-auth backend, with no signing secret mounted
     fake = _FakeUrlopen(response={"id": "test"})
     monkeypatch.setattr(provision.urllib.request, "urlopen", fake)
-    settings = provision.Settings(ingester_token="t")
+    settings = _signing(tmp_path / "missing")
 
     result = provision.check_admin_access(settings)
 
@@ -830,12 +830,11 @@ def test_check_admin_access_without_a_minted_token(monkeypatch):
     assert request.get_header("Authorization") is None
 
 
-def test_reload_backend_rooms(monkeypatch):
-    _fake_mint(monkeypatch)
+def test_reload_backend_rooms(monkeypatch, token_mint, secret_file):
     delta = {"added": [ROOM], "removed": [], "changed": []}
     fake = _FakeUrlopen(response=delta)
     monkeypatch.setattr(provision.urllib.request, "urlopen", fake)
-    settings = provision.Settings(ingester_token="t")
+    settings = _signing(secret_file)
 
     result = provision.reload_backend_rooms(settings)
 
@@ -848,15 +847,18 @@ def test_reload_backend_rooms(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "code, mint_error",
-    [(401, None), (403, None), (401, "no stable secret")],
+    "code, minted", [(401, True), (403, True), (401, False)]
 )
-def test_backend_denied(monkeypatch, code, mint_error):
-    error = None if mint_error is None else provision.CliFailed((), mint_error)
-    _fake_mint(monkeypatch, error=error)
+def test_backend_denied(
+    monkeypatch, token_mint, secret_file, tmp_path, code, minted
+):
     fake = _FakeUrlopen(error=_http_error(code))
     monkeypatch.setattr(provision.urllib.request, "urlopen", fake)
-    settings = provision.Settings(ingester_token="t", service_subject="prov")
+    secret = secret_file if minted else tmp_path / "missing"
+    settings = _signing(secret, service_subject="prov")
+    mint_error = (
+        None if minted else str(provision.SigningSecretUnreadable(secret))
+    )
 
     with pytest.raises(provision.ProvisionError) as caught:
         provision.check_admin_access(settings)
@@ -881,11 +883,12 @@ def test_backend_denied(monkeypatch, code, mint_error):
         (urllib.error.URLError("refused"), "refused"),
     ],
 )
-def test_backend_request_failed(monkeypatch, error, detail):
-    _fake_mint(monkeypatch)
+def test_backend_request_failed(
+    monkeypatch, token_mint, secret_file, error, detail
+):
     fake = _FakeUrlopen(error=error)
     monkeypatch.setattr(provision.urllib.request, "urlopen", fake)
-    settings = provision.Settings(ingester_token="t")
+    settings = _signing(secret_file)
 
     with pytest.raises(provision.ProvisionError) as caught:
         provision.reload_backend_rooms(settings)

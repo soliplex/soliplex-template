@@ -30,15 +30,17 @@ ISSUE_URL = "https://gitea.example.com/ops/requests/issues/7"
 
 
 class _FakeCli:
-    """Answers ``soliplex-cli`` checks; tokens name their user's claims.
+    """Answers ``soliplex-cli`` checks.
 
-    ``admins`` and ``writers`` hold the tokens that are admins and that
-    hold WRITE on ``__provision__``; ``verdicts`` overrides a check's
-    output by its command's first word.
+    ``tokens`` maps the valid tokens to their user's claims (the fake
+    ``token_mint`` validates with it); ``admins`` and ``writers`` hold the
+    tokens that are admins and that hold WRITE on ``__provision__``;
+    ``verdicts`` overrides a check's output by its command's first word.
     """
 
-    def __init__(self, monkeypatch):
-        self.tokens = {"alice-token": ALICE, "bob-token": BOB}
+    def __init__(self, monkeypatch, token_mint):
+        self.tokens = token_mint.tokens
+        self.tokens.update({"alice-token": ALICE, "bob-token": BOB})
         self.admins = set()
         self.writers = set()
         self.verdicts = {}
@@ -49,10 +51,6 @@ class _FakeCli:
         self.calls.append((command, stdin, ok_codes))
         if command[0] in self.verdicts:
             return self.verdicts[command[0]]
-        if command[0] == "service-token":
-            if stdin not in self.tokens:
-                raise provision.CliFailed(command, "Invalid service token")
-            return json.dumps(self.tokens[stdin])
         if command[0] == "admin-users":
             return json.dumps({"is_admin": stdin in self.admins})
         return json.dumps({"allowed": stdin in self.writers})
@@ -94,9 +92,11 @@ class _FakeProvisioner:
 
 
 @pytest.fixture
-def settings():
+def settings(secret_file):
     return provision.Settings(
-        ingester_token="bearer", environment=pathlib.Path(ENVIRONMENT)
+        ingester_token="bearer",
+        environment=pathlib.Path(ENVIRONMENT),
+        service_token_secret_file=secret_file,
     )
 
 
@@ -111,8 +111,8 @@ def client(app):
 
 
 @pytest.fixture
-def cli(monkeypatch):
-    return _FakeCli(monkeypatch)
+def cli(monkeypatch, token_mint):
+    return _FakeCli(monkeypatch, token_mint)
 
 
 @pytest.fixture
@@ -132,7 +132,7 @@ def _post(client, token="alice-token", **body):
 # ---- POST /rooms ----
 
 
-def test_post_room_as_admin(app, client, cli, provisioner):
+def test_post_room_as_admin(app, client, cli, provisioner, token_mint):
     cli.admins.add("alice-token")
 
     response = _post(client, description="Plans for Q3")
@@ -144,8 +144,8 @@ def test_post_room_as_admin(app, client, cli, provisioner):
     assert plan.request.description == "Plans for Q3"
     [admission] = provisioner.created
     assert admission.plan is plan
+    assert token_mint.loaded == [("s3cret", "alice-token")]
     assert cli.commands() == [
-        ("service-token", "validate", ENVIRONMENT, "--quiet"),
         ("admin-users", "--quiet", "check", ENVIRONMENT),
     ]
     assert all(stdin == "alice-token" for _c, stdin, _o in cli.calls)
@@ -161,7 +161,7 @@ def test_post_room_with_write_on_the_admission_room(client, cli, provisioner):
 
     assert response.status_code == 202
     assert response.json()["room_id"] == "alice:plans"
-    [_validate, admin_check, (room_check, _stdin, ok_codes)] = cli.calls
+    [admin_check, (room_check, _stdin, ok_codes)] = cli.calls
     assert admin_check[2] == (0, 1)
     assert room_check == (
         "room-authz",
@@ -305,7 +305,7 @@ def test_get_room_by_its_requester(app, client, cli):
         "incomplete": [],
         "error": None,
     }
-    assert [command[0] for command in cli.commands()] == ["service-token"]
+    assert cli.commands() == []
 
 
 def test_get_room_by_an_admin(app, client, cli):
@@ -364,14 +364,23 @@ def test_health_check(client):
 # ---- pieces ----
 
 
-@pytest.mark.parametrize("output", ["Invalid service token\n", "[1, 2]"])
-def test_validate_token_without_claims(settings, cli, output):
-    cli.verdicts["service-token"] = output
-
+def test_validate_token_refuses_an_unknown_token(settings, token_mint):
     with pytest.raises(provision_service.TokenInvalid) as caught:
-        provision_service.validate_token(settings, "alice-token")
+        provision_service.validate_token(settings, "forged")
 
-    assert caught.value.output == output.strip()
+    assert caught.value.output == token_mint.BAD_SIGNATURE
+
+
+def test_post_room_without_the_signing_secret(
+    client, cli, provisioner, settings
+):
+    settings.service_token_secret_file.unlink()
+
+    response = _post(client)
+
+    assert response.status_code == 500
+    assert "'url_safe_token_secret'" in response.json()["detail"]
+    assert cli.calls == []
 
 
 @pytest.mark.parametrize(
