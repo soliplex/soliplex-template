@@ -14,12 +14,19 @@ from __future__ import annotations
 
 import io
 import json
+import pathlib
 import urllib.error
 from unittest import mock
 
 import pytest
 
 from soliplex_template import gitea as st_gitea
+
+# Where a test's Gitea is reached: through nginx, with a TLS context.
+CONTEXT = mock.sentinel.context
+EP = st_gitea.Endpoints(
+    "https://localhost:9443/gitea", context=CONTEXT, ssh_port=17322
+)
 
 
 def _http_error(code, body=b"{}"):
@@ -77,27 +84,192 @@ def test_request_with_auth_and_body(monkeypatch):
     assert req.data == b'{"a": 1}'
 
 
+def test_request_passes_the_tls_context(monkeypatch):
+    urlopen = mock.Mock()
+    monkeypatch.setattr(st_gitea.urllib.request, "urlopen", urlopen)
+
+    st_gitea._request("GET", "https://x/api", context=CONTEXT)
+
+    assert urlopen.call_args.kwargs == {"context": CONTEXT}
+
+
+# --------------------------------------------------------------------------
+# _compose_checked / _published
+# --------------------------------------------------------------------------
+def test_compose_checked_returns_stdout(monkeypatch):
+    run = mock.Mock(return_value=mock.Mock(returncode=0, stdout="out"))
+    monkeypatch.setattr(st_gitea.subprocess, "run", run)
+
+    result = st_gitea._compose_checked("config", project_dir="/stack")
+
+    assert result == "out"
+    assert run.call_args.args[0] == ["docker", "compose", "config"]
+    assert run.call_args.kwargs["cwd"] == "/stack"
+
+
+def test_compose_checked_failure_raises(monkeypatch):
+    run = mock.Mock(return_value=mock.Mock(returncode=1, stderr=" nope\n"))
+    monkeypatch.setattr(st_gitea.subprocess, "run", run)
+
+    with pytest.raises(st_gitea.ComposeFailed) as caught:
+        st_gitea._compose_checked("config", project_dir="/stack")
+
+    assert caught.value.command == ("config",)
+    assert caught.value.stderr == "nope"
+
+
+@pytest.mark.parametrize(
+    "service, expected",
+    [
+        ({}, None),
+        ({"ports": [{"target": 3000, "published": "17300"}]}, 17300),
+        ({"ports": [{"target": 2222, "published": "17322"}]}, None),
+        ({"ports": [{"target": 3000}]}, None),
+    ],
+    ids=["no-ports", "published", "other-port", "unpublished"],
+)
+def test_published(service, expected):
+    result = st_gitea._published(service, 3000)
+
+    assert result == expected
+
+
+# --------------------------------------------------------------------------
+# pinned_context / find_endpoints
+# --------------------------------------------------------------------------
+def test_pinned_context_trusts_only_the_stack_cert(monkeypatch):
+    def copy_cert(*args, project_dir):
+        pathlib.Path(args[2]).write_text("PEM")
+        return ""
+
+    compose = mock.Mock(side_effect=copy_cert)
+    create = mock.Mock()
+    monkeypatch.setattr(st_gitea, "_compose_checked", compose)
+    monkeypatch.setattr(st_gitea.ssl, "create_default_context", create)
+
+    context = st_gitea.pinned_context("/stack")
+
+    assert context is create.return_value
+    assert compose.call_args.args[:2] == ("cp", f"nginx:{st_gitea.NGINX_CERT}")
+    assert compose.call_args.kwargs == {"project_dir": "/stack"}
+    create.assert_called_once_with(cadata="PEM")
+    assert context.check_hostname is False
+
+
+def _compose_config(monkeypatch, gitea):
+    services = {"nginx": {}} if gitea is None else {"gitea": gitea}
+    compose = mock.Mock(return_value=json.dumps({"services": services}))
+    monkeypatch.setattr(st_gitea, "_compose_checked", compose)
+    return compose
+
+
+_ROOT_URL = "https://yolo-pan.localhost:9443/gitea/"
+
+
+def test_find_endpoints_through_nginx(monkeypatch):
+    compose = _compose_config(
+        monkeypatch,
+        {"environment": {"GITEA__server__ROOT_URL": _ROOT_URL}},
+    )
+    pinned = mock.Mock(return_value=CONTEXT)
+    monkeypatch.setattr(st_gitea, "pinned_context", pinned)
+
+    endpoints = st_gitea.find_endpoints("/stack")
+
+    assert endpoints == st_gitea.Endpoints(
+        "https://localhost:9443/gitea", context=CONTEXT, ssh_port=None
+    )
+    pinned.assert_called_once_with("/stack")
+    assert compose.call_args.args == ("config", "--format", "json")
+
+
+@pytest.mark.parametrize(
+    "root_url, expected",
+    [
+        ("http://stack.example/gitea/", "http://localhost:80/gitea"),
+        ("https://stack.example/", "https://localhost:443"),
+    ],
+)
+def test_find_endpoints_default_ports(monkeypatch, root_url, expected):
+    _compose_config(
+        monkeypatch, {"environment": {"GITEA__server__ROOT_URL": root_url}}
+    )
+    monkeypatch.setattr(st_gitea, "pinned_context", lambda project: CONTEXT)
+
+    endpoints = st_gitea.find_endpoints("/stack")
+
+    assert endpoints.http == expected
+
+
+def test_find_endpoints_plain_http_root_has_no_tls_context(monkeypatch):
+    _compose_config(
+        monkeypatch,
+        {"environment": {"GITEA__server__ROOT_URL": "http://h:8080/gitea/"}},
+    )
+    pinned = mock.Mock()
+    monkeypatch.setattr(st_gitea, "pinned_context", pinned)
+
+    endpoints = st_gitea.find_endpoints("/stack")
+
+    assert endpoints.context is None
+    pinned.assert_not_called()
+
+
+def test_find_endpoints_through_published_ports(monkeypatch):
+    _compose_config(
+        monkeypatch,
+        {
+            "ports": [
+                {"target": 3000, "published": "17300"},
+                {"target": 2222, "published": "17322"},
+            ],
+            "environment": {"GITEA__server__ROOT_URL": _ROOT_URL},
+        },
+    )
+    pinned = mock.Mock()
+    monkeypatch.setattr(st_gitea, "pinned_context", pinned)
+
+    endpoints = st_gitea.find_endpoints("/stack")
+
+    assert endpoints == st_gitea.Endpoints(
+        "http://localhost:17300", context=None, ssh_port=17322
+    )
+    pinned.assert_not_called()
+
+
+def test_find_endpoints_without_gitea_raises(monkeypatch):
+    _compose_config(monkeypatch, None)
+
+    with pytest.raises(st_gitea.NoGiteaService):
+        st_gitea.find_endpoints("/stack")
+
+
 # --------------------------------------------------------------------------
 # wait_for_gitea
 # --------------------------------------------------------------------------
 def test_wait_for_gitea_ready(monkeypatch):
     monkeypatch.setattr(
-        st_gitea.urllib.request, "urlopen", lambda url: _urlopen_returning()
+        st_gitea.urllib.request,
+        "urlopen",
+        urlopen := mock.Mock(return_value=_urlopen_returning()),
     )
 
-    ready = st_gitea.wait_for_gitea(attempts=3, sleep=mock.Mock())
+    ready = st_gitea.wait_for_gitea(EP, attempts=3, sleep=mock.Mock())
 
     assert ready is True
+    urlopen.assert_called_once_with(
+        "https://localhost:9443/gitea/api/v1/version", context=CONTEXT
+    )
 
 
 def test_wait_for_gitea_never_ready(monkeypatch):
-    def boom(url):
+    def boom(url, context):
         raise urllib.error.URLError("down")
 
     sleep = mock.Mock()
     monkeypatch.setattr(st_gitea.urllib.request, "urlopen", boom)
 
-    ready = st_gitea.wait_for_gitea(attempts=2, sleep=sleep)
+    ready = st_gitea.wait_for_gitea(EP, attempts=2, sleep=sleep)
 
     assert ready is False
     assert sleep.call_count == 2
@@ -192,10 +364,10 @@ def test_mint_token_success(monkeypatch):
     monkeypatch.setattr(
         st_gitea.urllib.request,
         "urlopen",
-        lambda req: _urlopen_returning(read=b'{"sha1": "tok123"}'),
+        lambda req, context: _urlopen_returning(read=b'{"sha1": "tok123"}'),
     )
 
-    token = st_gitea.mint_token("pw", token_name="t")
+    token = st_gitea.mint_token("pw", token_name="t", endpoints=EP)
 
     assert token == "tok123"
 
@@ -210,18 +382,18 @@ def test_mint_token_http_error_raises_with_status_and_body(monkeypatch):
     with pytest.raises(
         st_gitea.TokenRequestFailed, match="HTTP 403.*forbidden"
     ):
-        st_gitea.mint_token("pw", token_name="t")
+        st_gitea.mint_token("pw", token_name="t", endpoints=EP)
 
 
 def test_mint_token_no_token_raises(monkeypatch):
     monkeypatch.setattr(
         st_gitea.urllib.request,
         "urlopen",
-        lambda req: _urlopen_returning(read=b"{}"),
+        lambda req, context: _urlopen_returning(read=b"{}"),
     )
 
     with pytest.raises(st_gitea.NoToken):
-        st_gitea.mint_token("pw", token_name="t")
+        st_gitea.mint_token("pw", token_name="t", endpoints=EP)
 
 
 # --------------------------------------------------------------------------
@@ -231,10 +403,10 @@ def test_create_repo_created(monkeypatch):
     monkeypatch.setattr(
         st_gitea.urllib.request,
         "urlopen",
-        lambda req: _urlopen_returning(getcode=201),
+        lambda req, context: _urlopen_returning(getcode=201),
     )
 
-    code = st_gitea.create_repo("pw")
+    code = st_gitea.create_repo("pw", endpoints=EP)
 
     assert code == 201
 
@@ -246,7 +418,7 @@ def test_create_repo_already_exists(monkeypatch):
         mock.Mock(side_effect=_http_error(409)),
     )
 
-    code = st_gitea.create_repo("pw")
+    code = st_gitea.create_repo("pw", endpoints=EP)
 
     assert code == 409
 
@@ -259,7 +431,7 @@ def test_create_repo_failure_raises(monkeypatch):
     )
 
     with pytest.raises(st_gitea.RepoCreationFailed):
-        st_gitea.create_repo("pw")
+        st_gitea.create_repo("pw", endpoints=EP)
 
 
 # --------------------------------------------------------------------------
@@ -295,16 +467,20 @@ def test_set_env_var_creates_file(tmp_path):
 # provision_gitea
 # --------------------------------------------------------------------------
 def test_provision_gitea_not_ready_raises(tmp_path, monkeypatch):
-    monkeypatch.setattr(st_gitea, "wait_for_gitea", lambda **kw: False)
+    monkeypatch.setattr(st_gitea, "find_endpoints", lambda project: EP)
+    monkeypatch.setattr(st_gitea, "wait_for_gitea", lambda endpoints: False)
 
-    with pytest.raises(st_gitea.GiteaNotReady):
+    with pytest.raises(st_gitea.GiteaNotReady) as caught:
         st_gitea.provision_gitea(tmp_path)
+
+    assert caught.value.url == EP.http
 
 
 def test_provision_gitea_writes_env(tmp_path, monkeypatch):
     mint = mock.Mock(return_value="tok999")
     ensure = mock.Mock()
-    monkeypatch.setattr(st_gitea, "wait_for_gitea", lambda **kw: True)
+    monkeypatch.setattr(st_gitea, "find_endpoints", lambda project: EP)
+    monkeypatch.setattr(st_gitea, "wait_for_gitea", lambda endpoints: True)
     monkeypatch.setattr(st_gitea, "ensure_admin_user", ensure)
     monkeypatch.setattr(st_gitea, "mint_token", mint)
     create = mock.Mock()
@@ -315,9 +491,10 @@ def test_provision_gitea_writes_env(tmp_path, monkeypatch):
     assert result is None
     # the requests repo, then the private provisioned-rooms origin.
     assert create.call_args_list == [
-        mock.call(mock.ANY),
+        mock.call(mock.ANY, endpoints=EP),
         mock.call(
             mock.ANY,
+            endpoints=EP,
             name=st_gitea.ROOMS_REPO_NAME,
             auto_init=False,
             private=True,
@@ -328,14 +505,49 @@ def test_provision_gitea_writes_env(tmp_path, monkeypatch):
     assert "GITEA_ACCESS_TOKEN=tok999" in env_text
     # the token name is an internal 'concierge-<epoch>' default.
     assert mint.call_args.kwargs["token_name"].startswith("concierge-")
+    assert mint.call_args.kwargs["endpoints"] == EP
     # with no web-UI user, only the rotating service account is ensured.
     assert ensure.call_count == 1
     assert ensure.call_args_list[0].args[0] == st_gitea.ADMIN_USER
 
 
+def test_provision_gitea_push_needs_a_published_ssh_port(
+    tmp_path, monkeypatch
+):
+    no_ssh = st_gitea.Endpoints("https://localhost:9443/gitea")
+    monkeypatch.setattr(st_gitea, "find_endpoints", lambda project: no_ssh)
+    wait = mock.Mock()
+    monkeypatch.setattr(st_gitea, "wait_for_gitea", wait)
+
+    with pytest.raises(st_gitea.SshPortUnpublished) as caught:
+        st_gitea.provision_gitea(tmp_path, push_to_gitea=True)
+
+    assert "gitea_ssh_port" in str(caught.value)
+    wait.assert_not_called()
+    assert not (tmp_path / ".env").exists()
+
+
+def test_provision_gitea_summary(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(st_gitea, "find_endpoints", lambda project: EP)
+    monkeypatch.setattr(st_gitea, "wait_for_gitea", lambda endpoints: True)
+    monkeypatch.setattr(st_gitea, "ensure_admin_user", mock.Mock())
+    monkeypatch.setattr(st_gitea, "mint_token", mock.Mock(return_value="t"))
+    monkeypatch.setattr(st_gitea, "create_repo", mock.Mock())
+    monkeypatch.setattr(st_gitea, "push_stack_to_gitea", mock.Mock())
+
+    st_gitea.provision_gitea(tmp_path, push_to_gitea=True, stack_repo="s")
+
+    out = capsys.readouterr().out
+    assert f"Waiting for Gitea at {EP.http} ..." in out
+    origin = st_gitea.stack_ssh_url("s", port=EP.ssh_port)
+    assert f"stack origin    : {origin}" in out
+    assert "docker compose up -d backend soliplex-provisioner" in out
+
+
 def test_provision_gitea_creates_distinct_webui_admin(tmp_path, monkeypatch):
     ensure = mock.Mock()
-    monkeypatch.setattr(st_gitea, "wait_for_gitea", lambda **kw: True)
+    monkeypatch.setattr(st_gitea, "find_endpoints", lambda project: EP)
+    monkeypatch.setattr(st_gitea, "wait_for_gitea", lambda endpoints: True)
     monkeypatch.setattr(st_gitea, "ensure_admin_user", ensure)
     monkeypatch.setattr(st_gitea, "mint_token", mock.Mock(return_value="t"))
     monkeypatch.setattr(st_gitea, "create_repo", mock.Mock())
@@ -358,7 +570,8 @@ def test_provision_gitea_rejects_service_account_as_webui(tmp_path):
 
 def test_provision_gitea_push_to_gitea_uses_dir_name(tmp_path, monkeypatch):
     push = mock.Mock()
-    monkeypatch.setattr(st_gitea, "wait_for_gitea", lambda **kw: True)
+    monkeypatch.setattr(st_gitea, "find_endpoints", lambda project: EP)
+    monkeypatch.setattr(st_gitea, "wait_for_gitea", lambda endpoints: True)
     monkeypatch.setattr(st_gitea, "ensure_admin_user", mock.Mock())
     monkeypatch.setattr(st_gitea, "mint_token", mock.Mock(return_value="t"))
     monkeypatch.setattr(st_gitea, "create_repo", mock.Mock())
@@ -368,12 +581,14 @@ def test_provision_gitea_push_to_gitea_uses_dir_name(tmp_path, monkeypatch):
 
     push.assert_called_once()
     assert push.call_args.kwargs["repo_name"] == tmp_path.name
+    assert push.call_args.kwargs["endpoints"] == EP
     assert push.call_args.kwargs["ssh_key"] is None
 
 
 def test_provision_gitea_push_to_gitea_honors_overrides(tmp_path, monkeypatch):
     push = mock.Mock()
-    monkeypatch.setattr(st_gitea, "wait_for_gitea", lambda **kw: True)
+    monkeypatch.setattr(st_gitea, "find_endpoints", lambda project: EP)
+    monkeypatch.setattr(st_gitea, "wait_for_gitea", lambda endpoints: True)
     monkeypatch.setattr(st_gitea, "ensure_admin_user", mock.Mock())
     monkeypatch.setattr(st_gitea, "mint_token", mock.Mock(return_value="t"))
     monkeypatch.setattr(st_gitea, "create_repo", mock.Mock())
@@ -391,9 +606,9 @@ def test_provision_gitea_push_to_gitea_honors_overrides(tmp_path, monkeypatch):
 # stack_ssh_url
 # --------------------------------------------------------------------------
 def test_stack_ssh_url():
-    url = st_gitea.stack_ssh_url("myrepo")
+    url = st_gitea.stack_ssh_url("myrepo", port=17322)
 
-    assert url == f"ssh://git@localhost:2222/{st_gitea.ADMIN_USER}/myrepo.git"
+    assert url == f"ssh://git@localhost:17322/{st_gitea.ADMIN_USER}/myrepo.git"
 
 
 # --------------------------------------------------------------------------
@@ -403,10 +618,15 @@ def test_create_repo_posts_name_and_auto_init(monkeypatch):
     urlopen = mock.Mock(return_value=_urlopen_returning(getcode=201))
     monkeypatch.setattr(st_gitea.urllib.request, "urlopen", urlopen)
 
-    code = st_gitea.create_repo("pw", name="stackrepo", auto_init=False)
+    code = st_gitea.create_repo(
+        "pw", endpoints=EP, name="stackrepo", auto_init=False
+    )
 
     assert code == 201
-    body = json.loads(urlopen.call_args.args[0].data)
+    req = urlopen.call_args.args[0]
+    assert req.full_url == "https://localhost:9443/gitea/api/v1/user/repos"
+    assert urlopen.call_args.kwargs == {"context": CONTEXT}
+    body = json.loads(req.data)
     assert body == {"name": "stackrepo", "auto_init": False, "private": False}
 
 
@@ -484,7 +704,9 @@ def test_upload_ssh_key_success(monkeypatch):
     urlopen = mock.Mock(return_value=_urlopen_returning())
     monkeypatch.setattr(st_gitea.urllib.request, "urlopen", urlopen)
 
-    st_gitea.upload_ssh_key("ssh-ed25519 AAAA", password="pw", title="t")
+    st_gitea.upload_ssh_key(
+        "ssh-ed25519 AAAA", password="pw", title="t", endpoints=EP
+    )
 
     req = urlopen.call_args.args[0]
     assert req.full_url.endswith("/api/v1/user/keys")
@@ -498,7 +720,7 @@ def test_upload_ssh_key_already_present_is_ignored(monkeypatch):
         mock.Mock(side_effect=_http_error(422)),
     )
 
-    st_gitea.upload_ssh_key("k", password="pw", title="t")
+    st_gitea.upload_ssh_key("k", password="pw", title="t", endpoints=EP)
 
 
 def test_upload_ssh_key_other_error_raises(monkeypatch):
@@ -509,7 +731,7 @@ def test_upload_ssh_key_other_error_raises(monkeypatch):
     )
 
     with pytest.raises(st_gitea.KeyUploadFailed):
-        st_gitea.upload_ssh_key("k", password="pw", title="t")
+        st_gitea.upload_ssh_key("k", password="pw", title="t", endpoints=EP)
 
 
 # --------------------------------------------------------------------------
@@ -607,7 +829,9 @@ def test_push_initial_failure_raises(monkeypatch):
 # --------------------------------------------------------------------------
 def test_push_stack_to_gitea_rejects_non_git_dir(tmp_path):
     with pytest.raises(st_gitea.NotAGitRepo):
-        st_gitea.push_stack_to_gitea(tmp_path, "pw", repo_name="r")
+        st_gitea.push_stack_to_gitea(
+            tmp_path, "pw", repo_name="r", endpoints=EP
+        )
 
 
 def test_push_stack_to_gitea_requires_an_ssh_key(tmp_path, monkeypatch):
@@ -615,7 +839,9 @@ def test_push_stack_to_gitea_requires_an_ssh_key(tmp_path, monkeypatch):
     monkeypatch.setattr(st_gitea, "discover_ssh_keys", lambda **kw: [])
 
     with pytest.raises(st_gitea.No_SSH_hKeys):
-        st_gitea.push_stack_to_gitea(tmp_path, "pw", repo_name="r")
+        st_gitea.push_stack_to_gitea(
+            tmp_path, "pw", repo_name="r", endpoints=EP
+        )
 
 
 def test_push_stack_to_gitea_uploads_creates_sets_origin_pushes(
@@ -637,12 +863,17 @@ def test_push_stack_to_gitea_uploads_creates_sets_origin_pushes(
     monkeypatch.setattr(st_gitea, "current_branch", lambda p: "main")
     monkeypatch.setattr(st_gitea, "push_initial", push)
 
-    st_gitea.push_stack_to_gitea(tmp_path, "pw", repo_name="myrepo")
+    st_gitea.push_stack_to_gitea(
+        tmp_path, "pw", repo_name="myrepo", endpoints=EP
+    )
 
     assert upload.call_count == 2
-    create.assert_called_once_with("pw", name="myrepo", auto_init=False)
+    assert upload.call_args.kwargs["endpoints"] == EP
+    create.assert_called_once_with(
+        "pw", endpoints=EP, name="myrepo", auto_init=False
+    )
     set_origin.assert_called_once_with(
-        tmp_path, st_gitea.stack_ssh_url("myrepo")
+        tmp_path, st_gitea.stack_ssh_url("myrepo", port=17322)
     )
     configure.assert_called_once_with(tmp_path)
     push.assert_called_once_with(tmp_path, "main")

@@ -6,36 +6,50 @@ opt-in gitea service and delegates here. It ships in the published
 ``soliplex-template`` distribution so the shim can
 ``from soliplex_template.gitea import provision_gitea``.
 
-Run it AFTER ``docker compose up -d`` (postgres + gitea healthy). It waits for
-Gitea, ensures an admin user (via ``docker compose exec``), mints a scoped
+Run it AFTER ``docker compose up -d`` (postgres, gitea and nginx up). It waits
+for Gitea, ensures an admin user (via ``docker compose exec``), mints a scoped
 access token, a tracking repository and the private provisioned-rooms
 repository (over the REST API), and writes ``GITEA_HOST`` /
 ``GITEA_ACCESS_TOKEN`` into ``.env`` for downstream consumers. Idempotent:
 re-running resets the admin password and reuses the existing repos.
 
-Stdlib only -- HTTP via :mod:`urllib.request`, the admin user via
-``subprocess`` (``docker compose exec``); no ``curl``/``openssl``.
+It reaches Gitea's REST API from the host (see :func:`find_endpoints`):
+
+- through Gitea's own published HTTP port, when ``gitea_http_port`` is set
+- otherwise through nginx, which serves Gitea under ``/gitea/`` on its
+  HTTPS port; TLS is verified against the stack's own (self-signed) nginx
+  certificate alone
+
+Stdlib only -- HTTP via :mod:`urllib.request`, the admin user and the stack's
+configuration via ``subprocess`` (``docker compose``); no ``curl``/``openssl``.
 """
 
 from __future__ import annotations
 
 import base64
+import dataclasses
 import hashlib
 import json
 import os
 import pathlib
 import secrets
+import ssl
 import string
 import subprocess
+import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
-# Host-published Gitea URL (used for provisioning from the host). The backend
-# reaches Gitea over the compose network at the internal URL, which is what
-# lands in .env.
-GITEA_HTTP = "http://localhost:3000"
+# The backend reaches Gitea over the compose network at the internal URL,
+# which is what lands in .env.
 GITEA_INTERNAL_URL = "http://gitea:3000"
+# Gitea's ports inside its container (the rootless image).
+GITEA_HTTP_PORT = 3000
+GITEA_SSH_PORT = 2222
+# The stack's self-signed certificate, inside the nginx container.
+NGINX_CERT = "/etc/nginx/ssl/server.crt"
 
 ADMIN_USER = "soliplex-admin"
 ADMIN_EMAIL = "admin@soliplex.localhost"
@@ -43,13 +57,10 @@ REPO_NAME = "soliplex-requests"
 # The provisioned-rooms clone's origin (see soliplex_template.provision).
 ROOMS_REPO_NAME = "rooms-provisioned"
 
-# Gitea's built-in SSH server (rootless image): host port and in-container
-# port are both 2222, the login user is 'git'. The template hardcodes these
-# (GITEA__server__SSH_PORT / the 2222:2222 mapping), so they are not
-# parameterized here.
+# Gitea's built-in SSH server: the login user is 'git'; the host port is the
+# one 'gitea_ssh_port' publishes.
 GITEA_SSH_USER = "git"
 GITEA_SSH_HOST = "localhost"
-GITEA_SSH_PORT = 2222
 
 TOKEN_SCOPES = ["write:repository", "write:issue"]
 ENV_FILE = ".env"
@@ -73,6 +84,31 @@ class GiteaNotReady(GiteaError):
         super().__init__(
             f"Gitea did not become ready at {url} "
             "(is the stack up? 'docker compose up -d gitea')"
+        )
+
+
+class ComposeFailed(GiteaError):
+    def __init__(self, command, stderr):
+        self.command, self.stderr = command, stderr
+        super().__init__(
+            f"'docker compose {' '.join(command)}' failed: {stderr}"
+        )
+
+
+class NoGiteaService(GiteaError):
+    def __init__(self):
+        super().__init__(
+            "the stack has no 'gitea' service (was it generated with "
+            "include_gitea?)"
+        )
+
+
+class SshPortUnpublished(GiteaError):
+    def __init__(self):
+        super().__init__(
+            "--push-to-gitea pushes over Gitea's SSH port, which the stack "
+            "does not publish: set the 'gitea_ssh_port' generator parameter "
+            "(or publish the gitea service's port 2222 in docker-compose.yml)"
         )
 
 
@@ -150,7 +186,95 @@ def generate_admin_password(length: int = 32) -> str:
     return base + PASSWORD_COMPLEXITY_SUFFIX
 
 
-def _request(method, url, *, user=None, password=None, data=None):
+@dataclasses.dataclass(frozen=True)
+class Endpoints:
+    """Where the host reaches the stack's Gitea.
+
+    ``http`` is the base URL of Gitea's web root (its REST API is under
+    ``/api/v1``), ``context`` the TLS context for it (None for plain HTTP),
+    and ``ssh_port`` the host port publishing Gitea's SSH, if any.
+    """
+
+    http: str
+    context: ssl.SSLContext | None = None
+    ssh_port: int | None = None
+
+
+def _compose(*args, project_dir):
+    return subprocess.run(
+        ["docker", "compose", *args],
+        cwd=project_dir,
+        capture_output=True,
+        text=True,
+    )
+
+
+def _compose_checked(*args, project_dir) -> str:
+    result = _compose(*args, project_dir=project_dir)
+    if result.returncode != 0:
+        raise ComposeFailed(args, result.stderr.strip())
+    return result.stdout
+
+
+def _published(service: dict, target: int) -> int | None:
+    """The host port publishing ``service``'s ``target`` port, if any."""
+    for port in service.get("ports") or ():
+        if int(port["target"]) == target and port.get("published"):
+            return int(port["published"])
+    return None
+
+
+def pinned_context(project_dir) -> ssl.SSLContext:
+    """A TLS context trusting the stack's own nginx certificate, alone.
+
+    The certificate is copied out of the running nginx container. Its name
+    is the stack's ``server_name`` while the host connects to ``localhost``,
+    so the hostname is not checked: the pinned certificate is the check.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        dest = pathlib.Path(tmp) / "server.crt"
+        _compose_checked(
+            "cp", f"nginx:{NGINX_CERT}", str(dest), project_dir=project_dir
+        )
+        pem = dest.read_text()
+    context = ssl.create_default_context(cadata=pem)
+    context.check_hostname = False
+    return context
+
+
+def find_endpoints(project_dir) -> Endpoints:
+    """Where the host reaches the stack's Gitea, from its compose config.
+
+    Through Gitea's own published HTTP port, when there is one; otherwise
+    through nginx, at Gitea's ``ROOT_URL`` with ``localhost`` for its host
+    (nginx publishes its HTTPS port on the host under the same number).
+    """
+    config = json.loads(
+        _compose_checked("config", "--format", "json", project_dir=project_dir)
+    )
+    gitea = config["services"].get("gitea")
+    if gitea is None:
+        raise NoGiteaService()
+    ssh_port = _published(gitea, GITEA_SSH_PORT)
+    http_port = _published(gitea, GITEA_HTTP_PORT)
+    if http_port is not None:
+        return Endpoints(f"http://localhost:{http_port}", ssh_port=ssh_port)
+
+    root = urllib.parse.urlsplit(
+        gitea["environment"]["GITEA__server__ROOT_URL"]
+    )
+    https = root.scheme == "https"
+    port = root.port or (443 if https else 80)
+    return Endpoints(
+        f"{root.scheme}://localhost:{port}{root.path.rstrip('/')}",
+        context=pinned_context(project_dir) if https else None,
+        ssh_port=ssh_port,
+    )
+
+
+def _request(
+    method, url, *, user=None, password=None, data=None, context=None
+):
     headers = {}
     if user is not None:
         raw = f"{user}:{password}".encode()
@@ -162,20 +286,23 @@ def _request(method, url, *, user=None, password=None, data=None):
     req = urllib.request.Request(
         url, data=body, headers=headers, method=method
     )
-    return urllib.request.urlopen(req)
+    return urllib.request.urlopen(req, context=context)
 
 
 def wait_for_gitea(
-    base_url: str = GITEA_HTTP,
+    endpoints: Endpoints,
     *,
     attempts: int = READY_ATTEMPTS,
     delay: int = READY_DELAY,
     sleep=time.sleep,
 ) -> bool:
-    """Poll ``<base_url>/api/v1/version`` until it answers; True if ready."""
+    """Poll Gitea's ``/api/v1/version`` until it answers; True if ready."""
+    url = f"{endpoints.http}/api/v1/version"
     for _ in range(attempts):
         try:
-            with urllib.request.urlopen(f"{base_url}/api/v1/version") as resp:
+            with urllib.request.urlopen(
+                url, context=endpoints.context
+            ) as resp:
                 resp.read()
         except (urllib.error.URLError, OSError):
             sleep(delay)
@@ -243,13 +370,18 @@ def ensure_admin_user(username, email, password, *, project_dir) -> None:
     result.check_returncode()
 
 
-def mint_token(password: str, *, token_name: str) -> str:
+def mint_token(password: str, *, token_name: str, endpoints: Endpoints) -> str:
     """Mint a scoped access token for the admin user; return its sha1."""
-    url = f"{GITEA_HTTP}/api/v1/users/{ADMIN_USER}/tokens"
+    url = f"{endpoints.http}/api/v1/users/{ADMIN_USER}/tokens"
     data = {"name": token_name, "scopes": TOKEN_SCOPES}
     try:
         with _request(
-            "POST", url, user=ADMIN_USER, password=password, data=data
+            "POST",
+            url,
+            user=ADMIN_USER,
+            password=password,
+            data=data,
+            context=endpoints.context,
         ) as resp:
             body = resp.read().decode()
     except urllib.error.HTTPError as exc:
@@ -261,16 +393,22 @@ def mint_token(password: str, *, token_name: str) -> str:
 def create_repo(
     password: str,
     *,
+    endpoints: Endpoints,
     name: str = REPO_NAME,
     auto_init: bool = True,
     private: bool = False,
 ) -> int:
     """Create a repo owned by the admin user (idempotent: 201 or 409)."""
-    url = f"{GITEA_HTTP}/api/v1/user/repos"
+    url = f"{endpoints.http}/api/v1/user/repos"
     data = {"name": name, "auto_init": auto_init, "private": private}
     try:
         with _request(
-            "POST", url, user=ADMIN_USER, password=password, data=data
+            "POST",
+            url,
+            user=ADMIN_USER,
+            password=password,
+            data=data,
+            context=endpoints.context,
         ) as resp:
             code = resp.getcode()
     except urllib.error.HTTPError as exc:
@@ -280,10 +418,13 @@ def create_repo(
     return code
 
 
-def stack_ssh_url(repo_name: str) -> str:
-    """The SSH clone URL for a repo owned by the admin service account."""
+def stack_ssh_url(repo_name: str, *, port: int) -> str:
+    """The SSH clone URL for a repo owned by the admin service account.
+
+    ``port`` is the host port publishing Gitea's SSH.
+    """
     return (
-        f"ssh://{GITEA_SSH_USER}@{GITEA_SSH_HOST}:{GITEA_SSH_PORT}"
+        f"ssh://{GITEA_SSH_USER}@{GITEA_SSH_HOST}:{port}"
         f"/{ADMIN_USER}/{repo_name}.git"
     )
 
@@ -323,13 +464,20 @@ def _key_title(public_key: str) -> str:
     return f"soliplex-template-{digest}"
 
 
-def upload_ssh_key(public_key: str, *, password: str, title: str) -> None:
+def upload_ssh_key(
+    public_key: str, *, password: str, title: str, endpoints: Endpoints
+) -> None:
     """Register a public key on the admin account (idempotent)."""
-    url = f"{GITEA_HTTP}/api/v1/user/keys"
+    url = f"{endpoints.http}/api/v1/user/keys"
     data = {"title": title, "key": public_key}
     try:
         with _request(
-            "POST", url, user=ADMIN_USER, password=password, data=data
+            "POST",
+            url,
+            user=ADMIN_USER,
+            password=password,
+            data=data,
+            context=endpoints.context,
         ):
             pass
     except urllib.error.HTTPError as exc:
@@ -369,8 +517,8 @@ def set_origin(project_dir, url: str) -> None:
 def configure_stack_ssh(project_dir) -> None:
     """Persist a stack-local ``known_hosts`` for git-over-SSH to this gitea.
 
-    Every gitea SSH endpoint is ``localhost:2222`` (one stack can bind the host
-    port at a time, and SSH has no Host-based routing), so pinning the gitea
+    Every gitea SSH endpoint is ``localhost:<gitea_ssh_port>`` (stacks reuse
+    port numbers, and SSH has no Host-based routing), so pinning the gitea
     host key in the operator's ``~/.ssh/known_hosts`` makes each new stack
     collide with the previous one's key ("HOST IDENTIFICATION HAS CHANGED").
 
@@ -402,16 +550,17 @@ def push_initial(project_dir, branch: str) -> None:
 
 
 def push_stack_to_gitea(
-    project_dir, password, *, repo_name, ssh_key=None
+    project_dir, password, *, repo_name, endpoints, ssh_key=None
 ) -> None:
     """Create a Gitea repo for the stack, set ``origin``, push the commit.
 
     Registers the operator's SSH key(s) on the admin account, creates an empty
     repo ``soliplex-admin/<repo_name>``, points the stack's ``origin`` at its
-    SSH URL, and pushes the current branch. No token or password lands in the
-    stack's git config -- the durable push credential is the operator's SSH
-    key. git-over-SSH is routed through a stack-local ``known_hosts`` (see
-    :func:`configure_stack_ssh`) so the global one is never touched.
+    SSH URL (on ``endpoints.ssh_port``), and pushes the current branch. No
+    token or password lands in the stack's git config -- the durable push
+    credential is the operator's SSH key. git-over-SSH is routed through a
+    stack-local ``known_hosts`` (see :func:`configure_stack_ssh`) so the
+    global one is never touched.
     """
     project = pathlib.Path(project_dir)
     if not (project / ".git").is_dir():
@@ -421,10 +570,12 @@ def push_stack_to_gitea(
         raise No_SSH_hKeys()
     print(f"Registering {len(keys)} SSH key(s) with '{ADMIN_USER}' ...")
     for key in keys:
-        upload_ssh_key(key, password=password, title=_key_title(key))
+        upload_ssh_key(
+            key, password=password, title=_key_title(key), endpoints=endpoints
+        )
     print(f"Ensuring stack repository '{ADMIN_USER}/{repo_name}' ...")
-    create_repo(password, name=repo_name, auto_init=False)
-    url = stack_ssh_url(repo_name)
+    create_repo(password, endpoints=endpoints, name=repo_name, auto_init=False)
+    url = stack_ssh_url(repo_name, port=endpoints.ssh_port)
     print(f"Setting 'origin' to {url} ...")
     set_origin(project, url)
     configure_stack_ssh(project)
@@ -450,7 +601,7 @@ def set_env_var(env_path, key: str, value: str) -> None:
     env_path.write_text("\n".join(out) + "\n")
 
 
-def _print_summary(webui_user=None, stack_repo=None) -> None:
+def _print_summary(webui_user=None, stack_origin=None) -> None:
     print()
     print("=== Gitea provisioned ===")
     print(f"  service account : {ADMIN_USER} (rotating; token in .env)")
@@ -462,14 +613,11 @@ def _print_summary(webui_user=None, stack_repo=None) -> None:
             f"  web-UI admin    : {webui_user} "
             "(log in with the password you just set)"
         )
-    if stack_repo is not None:
-        print(
-            f"  stack origin    : {stack_ssh_url(stack_repo)} "
-            "(push with your SSH key)"
-        )
+    if stack_origin is not None:
+        print(f"  stack origin    : {stack_origin} (push with your SSH key)")
     print()
-    print("Restart the backend so it picks up the new '.env':")
-    print("  docker compose up -d backend")
+    print("Recreate the services that read '.env' so they pick it up:")
+    print("  docker compose up -d backend soliplex-provisioner")
 
 
 def provision_gitea(
@@ -495,12 +643,15 @@ def provision_gitea(
     ``webui_password`` -- a stable, known login for the Gitea web UI. No token
     is minted for it and its password is not persisted by this script.
 
-    When ``push_to_gitea`` is set, the stack's own git repository is backed by
-    Gitea: the operator's SSH key(s) are registered on the service account, an
-    empty repo ``soliplex-admin/<stack_repo>`` is created (``stack_repo``
-    defaults to the stack directory name), the stack's ``origin`` is pointed at
-    its SSH URL, and the current branch is pushed. ``ssh_key`` overrides the
-    key auto-discovery. No secret is written to the stack's git config.
+    Gitea is reached as :func:`find_endpoints` says. ``push_to_gitea`` needs
+    Gitea's SSH port published (``gitea_ssh_port``); without it, nothing is
+    changed. When ``push_to_gitea`` is set, the stack's own git repository is
+    backed by Gitea: the operator's SSH key(s) are registered on the service
+    account, an empty repo ``soliplex-admin/<stack_repo>`` is created
+    (``stack_repo`` defaults to the stack directory name), the stack's
+    ``origin`` is pointed at its SSH URL, and the current branch is pushed.
+    ``ssh_key`` overrides the key auto-discovery. No secret is written to the
+    stack's git config.
 
     Nothing is returned: the side effects (the updated ``.env`` and the Gitea
     accounts) are the result.
@@ -508,23 +659,36 @@ def provision_gitea(
     if webui_user == ADMIN_USER:
         raise ReservedUser(webui_user)
     project = pathlib.Path(project_dir).resolve()
+    endpoints = find_endpoints(project)
+    if push_to_gitea and endpoints.ssh_port is None:
+        raise SshPortUnpublished()
     print("=== Gitea provisioning ===")
-    print(f"Waiting for Gitea at {GITEA_HTTP} ...")
-    if not wait_for_gitea():
-        raise GiteaNotReady(GITEA_HTTP)
+    print(f"Waiting for Gitea at {endpoints.http} ...")
+    if not wait_for_gitea(endpoints):
+        raise GiteaNotReady(endpoints.http)
 
     password = generate_admin_password()
     print(f"Ensuring service account '{ADMIN_USER}' ...")
     ensure_admin_user(ADMIN_USER, ADMIN_EMAIL, password, project_dir=project)
 
     print("Minting access token ...")
-    token = mint_token(password, token_name=f"concierge-{int(time.time())}")
+    token = mint_token(
+        password,
+        token_name=f"concierge-{int(time.time())}",
+        endpoints=endpoints,
+    )
 
     print(f"Ensuring repository '{ADMIN_USER}/{REPO_NAME}' ...")
-    create_repo(password)
+    create_repo(password, endpoints=endpoints)
 
     print(f"Ensuring repository '{ADMIN_USER}/{ROOMS_REPO_NAME}' ...")
-    create_repo(password, name=ROOMS_REPO_NAME, auto_init=False, private=True)
+    create_repo(
+        password,
+        endpoints=endpoints,
+        name=ROOMS_REPO_NAME,
+        auto_init=False,
+        private=True,
+    )
 
     if webui_user is not None:
         print(f"Ensuring web-UI admin user '{webui_user}' ...")
@@ -539,11 +703,16 @@ def provision_gitea(
     set_env_var(env_path, "GITEA_HOST", GITEA_INTERNAL_URL)
     set_env_var(env_path, "GITEA_ACCESS_TOKEN", token)
 
-    repo_name = None
+    stack_origin = None
     if push_to_gitea:
         repo_name = stack_repo or project.name
         push_stack_to_gitea(
-            project, password, repo_name=repo_name, ssh_key=ssh_key
+            project,
+            password,
+            repo_name=repo_name,
+            endpoints=endpoints,
+            ssh_key=ssh_key,
         )
+        stack_origin = stack_ssh_url(repo_name, port=endpoints.ssh_port)
 
-    _print_summary(webui_user, repo_name)
+    _print_summary(webui_user, stack_origin)

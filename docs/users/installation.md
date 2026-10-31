@@ -135,13 +135,23 @@ stack is up, provision it:
 uv run scripts/init_gitea.py
 ```
 
-This creates a rotating service account (its password is never persisted).
+This creates a rotating service account (its password is never persisted),
+and writes `GITEA_HOST` / `GITEA_ACCESS_TOKEN` into `.env`. It reaches Gitea
+through nginx's `/gitea/`, trusting only the stack's own certificate (or
+through `gitea_http_port`, when that is set). Then recreate the services that
+read `.env`:
+
+```bash
+docker compose up -d backend soliplex-provisioner
+```
+
 Useful flags:
 
 - `--admin-user NAME` — also create a distinct web-UI admin login (you are
   prompted for its password).
 - `--push-to-gitea` — register your SSH key(s), create a repo, set this stack's
-  git `origin` to it, and push the initial commit.
+  git `origin` to it, and push the initial commit. It pushes over Gitea's SSH,
+  so it needs the stack generated with `gitea_ssh_port`.
 
 Open Gitea at <https://${server_name}:${nginx_https}/gitea/>.
 
