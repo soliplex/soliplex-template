@@ -882,6 +882,10 @@ def ensure_runtime_dirs(out: pathlib.Path, docs_dir: str) -> None:
         keep = d / ".gitkeep"
         if not any(d.iterdir()):
             keep.touch()
+    # The provisioned-rooms clone, bind-mounted into the ingester: created
+    # here so Docker does not create it, root-owned. No placeholder: the
+    # provisioner makes it a git repository of its own.
+    (out / "src" / "rooms-provisioned").mkdir(parents=True, exist_ok=True)
 
 
 def write_env(out: pathlib.Path, params: dict[str, object]) -> None:

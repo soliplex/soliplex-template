@@ -199,6 +199,28 @@ def test_commit_room_runs_operator_hooks(clone, git_config, tmp_path):
     assert marker.exists()
 
 
+def test_commit_room_also_commits_other_paths(clone):
+    _write_room(clone)
+    fragment = clone / "databases.d" / f"{ROOM_ID}.yaml"
+    fragment.parent.mkdir()
+    fragment.write_text("fragment\n")
+    (clone / "unrelated.txt").write_text("not mine\n")
+
+    landing_clone.commit_room(
+        clone,
+        ROOM_ID,
+        author_name="Alice",
+        author_email="alice@example.com",
+        message="m",
+        also=(f"databases.d/{ROOM_ID}.yaml",),
+    )
+
+    committed = _git(clone, "show", "--name-only", "--format=", "HEAD")
+    assert f"databases.d/{ROOM_ID}.yaml" in committed.splitlines()
+    assert "unrelated.txt" not in committed
+    assert _git(clone, "status", "--porcelain") == "?? unrelated.txt"
+
+
 def test_commit_room_with_nothing_to_commit(clone):
     _write_room(clone)
     _commit(clone)

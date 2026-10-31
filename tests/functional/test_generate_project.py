@@ -712,6 +712,28 @@ def test_healthcheck_checks_often_while_starting(generated_project, service):
     assert "start_period" in healthcheck
 
 
+def test_ingester_includes_the_provisioned_rooms_fragments(generated_project):
+    # Each provisioned room's database fragment lives in the clone, which
+    # the ingester (and the one-shot haiku-rag service) mount where the
+    # config's 'databases_include' looks.
+    out, _params = generated_project
+    services = yaml.safe_load(_read(out, "docker-compose.yml"))["services"]
+    config = yaml.safe_load(_read(out, "haiku.rag", "haiku.rag.yaml"))
+
+    mounts = {
+        name: services[name]["volumes"]
+        for name in ("haiku-ingester", "haiku-rag")
+    }
+
+    for volumes in mounts.values():
+        assert "./src/rooms-provisioned:/app/rooms-provisioned:ro" in volumes
+    assert config["databases_include"] == "rooms-provisioned/databases.d"
+    assert config["lancedb"]["databases"] == {
+        "haiku.rag": "/data/haiku.rag.lancedb"
+    }
+    assert (out / "src" / "rooms-provisioned").is_dir()
+
+
 def test_provisioner_service_wiring(generated_project):
     # The service runs with every 'docker compose up' (no profile), as
     # 'soliplex-dev' runs the provisioner: same image, secrets, environment
@@ -769,9 +791,10 @@ def test_url_safe_token_secret_read_from_its_docker_secret(generated_project):
 
 
 def test_soliplex_dev_wired_for_the_room_provisioner(generated_project):
-    # The room provisioner runs in 'soliplex-dev': it reloads the ingester
-    # (bearer secret) after registering a room's database in the ingester's
-    # config (mounted read-write), and commits with git (in the image).
+    # The room provisioner runs in 'soliplex-dev': it checks the ingester's
+    # config (mounted read-only), reloads the ingester (bearer secret) after
+    # writing a room's database fragment, and commits with git (in the
+    # image).
     out, _params = generated_project
     services = yaml.safe_load(_read(out, "docker-compose.yml"))["services"]
     dockerfile = _read(out, "soliplex-dev", "Dockerfile")
@@ -780,7 +803,7 @@ def test_soliplex_dev_wired_for_the_room_provisioner(generated_project):
 
     assert "ingester_bearer" in soliplex_dev["secrets"]
     assert (
-        "./haiku.rag/haiku.rag.yaml:/app/haiku.rag.yaml"
+        "./haiku.rag/haiku.rag.yaml:/app/haiku.rag.yaml:ro"
         in soliplex_dev["volumes"]
     )
     assert "apt-get install -y --no-install-recommends git" in dockerfile

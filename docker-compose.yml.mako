@@ -267,9 +267,9 @@ services:
       - ./rag/db:/db
       # src/ read-WRITE; the backend mounts the same tree read-only.
       - ./src:/app/src
-      # The ingester's config, read-WRITE: the room provisioner registers
-      # each provisioned room's database in it.
-      - ./haiku.rag/haiku.rag.yaml:/app/haiku.rag.yaml
+      # The ingester's config: the room provisioner checks that it includes
+      # the provisioned rooms' database fragments.
+      - ./haiku.rag/haiku.rag.yaml:/app/haiku.rag.yaml:ro
       # Git policy for the room provisioner's commits (committer identity,
       # hooks, signing): mount a git config file here and set
       # 'GIT_CONFIG_GLOBAL=/etc/provisioner/gitconfig' in '.env'.
@@ -365,6 +365,9 @@ services:
       - ./rag/db:/data
       - ./${docs_dir}:/docs
       - ./haiku.rag/haiku.rag.yaml:/app/haiku.rag.yaml:ro
+      # The provisioned-rooms clone: its 'databases.d' holds each provisioned
+      # room's database fragment, which haiku.rag.yaml includes.
+      - ./src/rooms-provisioned:/app/rooms-provisioned:ro
       # Room uploads, the corpus of each room's own database.
       - ./uploads/rooms:/uploads/rooms:ro
 
