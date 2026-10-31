@@ -45,7 +45,7 @@ soliplex-provision-room = "soliplex_template.provision:main"
 dev = [
     "coverage",
     "fastapi",  # 'provision_service'
-    "httpx",  # fastapi's TestClient
+    "httpx2",  # fastapi's TestClient
     "mako",
     "packaging",  # 'generate_soliplex_project.py'
     "pyyaml",
