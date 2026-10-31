@@ -13,7 +13,9 @@ act exactly once (cases that would repeat it are parametrized or split).
 from __future__ import annotations
 
 import json
+import logging
 import pathlib
+import threading
 import types
 
 import pytest
@@ -45,10 +47,14 @@ class _FakeCli:
         self.writers = set()
         self.verdicts = {}
         self.calls = []
+        # When set, each admission check waits here for the other.
+        self.barrier = None
         monkeypatch.setattr(provision, "run_cli", self)
 
     def __call__(self, settings, *command, stdin=None, ok_codes=(0,)):
         self.calls.append((command, stdin, ok_codes))
+        if self.barrier is not None:
+            self.barrier.wait()
         if command[0] in self.verdicts:
             return self.verdicts[command[0]]
         if command[0] == "admin-users":
@@ -145,9 +151,10 @@ def test_post_room_as_admin(app, client, cli, provisioner, token_mint):
     [admission] = provisioner.created
     assert admission.plan is plan
     assert token_mint.loaded == [("s3cret", "alice-token")]
-    assert cli.commands() == [
-        ("admin-users", "--quiet", "check", ENVIRONMENT),
-    ]
+    assert {command[0] for command in cli.commands()} == {
+        "admin-users",
+        "room-authz",
+    }
     assert all(stdin == "alice-token" for _c, stdin, _o in cli.calls)
     request = app.state.requests.get(ROOM)
     assert request.state == provision_service.State.LIVE
@@ -161,8 +168,11 @@ def test_post_room_with_write_on_the_admission_room(client, cli, provisioner):
 
     assert response.status_code == 202
     assert response.json()["room_id"] == "alice:plans"
-    [admin_check, (room_check, _stdin, ok_codes)] = cli.calls
-    assert admin_check[2] == (0, 1)
+    calls = {command[0]: (command, codes) for command, _s, codes in cli.calls}
+    admin_check, admin_codes = calls["admin-users"]
+    room_check, ok_codes = calls["room-authz"]
+    assert admin_check == ("admin-users", "--quiet", "check", ENVIRONMENT)
+    assert admin_codes == (0, 1)
     assert room_check == (
         "room-authz",
         "--quiet",
@@ -354,11 +364,136 @@ def test_get_room_with_an_invalid_token(app, client, cli):
 # ---- GET /ok ----
 
 
-def test_health_check(client):
+def test_health_check(app, client):
+    app.state.access.update(True)
+
     response = client.get("/ok")
 
     assert response.status_code == 200
     assert response.text == "OK"
+
+
+def test_health_check_until_the_backend_admits_the_provisioner(app, client):
+    app.state.access.update(False, "the backend refused the provisioner")
+
+    response = client.get("/ok")
+
+    assert response.status_code == 503
+    assert response.text == "the backend refused the provisioner"
+
+
+def test_health_check_before_the_first_check(client):
+    response = client.get("/ok")
+
+    assert response.status_code == 503
+    assert response.text == "the backend has not been checked yet"
+
+
+# ---- admission ----
+
+
+def test_is_admitted_runs_its_checks_concurrently(settings, cli):
+    # Each check waits for the other: run one after the other, the first
+    # would time out at the barrier.
+    cli.barrier = threading.Barrier(2, timeout=5)
+    cli.writers.add("alice-token")
+
+    result = provision_service.is_admitted(settings, "alice-token")
+
+    assert result is True
+    assert len(cli.calls) == 2
+
+
+def test_is_admitted_admits_an_admin_whatever_the_policy_check_says(
+    settings, cli
+):
+    cli.admins.add("alice-token")
+    cli.verdicts["room-authz"] = "Stale ACL entry\n"
+
+    result = provision_service.is_admitted(settings, "alice-token")
+
+    assert result is True
+
+
+# ---- watch_access ----
+
+
+def _checks(monkeypatch, *outcomes):
+    """Make 'check_admin_access' raise each of ``outcomes`` in turn (None
+    passes)."""
+    outcomes = list(outcomes)
+
+    def check(settings):
+        outcome = outcomes.pop(0)
+        if outcome is not None:
+            raise outcome
+
+    monkeypatch.setattr(provision, "check_admin_access", check)
+
+
+def test_watch_access_admitted_at_once(settings, monkeypatch):
+    _checks(monkeypatch, None)
+    access = provision_service.Access()
+    sleeps = []
+
+    provision_service.watch_access(settings, access, sleep=sleeps.append)
+
+    assert access.state() == (True, None)
+    assert sleeps == []
+
+
+def test_watch_access_until_admitted(settings, monkeypatch, caplog):
+    denied = provision.AdminAccessDenied(403, "soliplex-provisioner")
+    unreachable = provision.BackendRequestFailed("http://backend", "refused")
+    _checks(monkeypatch, unreachable, denied, denied, None)
+    access = provision_service.Access()
+    sleeps = []
+    states = []
+
+    def sleep(seconds):
+        sleeps.append(seconds)
+        states.append(access.state())
+
+    with caplog.at_level(logging.INFO, logger=provision_service.logger.name):
+        provision_service.watch_access(settings, access, sleep=sleep)
+
+    assert access.state() == (True, None)
+    assert sleeps == [
+        provision_service.BACKEND_RETRY,
+        provision_service.ACCESS_RETRY,
+        provision_service.ACCESS_RETRY,
+    ]
+    assert states == [
+        (False, str(unreachable)),
+        (False, str(denied)),
+        (False, str(denied)),
+    ]
+    logged = [
+        (record.levelno, record.getMessage()) for record in caplog.records
+    ]
+    assert logged == [
+        (logging.WARNING, str(unreachable)),
+        (logging.ERROR, str(denied)),
+        (logging.INFO, "the backend admits the provisioner"),
+    ]
+    assert """'$[?$.sub == "soliplex-provisioner"]'""" in str(denied)
+
+
+def test_lifespan_watches_access(settings, monkeypatch):
+    watched = threading.Event()
+    calls = []
+
+    def watch(settings, access):
+        calls.append((settings, access))
+        watched.set()
+
+    monkeypatch.setattr(provision_service, "watch_access", watch)
+    app = provision_service.create_app(settings)
+
+    with testclient.TestClient(app):
+        assert watched.wait(timeout=5)
+
+    assert calls == [(settings, app.state.access)]
 
 
 # ---- pieces ----

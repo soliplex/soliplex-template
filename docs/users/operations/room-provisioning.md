@@ -120,7 +120,10 @@ docker compose run --rm --quiet-build soliplex-dev \
 ```
 
 Until then, the provisioner stops before changing anything, naming the
-entry it needs. A backend in no-auth mode admits it without one.
+entry it needs, and the `soliplex-provisioner` service reports itself
+unhealthy (`docker compose ps`): its log, and its `/ok`, name the entry
+too. It keeps checking, so adding the entry is enough. A backend in no-auth
+mode admits it without one.
 
 ## The provisioner service
 

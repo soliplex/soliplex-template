@@ -12,7 +12,9 @@ requesting user's claims, and sends it as the bearer token:
 - ``GET /rooms/{room_id}`` answers the request's state: ``pending``,
   ``live``, ``incomplete`` (with the steps still to do) or ``failed`` (with
   the error)
-- ``GET /ok`` answers ``OK``, for health checks
+- ``GET /ok`` answers ``OK``, for health checks, once the backend admits
+  the provisioner's own service tokens; until then it answers 503, saying
+  why (see :func:`watch_access`)
 
 A requester is admitted when they are an admin, or hold WRITE on the
 reserved room id ``__provision__``. The token is validated in-process,
@@ -29,12 +31,15 @@ it, configured from the environment (see :meth:`provision.Settings.from_env`).
 
 from __future__ import annotations
 
+import concurrent.futures
+import contextlib
 import dataclasses
 import enum
 import json
 import logging
 import os
 import threading
+import time
 import typing
 
 import fastapi
@@ -44,6 +49,10 @@ from soliplex_template import provision
 from soliplex_template import room_ids
 
 ADMISSION_ROOM = "__provision__"
+# Seconds between checks of the provisioner's own backend access: while
+# the backend refuses it, and while the backend cannot be reached.
+ACCESS_RETRY = 15
+BACKEND_RETRY = 5
 
 logger = logging.getLogger(__name__)
 
@@ -102,15 +111,9 @@ def is_admin(settings: provision.Settings, token: str) -> bool:
     return _verdict(settings, command, "is_admin", token)
 
 
-def is_admitted(settings: provision.Settings, token: str) -> bool:
-    """May the user of the service token ``token`` request a room?
-
-    That is, are they an admin, or do they hold WRITE on
-    :data:`ADMISSION_ROOM`? Raises :class:`CheckFailed` when a check gives
-    no verdict.
-    """
-    if is_admin(settings, token):
-        return True
+def may_write_admission_room(settings: provision.Settings, token: str) -> bool:
+    """Does the user of the service token ``token`` hold WRITE on
+    :data:`ADMISSION_ROOM`?"""
     command = (
         "room-authz",
         "--quiet",
@@ -121,6 +124,73 @@ def is_admitted(settings: provision.Settings, token: str) -> bool:
         "write",
     )
     return _verdict(settings, command, "allowed", token)
+
+
+def is_admitted(settings: provision.Settings, token: str) -> bool:
+    """May the user of the service token ``token`` request a room?
+
+    That is, are they an admin, or do they hold WRITE on
+    :data:`ADMISSION_ROOM`? The two checks run concurrently; an admin is
+    admitted whatever the other says. Raises :class:`CheckFailed` when a
+    check that decides gives no verdict.
+    """
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        admin = pool.submit(is_admin, settings, token)
+        writer = pool.submit(may_write_admission_room, settings, token)
+        if admin.result():
+            return True
+        return writer.result()
+
+
+# --------------------------------------------------------------------------
+# The provisioner's own access
+# --------------------------------------------------------------------------
+class Access:
+    """Whether the backend admits the provisioner's own service tokens.
+
+    ``problem`` says why not, while it does not.
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._admitted = False
+        self._problem = "the backend has not been checked yet"
+
+    def state(self) -> tuple[bool, str | None]:
+        with self._lock:
+            return self._admitted, self._problem
+
+    def update(self, admitted: bool, problem: str | None = None) -> None:
+        with self._lock:
+            self._admitted, self._problem = admitted, problem
+
+
+def watch_access(
+    settings: provision.Settings, access: Access, *, sleep=time.sleep
+) -> None:
+    """Check the provisioner's backend access until the backend admits it.
+
+    Records each outcome in ``access``, and logs each new reason it is
+    refused: an error, naming the ``admin_users`` entry it needs, when the
+    backend refuses it; a warning while the backend cannot be reached.
+    """
+    logged = None
+    while True:
+        try:
+            provision.check_admin_access(settings)
+        except provision.AdminAccessDenied as error:
+            problem, level, delay = str(error), logging.ERROR, ACCESS_RETRY
+        except provision.ProvisionError as error:
+            problem, level, delay = str(error), logging.WARNING, BACKEND_RETRY
+        else:
+            access.update(True)
+            logger.info("the backend admits the provisioner")
+            return
+        access.update(False, problem)
+        if problem != logged:
+            logger.log(level, "%s", problem)
+            logged = problem
+        sleep(delay)
 
 
 # --------------------------------------------------------------------------
@@ -212,6 +282,10 @@ def _requests(request: fastapi.Request) -> Requests:
     return request.app.state.requests
 
 
+def _access(request: fastapi.Request) -> Access:
+    return request.app.state.access
+
+
 def _bearer_token(
     authorization: typing.Annotated[str | None, fastapi.Header()] = None,
 ) -> str:
@@ -227,6 +301,7 @@ def _bearer_token(
 
 SettingsDep = typing.Annotated[provision.Settings, fastapi.Depends(_settings)]
 RequestsDep = typing.Annotated[Requests, fastapi.Depends(_requests)]
+AccessDep = typing.Annotated[Access, fastapi.Depends(_access)]
 TokenDep = typing.Annotated[str, fastapi.Depends(_bearer_token)]
 
 
@@ -269,9 +344,15 @@ router = fastapi.APIRouter()
 
 
 @router.get("/ok", response_class=fastapi.responses.PlainTextResponse)
-def health_check() -> str:
-    """Is the service up?"""
-    return "OK"
+def health_check(access: AccessDep) -> fastapi.responses.PlainTextResponse:
+    """Is the service up, and does the backend admit the provisioner?
+
+    Answers 503, saying why, until the backend does.
+    """
+    admitted, problem = access.state()
+    if not admitted:
+        return fastapi.responses.PlainTextResponse(problem, status_code=503)
+    return fastapi.responses.PlainTextResponse("OK")
 
 
 @router.post("/rooms", status_code=202)
@@ -368,12 +449,27 @@ def get_room(
     )
 
 
+@contextlib.asynccontextmanager
+async def _lifespan(app: fastapi.FastAPI):
+    """Watch the provisioner's backend access while the service runs."""
+    threading.Thread(
+        target=watch_access,
+        args=(app.state.settings, app.state.access),
+        name="provisioner-access",
+        daemon=True,
+    ).start()
+    yield
+
+
 def create_app(settings: provision.Settings | None = None) -> fastapi.FastAPI:
     """The service's application; ``settings`` default to the environment's."""
-    app = fastapi.FastAPI(title="Soliplex room provisioner")
+    app = fastapi.FastAPI(
+        title="Soliplex room provisioner", lifespan=_lifespan
+    )
     if settings is None:
         settings = provision.Settings.from_env(os.environ)
     app.state.settings = settings
     app.state.requests = Requests()
+    app.state.access = Access()
     app.include_router(router)
     return app
