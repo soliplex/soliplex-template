@@ -8,7 +8,8 @@ requesting user's claims, and sends it as the bearer token:
   (the last two optional) answers ``202`` with ``{"room_id": ...,
   "issue_url": ...}`` once the request is admitted (see
   :func:`provision.admit_room`), then creates the room in the background
-  (:func:`provision.create_room`)
+  (:func:`provision.create_room`). A ``409`` refusal names its room:
+  ``{"detail": ..., "room_id": ...}``.
 - ``GET /rooms/{room_id}`` answers the request's state: ``pending``,
   ``live``, ``incomplete`` (with the steps still to do) or ``failed`` (with
   the error)
@@ -270,6 +271,25 @@ class RequestState(pydantic.BaseModel):
     error: str | None
 
 
+class RoomRefused(Exception):
+    """A refusal naming the room it refuses, answered as
+    ``{"detail": ..., "room_id": ...}``: the caller cannot work the room id
+    out for itself."""
+
+    def __init__(self, status: int, detail: str, room_id: str):
+        self.status, self.detail, self.room_id = status, detail, room_id
+        super().__init__(detail)
+
+
+async def _room_refused(
+    request: fastapi.Request, error: RoomRefused
+) -> fastapi.responses.JSONResponse:
+    return fastapi.responses.JSONResponse(
+        status_code=error.status,
+        content={"detail": error.detail, "room_id": error.room_id},
+    )
+
+
 def _http_error(status: int, error: Exception) -> fastapi.HTTPException:
     return fastapi.HTTPException(status_code=status, detail=str(error))
 
@@ -389,15 +409,14 @@ def post_room(
 
     room = plan.room
     if not requests.reserve(room, plan.owner.owner):
-        raise fastapi.HTTPException(
-            status_code=409,
-            detail=f"room {room!r} is already being provisioned",
+        raise RoomRefused(
+            409, f"room {room!r} is already being provisioned", room
         )
     try:
         admission = provision.admit_room(plan, settings)
     except (provision.RoomExists, provision.ResourcesExist) as error:
         requests.release(room)
-        raise _http_error(409, error) from error
+        raise RoomRefused(409, str(error), room) from error
     except provision.USER_ERRORS as error:
         requests.release(room)
         logger.exception("admitting room %r failed", room)
@@ -471,5 +490,6 @@ def create_app(settings: provision.Settings | None = None) -> fastapi.FastAPI:
     app.state.settings = settings
     app.state.requests = Requests()
     app.state.access = Access()
+    app.add_exception_handler(RoomRefused, _room_refused)
     app.include_router(router)
     return app

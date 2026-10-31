@@ -242,20 +242,23 @@ def test_post_room_already_pending(app, client, cli, provisioner):
     response = _post(client)
 
     assert response.status_code == 409
-    assert "already being provisioned" in response.json()["detail"]
+    assert response.json() == {
+        "detail": f"room {ROOM!r} is already being provisioned",
+        "room_id": ROOM,
+    }
     assert provisioner.admitted == []
 
 
 @pytest.mark.parametrize(
-    "error, status",
+    "error, status, named",
     [
-        (provision.RoomExists(ROOM), 409),
-        (provision.ResourcesExist(ROOM, ["an authz policy"]), 409),
-        (provision.IssueFilingFailed(RuntimeError("gitea down")), 500),
+        (provision.RoomExists(ROOM), 409, True),
+        (provision.ResourcesExist(ROOM, ["an authz policy"]), 409, True),
+        (provision.IssueFilingFailed(RuntimeError("gitea down")), 500, False),
     ],
 )
 def test_post_room_not_admitted_by_the_provisioner(
-    app, client, cli, provisioner, error, status
+    app, client, cli, provisioner, error, status, named
 ):
     cli.admins.add("alice-token")
     provisioner.admit_error = error
@@ -263,7 +266,10 @@ def test_post_room_not_admitted_by_the_provisioner(
     response = _post(client)
 
     assert response.status_code == status
-    assert response.json() == {"detail": str(error)}
+    expected = {"detail": str(error)}
+    if named:
+        expected["room_id"] = ROOM
+    assert response.json() == expected
     assert app.state.requests.get(ROOM) is None
     assert provisioner.created == []
 

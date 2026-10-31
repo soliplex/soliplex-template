@@ -145,7 +145,8 @@ Refusals:
 - `403`: a requester who is not admitted
 - `404`: a `GET` for a request that is not the caller's (unless they are
   an admin), or that the service does not know
-- `409`: a room id already taken, or with a request already pending
+- `409`: a room id already taken, or with a request already pending; the
+  body names the room, `{"detail": ..., "room_id": ...}`
 - `500`: a check or the provisioner failed; the service's log has the
   detail
 
