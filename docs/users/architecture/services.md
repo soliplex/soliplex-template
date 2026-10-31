@@ -182,4 +182,14 @@ built-in SSH and HTTP are unpublished by default; set `gitea_ssh_port`
 publish. State lives in the `gitea_data` / `gitea_config` named volumes.
 Provision it after first boot with `scripts/init_gitea.py` — see
 [Provision Gitea](../installation.md#provision-gitea).
+
+Two of its settings serve the concierge's tracking issues:
+
+- it accepts YAML attachments, beside Gitea's stock types: each requester's
+  profile is attached as `user-profile.yaml`
+- it builds links from its public URL, whichever host a request came
+  through: the backend and the room provisioner call it at
+  `http://gitea:3000`, and the issue links they show users point at
+  `/gitea/`
+
 <!-- endif -->

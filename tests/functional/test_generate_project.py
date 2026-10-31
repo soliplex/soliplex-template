@@ -345,6 +345,21 @@ def test_gitea_ports_opt_in(
     assert published == [w[1:-1] for w in expected]
 
 
+def test_gitea_settings_for_the_concierge(tmp_path, refresh_embedded_template):
+    # The concierge's tracking issues: the requester's profile attaches as
+    # YAML, and the links Gitea answers the backend with point at ROOT_URL.
+    params = _base_params()
+    params["include_gitea"] = True
+
+    out = _generate(tmp_path, params)
+
+    services = yaml.safe_load(_read(out, "docker-compose.yml"))["services"]
+    environment = services["gitea"]["environment"]
+    allowed = environment["GITEA__attachment__ALLOWED_TYPES"].split(",")
+    assert {".yaml", ".yml", ".json", ".txt"} <= set(allowed)
+    assert environment["GITEA__server__PUBLIC_URL_DETECTION"] == "legacy"
+
+
 def test_frontend_version_pinned_in_nginx_dockerfile(generated_project):
     out, params = generated_project
 

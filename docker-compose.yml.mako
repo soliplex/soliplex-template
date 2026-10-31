@@ -570,6 +570,13 @@ services:
       # trailing slash is REQUIRED.  Override in .env if you front the
       # stack with another proxy or use a different hostname.
       GITEA__server__ROOT_URL: "<%text>${GITEA_ROOT_URL:-https://</%text>${server_name}:${nginx_https}<%text>/gitea/}</%text>"
+      # Build links from ROOT_URL, whichever host a request came through:
+      # the backend and the room provisioner call 'http://gitea:3000', and
+      # the issue links they hand users must still point at ROOT_URL.
+      GITEA__server__PUBLIC_URL_DETECTION: "legacy"
+      # Gitea's stock attachment types, plus YAML: the concierge attaches each
+      # requester's profile to their tracking issue as 'user-profile.yaml'.
+      GITEA__attachment__ALLOWED_TYPES: ".avif,.cpuprofile,.csv,.dmp,.docx,.fodg,.fodp,.fods,.fodt,.gif,.gz,.jpeg,.jpg,.json,.jsonc,.log,.md,.mov,.mp4,.odf,.odg,.odp,.ods,.odt,.patch,.pdf,.png,.pptx,.svg,.tgz,.txt,.webm,.webp,.xls,.xlsx,.yaml,.yml,.zip"
       # Boot ready (skip the web installer); the DB is configured above.
       GITEA__security__INSTALL_LOCK: "true"
 
