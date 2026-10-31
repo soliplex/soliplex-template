@@ -19,6 +19,7 @@ the section your stack is at, and work forward from there.
 | on the 0.85 release images | `backend/Dockerfile` builds `FROM ghcr.io/soliplex/soliplex-postgres:0.85` | `template-skill-2026.10.24-932e134` | [3](move-to-soliplex-0.86.1.md) |
 | soliplex 0.86.1 | `backend/Dockerfile` builds `FROM ghcr.io/soliplex/soliplex-postgres:0.86.1` | `template-skill-2026.10.26-b57f7ba` | [4](move-to-soliplex-0.87.md) |
 | soliplex 0.87 | `nginx/nginx.conf` rewrites other cookies' `SameSite` via a catch-all `proxy_cookie_flags`; the ingester bearer rides an `INGESTER_TOKEN` compose environment entry | `template-skill-2026.10.28-aadeb80` | [5](serve-through-nginx.md) |
+| soliplex 0.87, serving through nginx | `nginx/nginx.conf` routes `/ingester/`; `docker-compose.yml` has no `soliplex-provisioner` service | `template-skill-2026.10.31-750fcbd` | [6](provision-rooms-on-request.md) |
 
 The `[tool.soliplex-template]` manifest at the end of the stack's
 `pyproject.toml` records the skill commit (`skill_source_commit`) and date
@@ -70,7 +71,7 @@ starts with the previous one unfinished.
    run the skill's scripts (`src_projects.py`), and its generator
    renders the reference stack the rung compares against. The
    release this page describes is the right one for the newest rung
-   (5);  earlier rungs walk with the release that generated the
+   (6);  earlier rungs walk with the release that generated the
    shape the rung *lands on* — the stack's own manifest
    (`skill_source_commit` in `[tool.soliplex-template]`) names the
    release that generated it, the one the rung moving *from* it
@@ -316,6 +317,7 @@ One page per rung:
 - [3: Move to soliplex 0.86.1 and haiku.rag 0.101.0](move-to-soliplex-0.86.1.md)
 - [4: Move to soliplex 0.87](move-to-soliplex-0.87.md)
 - [5: Serve through nginx](serve-through-nginx.md)
+- [6: Provision rooms on request](provision-rooms-on-request.md)
 
 ??? note "Appendix: the generated `soliplex` ↔ `haiku.rag-slim` pairing table"
 
