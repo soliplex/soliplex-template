@@ -88,7 +88,7 @@ same tag. Change the two together, and rebuild `tui` as well.
 1. Add one requirement per line to `backend/requirements.txt`:
 
     ```text
-    httpx-retries >= 0.4
+    httpx2-kerberos >= 2.1.1
     ```
 
 2. Rebuild and restart the service (see above).

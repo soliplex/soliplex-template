@@ -41,8 +41,8 @@ would pick up step 5's edit on the old image.
     TUI service instead (`include_tui`).
 
 2. **Create `backend/requirements.txt`** with your extras, one requirement
-   per line: an `httpx` on the `uv add` line with an `httpx >= 0.28` pin in
-   `constraints.txt` becomes the single line `httpx >= 0.28`. Drop pins on
+   per line: an `httpx2` on the `uv add` line with an `httpx2 >= 2.16` pin in
+   `constraints.txt` becomes the single line `httpx2 >= 2.16`. Drop pins on
    packages the soliplex release already holds: the build freezes the
    image's own versions as constraints, so a pin that disagrees fails the
    build rather than moving them. With no extras, the file holds only its

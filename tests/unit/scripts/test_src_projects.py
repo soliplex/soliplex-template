@@ -100,7 +100,7 @@ def checkout(stack):
     """A src-layout checkout sitting beside the stack's own project."""
     _write(
         stack / "src/widgetlib/pyproject.toml",
-        '[project]\nname = "widgetlib"\ndependencies = ["httpx>=0.27"]\n',
+        '[project]\nname = "widgetlib"\ndependencies = ["httpx2>=2.16"]\n',
     )
     (stack / "src/widgetlib/src/widgetlib").mkdir(parents=True)
     return stack
@@ -216,8 +216,8 @@ def test_container_path_for_a_flat_layout_checkout(stack):
 @pytest.mark.parametrize(
     "requirement",
     [
-        "httpx",
-        "httpx[http2]>=0.27",
+        "httpx2",
+        "httpx2[http2]>=2.16",
         "pkg ; python_version < '3.13'",
         "pkg @ https://example.com/pkg.whl",
     ],
@@ -252,12 +252,12 @@ def test_declared_dependencies_with_unparseable_toml(stack):
 def test_declared_dependencies_skips_non_string_and_blank_entries(stack):
     _write(
         stack / "src/odd/pyproject.toml",
-        '[project]\nname = "odd"\ndependencies = ["httpx", 3, "  "]\n',
+        '[project]\nname = "odd"\ndependencies = ["httpx2", 3, "  "]\n',
     )
 
     result = src_projects.declared_dependencies(stack, "odd")
 
-    assert result == ["httpx"]
+    assert result == ["httpx2"]
 
 
 def test_dependency_status_values_are_the_wire_format():
@@ -303,7 +303,7 @@ def test_check_script_classifies_each_requirement(requirement, expected):
 
 
 def test_backend_check_without_docker(stack, no_docker):
-    result = src_projects.backend_check(stack, ["httpx"])
+    result = src_projects.backend_check(stack, ["httpx2"])
 
     assert result is None
 
@@ -316,25 +316,25 @@ def test_backend_check_without_docker(stack, no_docker):
 def test_backend_check_unknowable(stack, monkeypatch, returncode, stdout):
     _stub_compose(monkeypatch, returncode, stdout)
 
-    result = src_projects.backend_check(stack, ["httpx"])
+    result = src_projects.backend_check(stack, ["httpx2"])
 
     assert result is None
 
 
-def test_backend_check_reads_the_records(stack, monkeypatch):
+def test_backend_check_eads_the_records(stack, monkeypatch):
     _stub_check(
         monkeypatch,
         [
-            ["httpx>=0.27", "satisfied", "0.28.1"],
+            ["httpx2>=2.16", "satisfied", "2.17.1"],
             ["pydantic<2", "conflict", "2.13.4"],
         ],
     )
 
-    result = src_projects.backend_check(stack, ["httpx>=0.27", "pydantic<2"])
+    result = src_projects.backend_check(stack, ["httpx2>=2.16", "pydantic<2"])
 
     assert result == [
         src_projects.DependencyCheck(
-            "httpx>=0.27", src_projects.DependencyStatus.SATISFIED, "0.28.1"
+            "httpx2>=2.16", src_projects.DependencyStatus.SATISFIED, "2.17.1"
         ),
         src_projects.DependencyCheck(
             "pydantic<2", src_projects.DependencyStatus.CONFLICT, "2.13.4"
@@ -353,22 +353,23 @@ def test_check_dependencies_none_declared(stack):
 def test_check_dependencies_uncheckable(checkout, no_docker):
     result = src_projects.check_dependencies(checkout, "widgetlib")
 
-    assert result == (["httpx>=0.27"], None)
+    assert result == (["httpx2>=2.16"], None)
 
 
 def test_check_dependencies_checked(checkout, monkeypatch):
-    _stub_check(monkeypatch, [["httpx>=0.27", "missing", None]])
+    _stub_check(monkeypatch, [["httpx2>=2.16", "missing", None]])
 
     result = src_projects.check_dependencies(checkout, "widgetlib")
 
-    assert result == (
-        ["httpx>=0.27"],
+    expected = (
+        ["httpx2>=2.16"],
         [
             src_projects.DependencyCheck(
-                "httpx>=0.27", src_projects.DependencyStatus.MISSING, None
+                "httpx2>=2.16", src_projects.DependencyStatus.MISSING, None
             )
         ],
     )
+    assert result == expected
 
 
 # --------------------------------------------------------------------------
@@ -636,7 +637,7 @@ def test_add_requires_the_directory(stack):
 def test_add_reports_missing_dependencies_and_a_rebuild(
     checkout, monkeypatch, capsys
 ):
-    _stub_check(monkeypatch, [["httpx>=0.27", "missing", None]])
+    _stub_check(monkeypatch, [["httpx2>=2.16", "missing", None]])
 
     result = src_projects.main(
         ["add", "widgetlib", "--project-dir", str(checkout)]
@@ -645,12 +646,12 @@ def test_add_reports_missing_dependencies_and_a_rebuild(
     assert result == 0
     out = capsys.readouterr().out
     assert "MISSING" in out
-    assert "- httpx>=0.27" in out
+    assert "- httpx2>=2.16" in out
     assert "docker compose build backend" in out
 
 
 def test_add_reports_a_conflict_and_its_fixes(checkout, monkeypatch, capsys):
-    _stub_check(monkeypatch, [["httpx>=0.27", "conflict", "0.20.0"]])
+    _stub_check(monkeypatch, [["httpx2>=2.16", "conflict", "0.20.0"]])
 
     result = src_projects.main(
         ["add", "widgetlib", "--project-dir", str(checkout)]
@@ -659,7 +660,7 @@ def test_add_reports_a_conflict_and_its_fixes(checkout, monkeypatch, capsys):
     assert result == 0
     out = capsys.readouterr().out
     assert "CONFLICT" in out
-    assert "- httpx>=0.27 (the image has 0.20.0)" in out
+    assert "- httpx2>=2.16 (the image has 0.20.0)" in out
     assert "cannot fix this" in out
     assert "1. adapt src/widgetlib" in out
     # Adding to requirements.txt and rebuilding is not the fix for this.
@@ -672,7 +673,7 @@ def test_add_reports_missing_and_conflicting_together(
     _stub_check(
         monkeypatch,
         [
-            ["httpx>=0.27", "missing", None],
+            ["httpx2>=2.16", "missing", None],
             ["pydantic<2", "conflict", "2.13.4"],
         ],
     )
@@ -688,7 +689,7 @@ def test_add_reports_missing_and_conflicting_together(
 
 
 def test_add_reports_satisfied_dependencies(checkout, monkeypatch, capsys):
-    _stub_check(monkeypatch, [["httpx>=0.27", "satisfied", "0.28.1"]])
+    _stub_check(monkeypatch, [["httpx2>=2.16", "satisfied", "0.28.1"]])
 
     result = src_projects.main(
         ["add", "widgetlib", "--project-dir", str(checkout)]
@@ -708,7 +709,7 @@ def test_add_reports_an_unverifiable_check(checkout, no_docker, capsys):
     assert result == 0
     out = capsys.readouterr().out
     assert "could not check" in out
-    assert "- httpx>=0.27" in out
+    assert "- httpx2>=2.16" in out
 
 
 # --------------------------------------------------------------------------

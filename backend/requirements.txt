@@ -2,7 +2,7 @@
 # line (pip requirements syntax), e.g.:
 #
 #   cowsay
-#   httpx-retries >= 0.4
+#   httpx2-kerberos >= 2.1.1
 #
 # backend/Dockerfile installs them into the soliplex image's '/app/.venv',
 # with every package the image already holds frozen as a constraint: an extra
