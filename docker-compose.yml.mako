@@ -132,9 +132,13 @@ services:
         - "python"
         - "-c"
         - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/ok', timeout=5).status == 200 else 1)"
+      # Checked every 'start_interval' while it starts, so 'up --wait'
+      # returns as soon as it is ready; every 'interval' after that.
       interval: 30s
       timeout: 10s
       retries: 4
+      start_period: 120s
+      start_interval: 2s
 
     secrets:
       - agui_db_password
@@ -306,6 +310,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 4
+      start_period: 60s
+      start_interval: 2s
 
     restart: unless-stopped
 
@@ -504,6 +510,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
+      start_interval: 2s
 
     environment:
       AUTO_CREATE_DATABASE: <%text>${AUTO_CREATE_DATABASE:-1}</%text>

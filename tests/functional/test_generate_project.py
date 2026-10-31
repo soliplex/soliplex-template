@@ -697,6 +697,21 @@ def test_provisioned_rooms_parent_wiring(generated_project):
         assert not posixpath.normpath(entry).startswith(root.rstrip("/") + "/")
 
 
+@pytest.mark.parametrize(
+    "service", ["backend", "soliplex-provisioner", "postgres"]
+)
+def test_healthcheck_checks_often_while_starting(generated_project, service):
+    # 'up --wait' returns once a starting service is ready, not one full
+    # 'interval' after it started.
+    out, _params = generated_project
+    services = yaml.safe_load(_read(out, "docker-compose.yml"))["services"]
+
+    healthcheck = services[service]["healthcheck"]
+
+    assert healthcheck["start_interval"] == "2s"
+    assert "start_period" in healthcheck
+
+
 def test_provisioner_service_wiring(generated_project):
     # The service runs with every 'docker compose up' (no profile), as
     # 'soliplex-dev' runs the provisioner: same image, secrets, environment
