@@ -35,6 +35,18 @@ ingester:
           include_patterns: []  # e.g. ["*.md"]
           delete_orphans: true
 
+# Where the ingester writes each database. Every database in
+# 'ingester.databases' is listed here, as haiku.rag requires once the
+# provisioned rooms' fragments (below) place theirs.
+lancedb:
+  databases:
+    haiku.rag: /data/haiku.rag.lancedb
+
+# Each room the provisioner creates registers its database in a fragment of
+# its own: a file in the provisioned-rooms clone's 'databases.d', merged into
+# 'ingester.databases' and 'lancedb.databases' above (relative to this file).
+databases_include: rooms-provisioned/databases.d
+
 # Remote document processing with docling-serve
 processing:
   converter: docling-serve

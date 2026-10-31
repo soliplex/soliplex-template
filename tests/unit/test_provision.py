@@ -112,6 +112,21 @@ def gitea_settings(tmp_path, settings):
     )
 
 
+def _applied(*rooms):
+    """An ingester reload report adding ``rooms``."""
+    return {
+        "outcome": "applied",
+        "databases": [
+            {"database": room, "change": "added", "error": None}
+            for room in rooms
+        ],
+    }
+
+
+def _fragment(settings, room=ROOM):
+    return settings.clone / ingester.FRAGMENTS_DIR / f"{room}.yaml"
+
+
 def _cli_label(command):
     """'room-authz', or 'audit <what>' for an audit."""
     return f"audit {command[2]}" if command[0] == "audit" else command[0]
@@ -135,6 +150,8 @@ class _Recorder:
         self.stale = []
         # The room the backend's rooms reload reports adding.
         self.loaded = ROOM
+        # The databases the ingester's reload reports adding.
+        self.added = [ROOM]
         monkeypatch.setattr(provision, "_backend", self._backend)
         monkeypatch.setattr(provision, "run_cli", self._cli)
         monkeypatch.setattr(provision.ingester, "reload", self._reload)
@@ -179,6 +196,7 @@ class _Recorder:
 
     def _reload(self, url, token):
         self._record("reload", url, token)
+        return _applied(*self.added)
 
     def _concierge(self):
         return provision.GiteaClient(
@@ -217,6 +235,7 @@ def _provision(settings, **kwargs):
 
 def test_provision_room(settings, monkeypatch):
     recorder = _Recorder(monkeypatch)
+    config_before = settings.ingester_config.read_text()
 
     result = _provision(settings, description="Plans for Q3")
 
@@ -235,9 +254,18 @@ def test_provision_room(settings, monkeypatch):
     assert record.startswith("# Q3 Plans\n")
     assert "Tracking issue" not in record
     assert (settings.uploads_dir / ROOM).is_dir()
-    registered = yaml.safe_load(settings.ingester_config.read_text())
-    assert ROOM in registered["ingester"]["databases"]
-    assert ROOM in registered["lancedb"]["databases"]
+    fragment = yaml.safe_load(_fragment(settings).read_text())
+    assert ROOM in fragment["ingester"]["databases"]
+    assert ROOM in fragment["lancedb"]["databases"]
+    assert settings.ingester_config.read_text() == config_before
+    committed = _git(
+        settings.clone, "show", "--name-only", "--format=", "HEAD"
+    )
+    assert sorted(committed.splitlines()) == [
+        f"{ROOM}/REQUEST.md",
+        f"{ROOM}/room_config.yaml",
+        f"databases.d/{ROOM}.yaml",
+    ]
     assert recorder.named("reload") == [
         ("http://haiku-ingester:8765", "bearer")
     ]
@@ -312,7 +340,8 @@ def test_provision_room_holds_the_lock_until_the_push(
 
 
 def test_provision_room_with_explicit_slug(settings, monkeypatch):
-    _Recorder(monkeypatch)
+    recorder = _Recorder(monkeypatch)
+    recorder.added = ["alice:plans"]
 
     result = _provision(settings, slug="plans")
 
@@ -434,6 +463,7 @@ def test_provision_room_rolls_back(gitea_settings, monkeypatch):
     def reload_creating_the_database(url, token):
         db.mkdir(exist_ok=True)  # as the ingester's reload does
         recorder.calls.append(("reload", url, token))
+        return _applied(ROOM)
 
     recorder = _Recorder(monkeypatch)
     monkeypatch.setattr(provision, "run_cli", fail_audit)
@@ -451,6 +481,7 @@ def test_provision_room_rolls_back(gitea_settings, monkeypatch):
     assert not (gitea_settings.clone / ROOM).exists()
     assert not (gitea_settings.uploads_dir / ROOM).exists()
     assert gitea_settings.ingester_config.read_text() == original
+    assert not _fragment(gitea_settings).exists()
     assert not db.exists()
     assert len(recorder.named("reload")) == 2
     assert calls_before_audit == [
@@ -482,8 +513,27 @@ def test_provision_room_reports_failed_rollback(settings, monkeypatch):
 
     assert len(reloads) == 2
     [failure] = caught.value.rollback_failures
-    assert failure.startswith("restore the ingester config")
+    assert failure.startswith("remove the room's ingester fragment")
     assert "these steps failed" in str(caught.value)
+    assert not (settings.clone / ROOM).exists()
+
+
+@pytest.mark.parametrize("added", [[], ["bob:other"]], ids=["none", "other"])
+def test_provision_room_reload_not_adding_the_database(
+    settings, monkeypatch, added
+):
+    recorder = _Recorder(monkeypatch)
+    recorder.added = added
+
+    with pytest.raises(provision.ProvisioningFailed) as caught:
+        _provision(settings)
+
+    assert type(caught.value.error) is provision.DatabaseNotAdded
+    assert caught.value.error.room_id == ROOM
+    assert caught.value.error.report == _applied(*added)
+    assert "'databases_include'" in str(caught.value)
+    assert not _fragment(settings).exists()
+    assert len(recorder.named("reload")) == 2
     assert not (settings.clone / ROOM).exists()
 
 
@@ -501,6 +551,7 @@ def test_provision_room_reload_timed_out(settings, monkeypatch):
     assert "rolled back; the timed-out reload may still apply" in message
     assert "remove the room's database directory" in message
     assert settings.ingester_config.read_text() == original
+    assert not _fragment(settings).exists()
     assert len(recorder.named("reload")) == 2
     assert not (settings.clone / ROOM).exists()
 
@@ -1139,27 +1190,35 @@ def _db_dir_exists(settings, recorder):
     return [f"database directory {settings.db_dir / f'{ROOM}.lancedb'}"]
 
 
-def _registered_in_both_maps(settings, recorder):
-    text = settings.ingester_config.read_text()
-    registered, _changed = ingester.register_database(
-        text, room_ids.parse_room_id(ROOM)
-    )
-    settings.ingester_config.write_text(registered)
+def _fragment_exists(settings, recorder):
+    fragment = _fragment(settings)
+    fragment.parent.mkdir(parents=True)
+    fragment.write_text(ingester.render_fragment(room_ids.parse_room_id(ROOM)))
     return [
+        f"ingester fragment {fragment}",
         f"ingester config entry 'ingester.databases.{ROOM}'",
         f"ingester config entry 'lancedb.databases.{ROOM}'",
     ]
 
 
+def _placed_in_the_main_config(settings, recorder):
+    text = settings.ingester_config.read_text()
+    placed = "    haiku.rag: /data/haiku.rag.lancedb\n"
+    settings.ingester_config.write_text(
+        text.replace(
+            placed, f'{placed}    "{ROOM}": /data/elsewhere.lancedb\n'
+        )
+    )
+    return [f"ingester config entry 'lancedb.databases.{ROOM}'"]
+
+
 def _another_name_at_its_location(settings, recorder):
     location = f"/data/{ROOM}.lancedb"
-    with settings.ingester_config.open("a") as config:
-        config.write(
-            "lancedb:\n"
-            "  databases:\n"
-            "    haiku.rag: /data/haiku.rag.lancedb\n"
-            f'    squatter: "{location}"\n'
-        )
+    fragment = _fragment(settings, "squatter")
+    fragment.parent.mkdir(parents=True)
+    fragment.write_text(
+        f'lancedb:\n  databases:\n    squatter: "{location}"\n'
+    )
     return [
         f"ingester config entry 'lancedb.databases.squatter' "
         f"placed at {location}"
@@ -1182,7 +1241,8 @@ def _policy_exists(settings, recorder):
     "clash",
     [
         _db_dir_exists,
-        _registered_in_both_maps,
+        _fragment_exists,
+        _placed_in_the_main_config,
         _another_name_at_its_location,
         _non_empty_uploads,
         _policy_exists,
@@ -1209,18 +1269,20 @@ def test_provision_room_refuses_existing_resources(
     assert [command[0] for command, _ in recorder.named("cli")] == ["audit"]
 
 
-def test_provision_room_refuses_an_uneditable_ingester_config(
+def test_provision_room_refuses_an_unusable_ingester_config(
     gitea_settings, monkeypatch
 ):
     recorder = _Recorder(monkeypatch)
-    with gitea_settings.ingester_config.open("a") as config:
-        config.write("lancedb: {}\n")
+    text = gitea_settings.ingester_config.read_text()
+    gitea_settings.ingester_config.write_text(
+        text.replace("databases_include:", "# databases_include:")
+    )
     config_before = gitea_settings.ingester_config.read_text()
 
-    with pytest.raises(ingester.UnsupportedConfigShape) as caught:
+    with pytest.raises(ingester.UnusableConfig) as caught:
         _provision(gitea_settings)
 
-    assert type(caught.value) is ingester.InlineSection
+    assert type(caught.value) is ingester.FragmentsNotIncluded
     assert not (gitea_settings.clone / ROOM).exists()
     assert gitea_settings.ingester_config.read_text() == config_before
     assert recorder.named("create_issue") == []
@@ -1363,25 +1425,6 @@ def test_rollback_keeps_a_database_that_predates_the_run(
     assert database.is_dir()
     assert settings.ingester_config.read_text() == original
     assert len(recorder.named("reload")) == 2
-
-
-def test_rollback_leaves_an_unchanged_ingester_config(settings, monkeypatch):
-    recorder = _Recorder(monkeypatch)
-    _skip_clash_checks(monkeypatch)
-    _fail_audit_rooms(monkeypatch)
-    registered, _changed = ingester.register_database(
-        settings.ingester_config.read_text(), room_ids.parse_room_id(ROOM)
-    )
-    settings.ingester_config.write_text(registered)
-    database = settings.db_dir / f"{ROOM}.lancedb"
-    database.mkdir()
-
-    with pytest.raises(provision.ProvisioningFailed):
-        _provision(settings)
-
-    assert settings.ingester_config.read_text() == registered
-    assert database.is_dir()
-    assert len(recorder.named("reload")) == 1
 
 
 def test_rollback_keeps_an_uploads_directory_that_predates_the_run(

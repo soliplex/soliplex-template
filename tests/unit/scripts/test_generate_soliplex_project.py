@@ -908,6 +908,9 @@ def test_ensure_runtime_dirs(tmp_path):
     assert (tmp_path / "uploads" / "rooms" / ".gitkeep").is_file()
     assert (tmp_path / "uploads" / "threads" / ".gitkeep").is_file()
     assert not (tmp_path / "rag" / "docs" / ".gitkeep").exists()
+    clone = tmp_path / "src" / "rooms-provisioned"
+    assert clone.is_dir()
+    assert list(clone.iterdir()) == []
 
 
 # --------------------------------------------------------------------------

@@ -160,16 +160,19 @@ def commit_room(
     author_name: str,
     author_email: str,
     message: str,
+    also: tuple[str, ...] = (),
 ) -> str:
     """Commit the ``room_id`` directory of the clone at ``path``.
 
-    Stages only that directory. The requester is the author; the committer
-    is the configured ``user.name`` / ``user.email``, with the
-    provisioner's identity for whichever is unset. Returns the new commit's
-    id; raises :class:`NothingToCommit` when the directory holds no change.
+    Stages only that directory, and the paths in ``also`` (relative to the
+    clone). The requester is the author; the committer is the configured
+    ``user.name`` / ``user.email``, with the provisioner's identity for
+    whichever is unset. Returns the new commit's id; raises
+    :class:`NothingToCommit` when those paths hold no change.
     """
-    _check(path, "add", "--all", "--", room_id)
-    staged = _git(path, "diff", "--cached", "--quiet", "--", room_id)
+    pathspecs = (room_id, *also)
+    _check(path, "add", "--all", "--", *pathspecs)
+    staged = _git(path, "diff", "--cached", "--quiet", "--", *pathspecs)
     if staged.returncode == 0:
         raise NothingToCommit(room_id)
     _check(
@@ -181,7 +184,7 @@ def commit_room(
         "--message",
         message,
         "--",
-        room_id,
+        *pathspecs,
         extra_config=_committer_defaults(path),
     )
     return _check(path, "rev-parse", "HEAD").strip()

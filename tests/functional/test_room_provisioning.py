@@ -131,10 +131,14 @@ def test_provision_room_ingester_source(provisioned):
     sources = _ingester_get(out, "/sources")
 
     assert _ROOM_ID in json.dumps(sources)
-    config = yaml.safe_load((out / "haiku.rag" / "haiku.rag.yaml").read_text())
+    clone = out / "src" / "rooms-provisioned"
+    fragment = clone / "databases.d" / f"{_ROOM_ID}.yaml"
+    config = yaml.safe_load(fragment.read_text())
     assert config["lancedb"]["databases"][_ROOM_ID] == (
         f"/data/{_ROOM_ID}.lancedb"
     )
+    tracked = ps.run("git", "-C", clone, "ls-files", "--", "databases.d")
+    assert tracked.stdout.split() == [f"databases.d/{_ROOM_ID}.yaml"]
 
 
 @pytest.mark.needs_docker
@@ -153,7 +157,7 @@ def test_provision_room_again_is_refused(provisioned):
 @pytest.mark.needs_docker
 def test_provision_room_after_its_directory_was_removed(provisioned):
     # A room whose directory was removed by hand leaves its database, its
-    # ingester entries and its authz policy behind; provisioning the same
+    # ingester fragment and its authz policy behind; provisioning the same
     # id again refuses, naming them, rather than adopting them. (Runs last:
     # it removes the room the earlier tests check.)
     out, _first = provisioned
@@ -166,6 +170,7 @@ def test_provision_room_after_its_directory_was_removed(provisioned):
     assert result.returncode == 2, result.stdout + result.stderr
     assert f"room '{_ROOM_ID}' was not provisioned" in result.stderr
     assert f"/db/{_ROOM_ID}.lancedb" in result.stderr
+    assert f"databases.d/{_ROOM_ID}.yaml" in result.stderr
     assert f"'ingester.databases.{_ROOM_ID}'" in result.stderr
     assert f"'lancedb.databases.{_ROOM_ID}'" in result.stderr
     assert f"an authz policy for '{_ROOM_ID}'" in result.stderr

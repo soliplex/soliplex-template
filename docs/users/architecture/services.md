@@ -96,8 +96,10 @@ it creates rooms on a requester's behalf, for callers holding the stack's
 compose network only, at `http://soliplex-provisioner:8090`.
 
 It shares `soliplex-dev`'s image, secrets, environment and mounts (YAML
-aliases in `docker-compose.yml`), including its read-write `src/` and the
-ingester's config, which the provisioner writes.
+aliases in `docker-compose.yml`), including its read-write `src/`, where
+the provisioner commits each room and its database fragment to the
+provisioned-rooms clone. The ingester mounts that clone read-only, and its
+config includes the fragments.
 
 ## haiku-ingester
 

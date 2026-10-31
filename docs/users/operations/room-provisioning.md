@@ -44,14 +44,15 @@ provisioner:
 3. writes `room_config.yaml` and `REQUEST.md` (who asked for what, and
    what is set up) into `src/rooms-provisioned/<room-id>/`
 4. creates the room's uploads directory, `uploads/rooms/<room-id>/`
-5. registers the room's database in `haiku.rag/haiku.rag.yaml` (an `fs`
-   source over the room's uploads, and its place in `lancedb.databases`),
-   then has the ingester reload its config, which creates the database
+5. registers the room's database with the ingester, in a fragment of its
+   own, `src/rooms-provisioned/databases.d/<room-id>.yaml` (an `fs` source
+   over the room's uploads, and its place in `lancedb.databases`), then has
+   the ingester reload its config, which creates the database
 6. makes the room private, granting READ and WRITE to the requester's
    claim value
 7. audits the installation's rooms
-8. commits the room in `src/rooms-provisioned` (the requester as author),
-   and pushes it when a Gitea is configured
+8. commits the room and its fragment in `src/rooms-provisioned` (the
+   requester as author), and pushes it when a Gitea is configured
 9. has the backend reload its room configs, which makes the room live
 10. comments on and closes the tracking issue
 
@@ -79,8 +80,17 @@ exists:
 
 - its directory in the clone
 - its database directory (`rag/db/<room-id>.lancedb`)
-- an entry for it in either map of `haiku.rag/haiku.rag.yaml` (or another
-  database placed at its location)
+- its fragment in the clone (`databases.d/<room-id>.yaml`)
+- an entry for it in either map of `haiku.rag/haiku.rag.yaml` or of a
+  fragment (or another database placed at its location)
+
+It also refuses to start when `haiku.rag/haiku.rag.yaml` cannot take the
+fragments:
+
+- its `databases_include` must name `rooms-provisioned/databases.d`, where
+  the ingester mounts the clone's fragments
+- every database in its `ingester.databases` must be placed in its
+  `lancedb.databases`, as haiku.rag requires once fragments place theirs
 - a non-empty uploads directory
 - a room authorization policy
 
@@ -195,7 +205,8 @@ its tools in the image: it has no `gpg`.
 
 - The lock serializes provisioner runs only. Hand edits of
   `haiku.rag/haiku.rag.yaml`, or `rag_db.py` / `add_room.py` runs, are not
-  serialized with it.
+  serialized with it; an ingester reload applies whatever the file says
+  then.
 - Every room the provisioner creates is a conversational RAG room over its
   own database; suggestions are left out, for an edit once documents are
   ingested.

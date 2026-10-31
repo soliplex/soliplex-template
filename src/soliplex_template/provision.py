@@ -18,8 +18,9 @@ first. The steps:
 
    - its directory in the clone
    - its database directory
-   - an entry for it in either map of the ingester config (or another
-     database placed at its location)
+   - its ingester fragment in the clone (``databases.d/<room-id>.yaml``)
+   - an entry for it in either map of the ingester config or its
+     fragments (or another database placed at its location)
    - a non-empty uploads directory
    - an authz policy
 
@@ -27,8 +28,8 @@ first. The steps:
    is installed
 3. writes the room's ``room_config.yaml`` and ``REQUEST.md`` into the clone
 4. creates the room's uploads directory
-5. registers the room's database with the ingester and reloads it (which
-   creates the database)
+5. registers the room's database with the ingester, by writing its
+   fragment into the clone, and reloads it (which creates the database)
 6. makes the room private, granting the requester READ and WRITE
 7. audits the installation's rooms
 8. commits the room (the requester as author) and pushes the clone
@@ -191,6 +192,16 @@ class CliFailed(ProvisionError):
         )
 
 
+class DatabaseNotAdded(ProvisionError):
+    def __init__(self, room_id, report):
+        self.room_id, self.report = room_id, report
+        super().__init__(
+            f"the ingester's reload did not add database {room_id!r} (is the "
+            "provisioned-rooms clone mounted where the ingester config's "
+            f"'databases_include' looks?): {json.dumps(report)}"
+        )
+
+
 class ProvisioningFailed(ProvisionError):
     """A step before the commit failed; what was done has been undone.
 
@@ -237,8 +248,9 @@ class GiteaSettings:
 class Settings:
     """Where the provisioner finds the stack, from inside ``soliplex-dev``.
 
-    The ``ingester_*`` paths are as the ingester sees them; the others as
-    the provisioner does.
+    The ``ingester_*`` paths are as the ingester sees them, except
+    ``ingester_config`` (the file both services mount); the others as the
+    provisioner does.
     """
 
     ingester_token: str = dataclasses.field(repr=False)
@@ -247,6 +259,10 @@ class Settings:
     uploads_dir: pathlib.Path = pathlib.Path("/uploads/rooms")
     db_dir: pathlib.Path = pathlib.Path("/db")
     ingester_config: pathlib.Path = pathlib.Path("/app/haiku.rag.yaml")
+    ingester_config_dir: str = "/app"
+    ingester_fragments_dir: str = (
+        f"/app/rooms-provisioned/{ingester.FRAGMENTS_DIR}"
+    )
     ingester_url: str = "http://haiku-ingester:8765"
     ingester_data_dir: str = ingester.DEFAULT_DATA_DIR
     ingester_uploads_root: str = ingester.DEFAULT_UPLOADS_ROOT
@@ -452,12 +468,13 @@ def stale_policy_ids(settings: Settings) -> set[str]:
 def check_clashes(settings: Settings, room: str) -> None:
     """Refuse ``room`` when anything named for it already exists.
 
-    That is: its database directory, an entry for it in either map of the
-    ingester config, another database placed at its location, a non-empty
-    uploads directory, or an authz policy. Raises :class:`ResourcesExist`
-    naming each one found. Also refuses, by raising the editor's own
-    :class:`ingester.UnsupportedConfigShape`, an ingester config it could
-    not edit.
+    That is: its database directory, its fragment in the clone, an entry
+    for it in either map of the ingester config or its fragments, another
+    database placed at its location, a non-empty uploads directory, or an
+    authz policy. Raises :class:`ResourcesExist` naming each one found.
+    Also refuses, with :func:`ingester.check_config`'s
+    :class:`ingester.UnusableConfig`, an ingester config the fragments
+    cannot work with.
     """
     found = []
 
@@ -466,15 +483,18 @@ def check_clashes(settings: Settings, room: str) -> None:
         found.append(f"database directory {database}")
 
     config = settings.ingester_config.read_text()
-    # A dry run: refuses, before anything changes, a config the editor
-    # cannot edit (and verify).
-    ingester.register_database(
+    ingester.check_config(
         config,
-        room_ids.parse_room_id(room),
-        data_dir=settings.ingester_data_dir,
-        uploads_root=settings.ingester_uploads_root,
+        config_dir=settings.ingester_config_dir,
+        fragments_dir=settings.ingester_fragments_dir,
     )
-    registered = ingester.registrations(config)
+    fragments = settings.clone / ingester.FRAGMENTS_DIR
+    fragment = fragments / ingester.fragment_name(room)
+    if fragment.exists():
+        found.append(f"ingester fragment {fragment}")
+    registered = ingester.registrations(
+        config, *ingester.fragment_texts(fragments)
+    )
     if room in registered.sources:
         found.append(f"ingester config entry 'ingester.databases.{room}'")
     if room in registered.locations:
@@ -606,13 +626,13 @@ def _commit_message(room_id, name, gitea_settings, issue_number) -> str:
 
 
 def _undo_ingester(
-    settings: Settings, original: str, database: pathlib.Path | None
+    settings: Settings, fragment: pathlib.Path, database: pathlib.Path | None
 ) -> None:
-    """Restore the ingester config and reload it.
+    """Remove the room's ingester fragment and reload the ingester.
 
     Removes ``database`` too, when given: the run's reload created it.
     """
-    settings.ingester_config.write_text(original)
+    fragment.unlink(missing_ok=True)
     ingester.reload(settings.ingester_url, settings.ingester_token)
     if database is not None:
         shutil.rmtree(database, ignore_errors=True)
@@ -818,29 +838,32 @@ def create_room(admission: Admission, settings: Settings) -> Provisioned:
             # -----------------------------------------------------------------
             # BEGIN: ingester integration
             #
-            # Note that updating the ingester service config with the new
-            # database config and triggering its reload has a side effect
-            # that we rely on:  it ensures that the empty database is created.
+            # Note that the ingester's reload, picking up the room's new
+            # fragment, has a side effect that we rely on:  it creates the
+            # empty database.
             # -----------------------------------------------------------------
-            original = settings.ingester_config.read_text()
-            registered, changed = ingester.register_database(
-                original,
-                plan.room_id,
-                data_dir=settings.ingester_data_dir,
-                uploads_root=settings.ingester_uploads_root,
-            )
-            if changed:
-                # Write in place: the config is a single-file bind mount.
-                settings.ingester_config.write_text(registered)
-                database = settings.db_dir / f"{room}.lancedb"
-                rollback.add(
-                    "restore the ingester config",
-                    _undo_ingester,
-                    settings,
-                    original,
-                    None if database.exists() else database,
+            fragments = settings.clone / ingester.FRAGMENTS_DIR
+            fragment = fragments / ingester.fragment_name(room)
+            database = settings.db_dir / f"{room}.lancedb"
+            fragments.mkdir(exist_ok=True)
+            fragment.write_text(
+                ingester.render_fragment(
+                    plan.room_id,
+                    data_dir=settings.ingester_data_dir,
+                    uploads_root=settings.ingester_uploads_root,
                 )
-            ingester.reload(settings.ingester_url, settings.ingester_token)
+            )
+            rollback.add(
+                "remove the room's ingester fragment",
+                _undo_ingester,
+                settings,
+                fragment,
+                None if database.exists() else database,
+            )
+            report = ingester.reload(
+                settings.ingester_url, settings.ingester_token
+            )
+            _check_added(report, room)
             # -----------------------------------------------------------------
             # END: ingester integration
             # -----------------------------------------------------------------
@@ -865,6 +888,7 @@ def create_room(admission: Admission, settings: Settings) -> Provisioned:
                 message=_commit_message(
                     room, plan.name, settings.gitea, issue and issue.number
                 ),
+                also=(f"{ingester.FRAGMENTS_DIR}/{fragment.name}",),
             )
         except Exception as error:
             failures = rollback.run()
@@ -908,6 +932,15 @@ def provision_room(
         now=now,
     )
     return create_room(admit_room(plan, settings), settings)
+
+
+def _check_added(report, room: str) -> None:
+    """Raise :class:`DatabaseNotAdded` unless the reload added ``room``."""
+    changes = report.get("databases", []) if isinstance(report, dict) else []
+    for change in changes:
+        if change.get("database") == room and change.get("change") == "added":
+            return
+    raise DatabaseNotAdded(room, report)
 
 
 def _rmdir_if_empty(path: pathlib.Path) -> None:

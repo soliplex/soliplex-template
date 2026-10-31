@@ -73,7 +73,10 @@ room's `room_config.yaml`.
 One ingester can maintain several databases with the same queue and control
 plane. In `haiku.rag/haiku.rag.yaml`, list their locations under
 `lancedb.databases` and their sources under `ingester.databases`. Keep the
-default database in both maps when adding another:
+default database in both maps when adding another. (Provisioned rooms'
+databases are not listed here: each is in a fragment of its own, which the
+file's `databases_include` merges in; see
+[Room provisioning](room-provisioning.md).)
 
 ```yaml
 lancedb:
