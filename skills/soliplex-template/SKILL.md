@@ -224,12 +224,12 @@ from the user and invoke it.
    curl -s -H "Authorization: Bearer $TOKEN" "$TAGS" | jq -r '.tags[]' | sort -V
    ```
 
-   Explain the kinds: a `<major>.<minor>` tag (e.g. `0.110`, the default)
+   Explain the kinds: a `<major>.<minor>` tag (e.g. `0.114`, the default)
    moves, picking up patch releases on `docker compose build --pull nginx`;
    an exact `<major>.<minor>.<patch>` or `<major>.<minor>.<patch>-<build>`
    pins one; `latest` is also accepted. A `soliplex/frontend` *release* tag
-   (`v0.110.0+96`) is not an image tag, and the generator refuses it, naming
-   the image tag to use (`0.110.0-96`). Images exist only from 0.110 on.
+   (`v0.114.0+101`) is not an image tag, and the generator refuses it, naming
+   the image tag to use (`0.114.0-101`). Images exist only from 0.110 on.
    Fall back to the default if GHCR is unreachable.
 
    For the backend `soliplex` release (`soliplex_image_tag`: the tag of

@@ -66,7 +66,7 @@ _PARAMS = {
     "docs_dir": "rag/inbox",
     # Pin a (fictional) frontend release tag to prove version selection lands
     # in nginx/Dockerfile as a /releases/tags/<tag> API URL.
-    "frontend_version": "0.110.0-96",
+    "frontend_version": "0.114.0-101",
     # Non-default embeddings and chunk size propagate.
     "rag_embed_model": "not-qwen3-embedding:0.6b",
     "rag_embed_dim": 1023,
