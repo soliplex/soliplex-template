@@ -120,7 +120,10 @@ docker compose run --rm --quiet-build soliplex-dev \
 ```
 
 Until then, the provisioner stops before changing anything, naming the
-entry it needs. A backend in no-auth mode admits it without one.
+entry it needs, and the `soliplex-provisioner` service reports itself
+unhealthy (`docker compose ps`): its log, and its `/ok`, name the entry
+too. It keeps checking, so adding the entry is enough. A backend in no-auth
+mode admits it without one.
 
 ## The provisioner service
 
@@ -142,7 +145,8 @@ Refusals:
 - `403`: a requester who is not admitted
 - `404`: a `GET` for a request that is not the caller's (unless they are
   an admin), or that the service does not know
-- `409`: a room id already taken, or with a request already pending
+- `409`: a room id already taken, or with a request already pending; the
+  body names the room, `{"detail": ..., "room_id": ...}`
 - `500`: a check or the provisioner failed; the service's log has the
   detail
 

@@ -8,15 +8,19 @@ requesting user's claims, and sends it as the bearer token:
   (the last two optional) answers ``202`` with ``{"room_id": ...,
   "issue_url": ...}`` once the request is admitted (see
   :func:`provision.admit_room`), then creates the room in the background
-  (:func:`provision.create_room`)
+  (:func:`provision.create_room`). A ``409`` refusal names its room:
+  ``{"detail": ..., "room_id": ...}``.
 - ``GET /rooms/{room_id}`` answers the request's state: ``pending``,
   ``live``, ``incomplete`` (with the steps still to do) or ``failed`` (with
   the error)
-- ``GET /ok`` answers ``OK``, for health checks
+- ``GET /ok`` answers ``OK``, for health checks, once the backend admits
+  the provisioner's own service tokens; until then it answers 503, saying
+  why (see :func:`watch_access`)
 
 A requester is admitted when they are an admin, or hold WRITE on the
-reserved room id ``__provision__``. Tokens and admission are checked with
-``soliplex-cli``: ``service-token validate``, ``admin-users check`` and
+reserved room id ``__provision__``. The token is validated in-process,
+against the stack's ``url_safe_token_secret`` as the backend reads it;
+admission is checked with ``soliplex-cli``'s ``admin-users check`` and
 ``room-authz check``, each reading the token on stdin.
 
 Request state lives in memory: a restart loses it, while the tracking
@@ -28,12 +32,15 @@ it, configured from the environment (see :meth:`provision.Settings.from_env`).
 
 from __future__ import annotations
 
+import concurrent.futures
+import contextlib
 import dataclasses
 import enum
 import json
 import logging
 import os
 import threading
+import time
 import typing
 
 import fastapi
@@ -43,6 +50,10 @@ from soliplex_template import provision
 from soliplex_template import room_ids
 
 ADMISSION_ROOM = "__provision__"
+# Seconds between checks of the provisioner's own backend access: while
+# the backend refuses it, and while the backend cannot be reached.
+ACCESS_RETRY = 15
+BACKEND_RETRY = 5
 
 logger = logging.getLogger(__name__)
 
@@ -69,24 +80,18 @@ class CheckFailed(provision.ProvisionError):
 def validate_token(settings: provision.Settings, token: str) -> dict:
     """The claims of the service token ``token``.
 
-    Raises :class:`TokenInvalid` when it is not valid.
+    Raises :class:`TokenInvalid` when it is not valid, and
+    :class:`provision.SigningSecretUnreadable` when the signing secret
+    cannot be read.
     """
-    command = (
-        "service-token",
-        "validate",
-        str(settings.environment),
-        "--quiet",
-    )
-    try:
-        output = provision.run_cli(settings, *command, stdin=token)
-    except provision.CliFailed as error:
-        raise TokenInvalid(error.output) from error
-    try:
-        claims = json.loads(output)
-    except json.JSONDecodeError as error:
-        raise TokenInvalid(output.strip()) from error
-    if not isinstance(claims, dict):
-        raise TokenInvalid(output.strip())
+    # Imported here: soliplex is in the stack's image, where this runs,
+    # not among this package's dependencies.
+    from soliplex import token_mint
+
+    secret = provision.service_token_secret(settings)
+    claims, reason = token_mint.load_service_token(secret, token)
+    if claims is None:
+        raise TokenInvalid(reason)
     return claims
 
 
@@ -107,15 +112,9 @@ def is_admin(settings: provision.Settings, token: str) -> bool:
     return _verdict(settings, command, "is_admin", token)
 
 
-def is_admitted(settings: provision.Settings, token: str) -> bool:
-    """May the user of the service token ``token`` request a room?
-
-    That is, are they an admin, or do they hold WRITE on
-    :data:`ADMISSION_ROOM`? Raises :class:`CheckFailed` when a check gives
-    no verdict.
-    """
-    if is_admin(settings, token):
-        return True
+def may_write_admission_room(settings: provision.Settings, token: str) -> bool:
+    """Does the user of the service token ``token`` hold WRITE on
+    :data:`ADMISSION_ROOM`?"""
     command = (
         "room-authz",
         "--quiet",
@@ -126,6 +125,73 @@ def is_admitted(settings: provision.Settings, token: str) -> bool:
         "write",
     )
     return _verdict(settings, command, "allowed", token)
+
+
+def is_admitted(settings: provision.Settings, token: str) -> bool:
+    """May the user of the service token ``token`` request a room?
+
+    That is, are they an admin, or do they hold WRITE on
+    :data:`ADMISSION_ROOM`? The two checks run concurrently; an admin is
+    admitted whatever the other says. Raises :class:`CheckFailed` when a
+    check that decides gives no verdict.
+    """
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        admin = pool.submit(is_admin, settings, token)
+        writer = pool.submit(may_write_admission_room, settings, token)
+        if admin.result():
+            return True
+        return writer.result()
+
+
+# --------------------------------------------------------------------------
+# The provisioner's own access
+# --------------------------------------------------------------------------
+class Access:
+    """Whether the backend admits the provisioner's own service tokens.
+
+    ``problem`` says why not, while it does not.
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._admitted = False
+        self._problem = "the backend has not been checked yet"
+
+    def state(self) -> tuple[bool, str | None]:
+        with self._lock:
+            return self._admitted, self._problem
+
+    def update(self, admitted: bool, problem: str | None = None) -> None:
+        with self._lock:
+            self._admitted, self._problem = admitted, problem
+
+
+def watch_access(
+    settings: provision.Settings, access: Access, *, sleep=time.sleep
+) -> None:
+    """Check the provisioner's backend access until the backend admits it.
+
+    Records each outcome in ``access``, and logs each new reason it is
+    refused: an error, naming the ``admin_users`` entry it needs, when the
+    backend refuses it; a warning while the backend cannot be reached.
+    """
+    logged = None
+    while True:
+        try:
+            provision.check_admin_access(settings)
+        except provision.AdminAccessDenied as error:
+            problem, level, delay = str(error), logging.ERROR, ACCESS_RETRY
+        except provision.ProvisionError as error:
+            problem, level, delay = str(error), logging.WARNING, BACKEND_RETRY
+        else:
+            access.update(True)
+            logger.info("the backend admits the provisioner")
+            return
+        access.update(False, problem)
+        if problem != logged:
+            logger.log(level, "%s", problem)
+            logged = problem
+        sleep(delay)
 
 
 # --------------------------------------------------------------------------
@@ -205,6 +271,25 @@ class RequestState(pydantic.BaseModel):
     error: str | None
 
 
+class RoomRefused(Exception):
+    """A refusal naming the room it refuses, answered as
+    ``{"detail": ..., "room_id": ...}``: the caller cannot work the room id
+    out for itself."""
+
+    def __init__(self, status: int, detail: str, room_id: str):
+        self.status, self.detail, self.room_id = status, detail, room_id
+        super().__init__(detail)
+
+
+async def _room_refused(
+    request: fastapi.Request, error: RoomRefused
+) -> fastapi.responses.JSONResponse:
+    return fastapi.responses.JSONResponse(
+        status_code=error.status,
+        content={"detail": error.detail, "room_id": error.room_id},
+    )
+
+
 def _http_error(status: int, error: Exception) -> fastapi.HTTPException:
     return fastapi.HTTPException(status_code=status, detail=str(error))
 
@@ -215,6 +300,10 @@ def _settings(request: fastapi.Request) -> provision.Settings:
 
 def _requests(request: fastapi.Request) -> Requests:
     return request.app.state.requests
+
+
+def _access(request: fastapi.Request) -> Access:
+    return request.app.state.access
 
 
 def _bearer_token(
@@ -232,6 +321,7 @@ def _bearer_token(
 
 SettingsDep = typing.Annotated[provision.Settings, fastapi.Depends(_settings)]
 RequestsDep = typing.Annotated[Requests, fastapi.Depends(_requests)]
+AccessDep = typing.Annotated[Access, fastapi.Depends(_access)]
 TokenDep = typing.Annotated[str, fastapi.Depends(_bearer_token)]
 
 
@@ -245,6 +335,9 @@ def _claims(settings: provision.Settings, token: str) -> dict:
             detail="the service token is not valid",
             headers={"WWW-Authenticate": "Bearer"},
         ) from error
+    except provision.SigningSecretUnreadable as error:
+        logger.exception("validating a service token failed")
+        raise _http_error(500, error) from error
 
 
 def _create(
@@ -271,9 +364,15 @@ router = fastapi.APIRouter()
 
 
 @router.get("/ok", response_class=fastapi.responses.PlainTextResponse)
-def health_check() -> str:
-    """Is the service up?"""
-    return "OK"
+def health_check(access: AccessDep) -> fastapi.responses.PlainTextResponse:
+    """Is the service up, and does the backend admit the provisioner?
+
+    Answers 503, saying why, until the backend does.
+    """
+    admitted, problem = access.state()
+    if not admitted:
+        return fastapi.responses.PlainTextResponse(problem, status_code=503)
+    return fastapi.responses.PlainTextResponse("OK")
 
 
 @router.post("/rooms", status_code=202)
@@ -310,15 +409,14 @@ def post_room(
 
     room = plan.room
     if not requests.reserve(room, plan.owner.owner):
-        raise fastapi.HTTPException(
-            status_code=409,
-            detail=f"room {room!r} is already being provisioned",
+        raise RoomRefused(
+            409, f"room {room!r} is already being provisioned", room
         )
     try:
         admission = provision.admit_room(plan, settings)
     except (provision.RoomExists, provision.ResourcesExist) as error:
         requests.release(room)
-        raise _http_error(409, error) from error
+        raise RoomRefused(409, str(error), room) from error
     except provision.USER_ERRORS as error:
         requests.release(room)
         logger.exception("admitting room %r failed", room)
@@ -370,12 +468,28 @@ def get_room(
     )
 
 
+@contextlib.asynccontextmanager
+async def _lifespan(app: fastapi.FastAPI):
+    """Watch the provisioner's backend access while the service runs."""
+    threading.Thread(
+        target=watch_access,
+        args=(app.state.settings, app.state.access),
+        name="provisioner-access",
+        daemon=True,
+    ).start()
+    yield
+
+
 def create_app(settings: provision.Settings | None = None) -> fastapi.FastAPI:
     """The service's application; ``settings`` default to the environment's."""
-    app = fastapi.FastAPI(title="Soliplex room provisioner")
+    app = fastapi.FastAPI(
+        title="Soliplex room provisioner", lifespan=_lifespan
+    )
     if settings is None:
         settings = provision.Settings.from_env(os.environ)
     app.state.settings = settings
     app.state.requests = Requests()
+    app.state.access = Access()
+    app.add_exception_handler(RoomRefused, _room_refused)
     app.include_router(router)
     return app
