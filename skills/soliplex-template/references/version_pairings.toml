@@ -5,7 +5,11 @@
 # later patches (v0.85.1 ...) tag their own commits and may raise
 # the pin. For the moving compose image tag ('0.85'), the effective
 # pairing is the newest patch's pin, as of this run.
-extracted = "2026-10-30"
+extracted = "2026-10-31"
+
+[[pairings]]
+version = "0.89.1"
+haiku_rag = ">= 0.104.0, < 0.105"
 
 [[pairings]]
 version = "0.89"
