@@ -16,6 +16,9 @@
 # that one installs with the same constraints. SOLIPLEX_TEMPLATE overrides the
 # requirement (e.g. with a local wheel's path).
 #
+# Both freeze the constraints as 'name==version' pins, as backend/Dockerfile
+# does (see there).
+#
 # The 'uv' tag is the one backend/Dockerfile mounts; keep the two in step.
 FROM ghcr.io/astral-sh/uv:0.12.18 AS uv
 
@@ -32,7 +35,7 @@ RUN apt-get update && \
 
 RUN --mount=from=uv,source=/uv,target=/usr/local/bin/uv \
     --mount=type=cache,target=/root/.cache/uv \
-    uv pip freeze --python /app/.venv/bin/python \
+    uv pip list --format freeze --python /app/.venv/bin/python \
       > /tmp/base-constraints.txt && \
     uv pip install --python /app/.venv/bin/python \
       --constraints /tmp/base-constraints.txt \
@@ -43,7 +46,7 @@ COPY --link requirements-dev.txt /tmp/requirements-dev.txt
 RUN --mount=from=uv,source=/uv,target=/usr/local/bin/uv \
     --mount=type=cache,target=/root/.cache/uv \
     if grep -qv '^[[:space:]]*\(#\|$\)' /tmp/requirements-dev.txt; then \
-      uv pip freeze --python /app/.venv/bin/python \
+      uv pip list --format freeze --python /app/.venv/bin/python \
         > /tmp/base-constraints.txt && \
       uv pip install --python /app/.venv/bin/python \
         --constraints /tmp/base-constraints.txt \

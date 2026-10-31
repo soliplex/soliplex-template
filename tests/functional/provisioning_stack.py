@@ -144,7 +144,14 @@ def _soliplex_override(work: pathlib.Path) -> pathlib.Path | None:
 def build_images(out: pathlib.Path, work: pathlib.Path) -> None:
     """Build ``backend`` (any soliplex override), ``soliplex-dev`` and
     ``soliplex-provisioner`` (which shares the latter's build).
+
+    ``backend/requirements.txt`` gains an extra that depends on soliplex
+    (soliplex itself), which installs only when the image's own soliplex is
+    frozen as a version pin.
     """
+    requirements = out / "backend" / "requirements.txt"
+    requirements.write_text(requirements.read_text() + "soliplex\n")
+
     wheels = _soliplex_override(work)
     if wheels is not None:
         shutil.copytree(wheels, out / "backend" / "soliplex-wheel")

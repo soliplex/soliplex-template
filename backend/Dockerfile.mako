@@ -33,12 +33,16 @@ RUN \
 # constraints, so an extra can add packages but never silently move one the
 # release pinned; an extra that needs a different version fails the build
 # instead. Skipped while the file holds only comments and blank lines.
+#
+# The constraints are 'name==version' pins ('uv pip list --format freeze'),
+# whatever each package was installed from: the image installs soliplex
+# itself from a local wheel it no longer holds.
 COPY --link requirements.txt /tmp/requirements.txt
 
 RUN --mount=from=uv,source=/uv,target=/usr/local/bin/uv \
     --mount=type=cache,target=/root/.cache/uv \
     if grep -qv '^[[:space:]]*\(#\|$\)' /tmp/requirements.txt; then \
-      uv pip freeze --python /app/.venv/bin/python \
+      uv pip list --format freeze --python /app/.venv/bin/python \
         > /tmp/base-constraints.txt && \
       uv pip install --python /app/.venv/bin/python \
         --constraints /tmp/base-constraints.txt \
