@@ -54,6 +54,11 @@ EXCLUDE_PATHSPECS = [
     ":!tests",  # this repo's test suite, not project files
     ":!scripts/build_skill.py",  # skill-build tooling, not project files
     ":!scripts/refresh_skill_template.py",
+    ":!scripts/lint_docs_anchors.py",  # lints this repo's docs site
+    # Version-pairing tooling: reads and writes this repo's skill references
+    # and docs-site include, which a generated project does not have.
+    ":!scripts/extract_version_pairings.py",
+    ":!scripts/lint_version_pairings.py",
     # The repo's own published package; a generated project depends on it from
     # PyPI (via the bundled scripts' PEP 723 metadata), not a vendored copy.
     ":!src/soliplex_template",

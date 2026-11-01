@@ -42,6 +42,11 @@ docker compose restart haiku-ingester
 
 ## A separate, static database
 
+<!-- site-only -->
+[:lucide-wand-sparkles: Ask the agent](../../getting-started/using-the-skill.md#build-a-separate-rag-database "The soliplex-template skill can do this for you")
+{ .skill-link }
+<!-- endsite-only -->
+
 For a separate, mostly-static corpus, build a standalone database with the
 `haiku-rag` CLI through the
 `haiku-rag` service — the stack's one-shot CLI runner, which shares the

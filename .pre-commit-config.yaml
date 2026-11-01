@@ -52,6 +52,19 @@ repos:
         language: system
         pass_filenames: false
         files: ^scripts/lint_version_pairings\.py$
+      - id: lint-docs-anchors
+        name: lint docs fragment links vs heading ids
+        entry: uv run python scripts/lint_docs_anchors.py --verbose
+        language: system
+        pass_filenames: false
+        # Any page can be the target of another page's '#fragment' link.
+        files: ^docs/.*\.md$
+      - id: lint-docs-anchors-self-test
+        name: lint docs fragment links (self-test)
+        entry: uv run python scripts/lint_docs_anchors.py --self-test
+        language: system
+        pass_filenames: false
+        files: ^scripts/lint_docs_anchors\.py$
 
   - repo: https://github.com/jackdewinter/pymarkdown
     rev: v0.9.36
