@@ -4,16 +4,11 @@ Part of [Upgrading an existing stack](index.md).
 
 **Walk this rung with the `v0.16.2` skill release** — the release whose
 generator produces the rung's end state, and whose `migrate_layout.py`
-performs it.  It is a software release, so its skill build stays published
-(the dated `template-skill-*` builds are pruned after ten newer ones).
+performs it.
 
 ```bash
-uv run <skill>/scripts/skill_versions.py downgrade v0.16.2
+uv run <skill>/scripts/skill_versions.py upgrade v0.16.2
 ```
-
-That release's own `skill_versions.py` has no `downgrade` command;  to move
-on to rung 1, name the next rung's release to `upgrade`, which installs
-whichever release it is given.
 
 Stacks generated before soliplex-template v0.16 put the project's package
 *directly* under `src/`, with its tests at the stack root:

@@ -2,10 +2,10 @@
 
 Part of [Upgrading an existing stack](index.md).
 
-**Walk this rung with the `template-skill-2026.10.24-932e134` skill release** — its generator produces the rung's end state (the current template shape).  The stack being upgraded names the release that generated it in its own `[tool.soliplex-template]` manifest — use that one when climbing *from* an older shape.
+**Walk this rung with the `v0.19b1` skill release** — its generator produces the rung's end state (soliplex 0.86.1 on the release images, with haiku.rag 0.101.0).  The stack being upgraded names the release that generated it in its own `[tool.soliplex-template]` manifest — use that one when climbing *from* an older shape.
 
 ```bash
-uv run <skill>/scripts/skill_versions.py downgrade template-skill-2026.10.24-932e134
+uv run <skill>/scripts/skill_versions.py upgrade v0.19b1
 ```
 
 1. Stop `backend` and `haiku-ingester`, and back up the Postgres databases

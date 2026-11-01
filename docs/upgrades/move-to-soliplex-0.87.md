@@ -2,14 +2,15 @@
 
 Part of [Upgrading an existing stack](index.md).
 
-**Walk this rung with the `template-skill-2026.10.26-b57f7ba` skill release** —
-its generator produces the rung's end state (the current template shape).  The
+**Walk this rung with the `v0.19b2` skill release** — its generator
+produces the rung's end state (soliplex 0.87.0 on the release images, with
+haiku.rag 0.101.0).  The
 stack being upgraded names the release that generated it in its own
 `[tool.soliplex-template]` manifest — use that one when climbing *from* an
 older shape.
 
 ```bash
-uv run <skill>/scripts/skill_versions.py downgrade template-skill-2026.10.26-b57f7ba
+uv run <skill>/scripts/skill_versions.py upgrade v0.19b2
 ```
 
 1. Stop the stack with `docker compose down`, and back up the Postgres

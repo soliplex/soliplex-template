@@ -2,11 +2,11 @@
 
 Part of [Upgrading an existing stack](index.md).
 
-**Walk this rung with the `template-skill-2026.10.20-a2c13ae` skill release** — its generator produces the rung's end state (the 0.85 *release-image* shape).  The stack being upgraded names the release that generated it in its own `[tool.soliplex-template]` manifest — use that
+**Walk this rung with the `v0.18` skill release** — its generator produces the rung's end state (the 0.85 *release-image* shape).  The stack being upgraded names the release that generated it in its own `[tool.soliplex-template]` manifest — use that
   one when climbing *from* an older shape.
 
 ```bash
-uv run <skill>/scripts/skill_versions.py downgrade template-skill-2026.10.20-a2c13ae
+uv run <skill>/scripts/skill_versions.py upgrade v0.18
 ```
 
 From here the backend no longer resolves soliplex from PyPI: it builds on the
@@ -49,14 +49,14 @@ would pick up step 5's edit on the old image.
    header:
 
     ```text
-    --8<-- "docs/getting-started/includes/template-skill-2026.10.20-a2c13ae/backend/requirements.txt"
+    --8<-- "docs/getting-started/includes/build-on-soliplex-release-images/backend/requirements.txt"
     ```
 
 3. **Replace `backend/Dockerfile`** with the release-image one below. Carry
    over any local edits from step 1 (e.g. a `COPY` of `vendor/`).
 
     ```dockerfile
-    --8<-- "docs/getting-started/includes/template-skill-2026.10.20-a2c13ae/backend/Dockerfile"
+    --8<-- "docs/getting-started/includes/build-on-soliplex-release-images/backend/Dockerfile"
     ```
 
 4. **Delete `backend/constraints.txt`**.
@@ -92,7 +92,7 @@ would pick up step 5's edit on the old image.
    backend, and delete `tui/constraints.txt`:
 
     ```dockerfile
-    --8<-- "docs/getting-started/includes/template-skill-2026.10.20-a2c13ae/tui/Dockerfile"
+    --8<-- "docs/getting-started/includes/build-on-soliplex-release-images/tui/Dockerfile"
     ```
 
 8. **Update the stack's host-side dependencies** in the root
@@ -151,7 +151,7 @@ would pick up step 5's edit on the old image.
     template's Dockerfile into it as `soliplex-dev/Dockerfile`:
 
     ```dockerfile
-    --8<-- "docs/getting-started/includes/template-skill-2026.10.20-a2c13ae/soliplex-dev/Dockerfile"
+    --8<-- "docs/getting-started/includes/build-on-soliplex-release-images/soliplex-dev/Dockerfile"
     ```
 
     then generate its requirements file from the projects' dev groups:
@@ -179,7 +179,7 @@ would pick up step 5's edit on the old image.
     subject on its `openssl req` line:
 
     ```dockerfile
-    --8<-- "docs/getting-started/includes/template-skill-2026.10.20-a2c13ae/nginx/Dockerfile"
+    --8<-- "docs/getting-started/includes/build-on-soliplex-release-images/nginx/Dockerfile"
     ```
 
     delete `nginx/post-build-cache-bust.sh`, which it no longer runs, and in
@@ -190,7 +190,7 @@ would pick up step 5's edit on the old image.
     without this change the assets lose their long-lived caching:
 
     ```nginx
-    --8<-- "docs/getting-started/includes/template-skill-2026.10.20-a2c13ae/nginx/nginx.conf:hashed-assets"
+    --8<-- "docs/getting-started/includes/build-on-soliplex-release-images/nginx/nginx.conf:hashed-assets"
     ```
 
     Then, in the manifest, set `frontend_version` to the image tag (`0.110`
