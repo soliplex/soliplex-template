@@ -75,8 +75,9 @@ dotted name — so you have a ready place to add custom tools, routers, and
 configuration.
 
 An existing stack generated before this layout is converted by the skill's
-`scripts/migrate_layout.py`: see [Migrating to the src/ project
-layout](migrating-layout.md).
+`scripts/migrate_layout.py`: see [Move to the `src/` project
+layout](../upgrades/move-to-src-layout.md), rung 0 of
+[Upgrading an existing stack](../upgrades/index.md).
 
 ## Working with the skill
 

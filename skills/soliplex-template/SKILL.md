@@ -754,6 +754,10 @@ cloned alongside the project needs no special casing. Convert an old stack with
 is easy to get wrong, and dropping `[project]` leaves the stack root with no
 tooling environment).
 
+This is rung 0 of the stack upgrade ladder (the "Upgrading an existing
+stack" docs page): every later rung assumes the new layout, so an old stack
+converts before it climbs any further.
+
 It reads `[tool.soliplex-template.params]` for the package name, moves the
 tree with `git mv` (so history follows as renames), splits `pyproject.toml`,
 repoints the backend's `PYTHONPATH`, and adds the `src/` ignore rule. Every

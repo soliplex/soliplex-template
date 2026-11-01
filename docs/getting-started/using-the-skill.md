@@ -180,7 +180,7 @@ drifted from what the script expects, nothing is changed and the error points
 at the manual steps for that file.
 
 By hand: `<skill>/scripts/migrate_layout.py`; see
-[Migrating layout](migrating-layout.md).
+[Move to the `src/` project layout](../upgrades/move-to-src-layout.md).
 
 ## Manage the skill's version
 

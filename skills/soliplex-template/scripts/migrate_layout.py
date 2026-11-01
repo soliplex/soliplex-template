@@ -50,6 +50,12 @@ from soliplex_plumber import rooms
 # Scratch directory used to stage the move; it becomes the new ``src/``.
 _STAGE = ".soliplex-migrate"
 
+# The manual steps, for reconciling a file that has drifted.
+_BY_HAND_URL = (
+    "https://soliplex.github.io/soliplex-template/"
+    "upgrades/move-to-src-layout/#doing-it-by-hand"
+)
+
 # The stack root stops being a distribution: these tables move to the
 # project's own pyproject.toml.
 _ROOT_DROPS = (
@@ -167,8 +173,8 @@ class AnchorMissing(MigrateError):
     def __init__(self, rel: str, anchor: str):
         super().__init__(
             f"{rel}: expected to find {anchor!r}. This stack has drifted from "
-            "the exemplar; reconcile that file by hand, then re-run (see the "
-            "'Migrating to the src/ project layout' page)"
+            "the exemplar; reconcile that file by hand, then re-run (see "
+            f"{_BY_HAND_URL})"
         )
 
 
