@@ -140,6 +140,11 @@ DEFAULTS: dict[str, object] = {
     # (web TUI at /tui/) plus the tui/ build context. Omitted entirely when
     # false. Its image shares soliplex_image_tag with the backend's.
     "include_tui": False,
+    # haiku.rag web app (opt-in): the upstream app's backend and frontend
+    # (chat, ingestion status, inspector, doctor), built from the pinned
+    # haiku.rag release, plus the haiku-rag-app/ directory holding its
+    # sessions database.
+    "include_haiku_rag_app": False,
     # Sandbox (opt-in): let the 'bubble-sandbox' skill run code, by lifting
     # the backend container's seccomp / AppArmor / '/proc' restrictions that
     # 'bwrap' trips over. When false the compose block ships commented out,
@@ -516,6 +521,9 @@ def _print_report(params: dict[str, object], out) -> None:
     print(f"  auth:     {params['auth_mode']}")
     print(f"  gitea:    {'yes' if params.get('include_gitea') else 'no'}")
     print(f"  tui:      {'yes' if params.get('include_tui') else 'no'}")
+    print(
+        f"  rag app:  {'yes' if params.get('include_haiku_rag_app') else 'no'}"
+    )
     print(f"  sandbox:  {'yes' if params.get('enable_sandbox') else 'no'}")
 
 
@@ -608,6 +616,12 @@ def coerce_and_derive(params: dict[str, object]) -> dict[str, object]:
     # template and the authored docs; gates the tui/ build context in
     # render_tree).
     params["include_tui"] = _as_bool(params.get("include_tui"), "include_tui")
+
+    # Opt-in haiku.rag web app (consumed by the conditional blocks in the
+    # compose template; gates the haiku-rag-app/ subtree in render_tree).
+    params["include_haiku_rag_app"] = _as_bool(
+        params.get("include_haiku_rag_app"), "include_haiku_rag_app"
+    )
 
     # Opt-in sandbox (consumed by the conditional 'security_opt' blocks in the
     # compose template).
@@ -848,6 +862,14 @@ def render_tree(
         # The tui/ build context only makes sense alongside the tui service;
         # skip the whole subtree when the TUI was not requested.
         if not ctx.get("include_tui") and rel.parts and rel.parts[0] == "tui":
+            continue
+        # Likewise the haiku-rag-app/ subtree (the web app's data directory)
+        # when the web app was not requested.
+        if (
+            not ctx.get("include_haiku_rag_app")
+            and rel.parts
+            and rel.parts[0] == "haiku-rag-app"
+        ):
             continue
         if src.is_dir():
             (out / rel).mkdir(parents=True, exist_ok=True)

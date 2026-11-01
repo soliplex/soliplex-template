@@ -467,6 +467,106 @@ services:
 
     ulimits: *haiku_rag_ulimits
 
+% if include_haiku_rag_app:
+  # haiku.rag's web app: a read-only backend over the RAG databases (chat,
+  # inspector, doctor) and a Next.js frontend that proxies both it and the
+  # ingester's control plane. Neither publishes a host port: nginx serves the
+  # frontend, behind the admin gate (the app has no authentication of its
+  # own).
+  #
+  # Upstream publishes no images for the app yet (ggozad/haiku.rag#793), so
+  # both build from the haiku.rag release the ingester runs.
+  haiku-rag-app-backend:
+
+    build:
+      context: https://github.com/ggozad/haiku.rag.git#${haiku_rag_version}
+      dockerfile: app/backend/Dockerfile
+
+    command:
+      - sh
+      - -ec
+      - |
+        # The shared haiku.rag.yaml interpolates both variables (the queue
+        # dburi, the ingester API token), and the loader expands the whole
+        # file up front: export them, as for the ingester.
+        export INGESTER_DB_PASSWORD="$$(cat /run/secrets/ingester_db_password)"
+        export INGESTER_TOKEN="$$(cat /run/secrets/ingester_bearer)"
+        # One worker: the session store holds runs in process.
+        exec uvicorn --factory haiku_rag_app.main:app --host 0.0.0.0 --port 8000 --workers 1
+
+    secrets:
+      - ingester_db_password
+      - ingester_bearer
+
+    # The ingester's mounts, read-only: the ingester is the databases' one
+    # writer. The app reads the database list once, at startup
+    # (ggozad/haiku.rag#795): restart this service after provisioning a room.
+    volumes:
+      - ./rag/db:/data:ro
+      - ./haiku.rag/haiku.rag.yaml:/app/haiku.rag.yaml:ro
+      - ./src/rooms-provisioned:/app/rooms-provisioned:ro
+      # The app's own conversation store.
+      - ./haiku-rag-app/sessions:/sessions
+
+    environment:
+      <<: *haiku_rag_environment
+      HAIKU_RAG_CONFIG_PATH: /app/haiku.rag.yaml
+      HAIKU_RAG_APP_SESSIONS: /sessions/sessions.db
+
+    user: "<%text>${PUID:-1000}</%text>:<%text>${PGID:-1000}</%text>"
+
+    ulimits: *haiku_rag_ulimits
+
+    depends_on:
+      haiku-ingester:
+        condition: service_healthy
+
+    healthcheck:
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=2).status == 200 else 1)"
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
+
+    restart: unless-stopped
+
+  haiku-rag-app-frontend:
+
+    build:
+      context: https://github.com/ggozad/haiku.rag.git#${haiku_rag_version}:app/frontend
+      dockerfile: Dockerfile
+
+    command:
+      - sh
+      - -ec
+      - |
+        # The frontend adds the ingester's bearer to the operator actions it
+        # proxies.
+        export INGESTER_TOKEN="$$(cat /run/secrets/ingester_bearer)"
+        exec node server.js
+
+    secrets:
+      - ingester_bearer
+
+    environment:
+      BACKEND_URL: http://haiku-rag-app-backend:8000
+      INGESTER_URL: http://haiku-ingester:8765
+
+    # PUID:PGID rather than the image's own 'nextjs' user, to read the
+    # 0600 secret file.
+    user: "<%text>${PUID:-1000}</%text>:<%text>${PGID:-1000}</%text>"
+
+    depends_on:
+      haiku-rag-app-backend:
+        condition: service_healthy
+
+    restart: unless-stopped
+
+% endif
   docling-serve:
 
     # The image is chosen at generation ('docling_serve_variant' /
