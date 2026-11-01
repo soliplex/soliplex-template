@@ -22,10 +22,18 @@ services:
 % if include_gitea:
       - gitea
 % endif
+% if include_haiku_rag_app:
+      - haiku-rag-app-frontend
+% endif
 
     ports:
       - "${nginx_http}:9000"
       - "${nginx_https}:9443"
+% if include_haiku_rag_app:
+      # The haiku.rag web app, on its own origin: it cannot be served under
+      # a sub-path yet (ggozad/haiku.rag#794).
+      - "${haiku_rag_app_port}:9444"
+% endif
 
     volumes:
       - type: bind

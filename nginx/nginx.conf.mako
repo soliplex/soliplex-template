@@ -623,4 +623,105 @@ http {
 % endif
 
     }
+% if include_haiku_rag_app:
+
+    # The haiku.rag web app (the 'haiku-rag-app-frontend' service), on its
+    # own HTTPS port: it calls absolute paths ('/api/...', '/_next/...'), so
+    # it cannot share an origin with the Soliplex client and backend
+    # (ggozad/haiku.rag#794). Gated like '/ingester/': the authn cookie the
+    # backend sets is not scoped by port, so it reaches this server too.
+    server {
+        listen 9444 ssl;
+        server_name ${server_name};
+
+        ssl_certificate /etc/nginx/ssl/server.crt;
+        ssl_certificate_key /etc/nginx/ssl/server.key;
+        ssl_protocols TLSv1.2 TLSv1.3;
+        ssl_prefer_server_ciphers on;
+        ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
+        ssl_session_tickets off;
+
+        # A chat question can carry images, as data URLs in its JSON body.
+        client_max_body_size 25m;
+        limit_conn conn 10;
+
+        # Custom error pages for nginx-generated errors
+        error_page 400 401 405 408 414 431 497 /error-pages/400.html;
+        error_page 403 /error-pages/403.html;
+        error_page 404 /error-pages/404.html;
+        error_page 429 /error-pages/403.html;
+        error_page 500 501 502 503 504 /error-pages/50x.html;
+
+        location /error-pages/ {
+            internal;
+            alias /app/error-pages/;
+        }
+
+% if not backend_auth_flag:
+        location = /_authz_check {
+            internal;
+            set $backend_authz "backend";
+            proxy_pass http://$backend_authz:8000/api/v1/authz/check/ingester;
+            proxy_pass_request_body off;
+            proxy_set_header Content-Length "";
+        }
+
+        # Sign-in happens on the Soliplex origin (this origin's '/api/' is
+        # the app's own), returning here afterwards. Soliplex treats this
+        # origin as unlisted, and asks the user to consent to the return,
+        # unless the auth system's 'allowed_frontend_origins' in
+        # 'backend/environment/oidc/config.yaml' lists
+        # 'https://${server_name}:${haiku_rag_app_port}'.
+        location @haiku_rag_app_signin {
+            if ($soliplex_navigate) {
+                return 302 "https://$host:${nginx_https}/api/login/keycloak?delivery=cookie&return_to=https://$host:${haiku_rag_app_port}$request_uri";
+            }
+            return 401 '{"error": "signin_required", "message": "Sign in with an admin account to use the haiku.rag web app"}';
+        }
+% endif
+
+        # The app's own API routes ('/api/backend/', '/api/ingester/') get
+        # JSON; pages get the HTML error page.
+        location @haiku_rag_app_down {
+            default_type application/json;
+            if ($uri ~ ^/api/) {
+                return 503 '{"error": "service_unavailable", "message": "The haiku.rag web app is temporarily unavailable"}';
+            }
+            root /app/error-pages;
+            try_files /50x.html =503;
+        }
+
+        location / {
+            proxy_intercept_errors off;
+            error_page 502 503 504 = @haiku_rag_app_down;
+            error_page 403 /error-pages/403.html;
+% if not backend_auth_flag:
+            # The gate (auth-mode stacks), as for '/ingester/': the app can
+            # search every database and drive the ingester, so it is for
+            # admins only. In no-auth stacks it is open, like '/ingester/'.
+            auth_request /_authz_check;
+            auth_request_set $soliplex_user $upstream_http_x_soliplex_user;
+            error_page 401 = @haiku_rag_app_signin;
+% endif
+            limit_req zone=api burst=100 nodelay;
+
+            # Use variable to force DNS re-resolution via the resolver directive
+            set $backend_rag_app "haiku-rag-app-frontend";
+
+            proxy_pass http://$backend_rag_app:3000;
+
+            proxy_http_version 1.1;
+            proxy_set_header Connection "";
+            proxy_set_header Host $http_host;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto https;
+            # Chat answers stream as server-sent events.
+            proxy_buffering off;
+            proxy_cache off;
+            proxy_connect_timeout 10;
+            proxy_send_timeout 60;
+            proxy_read_timeout 600;
+        }
+    }
+% endif
 }

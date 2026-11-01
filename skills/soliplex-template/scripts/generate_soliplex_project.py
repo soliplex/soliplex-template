@@ -76,6 +76,9 @@ DEFAULTS: dict[str, object] = {
     "backend_port": None,
     "gitea_http_port": None,
     "gitea_ssh_port": None,
+    # nginx's HTTPS port for the haiku.rag web app; with
+    # 'include_haiku_rag_app', unset means HAIKU_RAG_APP_PORT_DEFAULT.
+    "haiku_rag_app_port": None,
     # Server / TLS
     "server_name": None,  # derived from project_name if unset
     "tls_subject": None,  # derived from server_name if unset
@@ -167,7 +170,9 @@ OPTIONAL_PORT_KEYS = (
     "backend_port",
     "gitea_http_port",
     "gitea_ssh_port",
+    "haiku_rag_app_port",
 )
+HAIKU_RAG_APP_PORT_DEFAULT = 9444
 PORT_KEYS = NGINX_PORT_KEYS + OPTIONAL_PORT_KEYS
 INT_KEYS = (
     tuple(k for k in NGINX_PORT_KEYS)
@@ -524,6 +529,8 @@ def _print_report(params: dict[str, object], out) -> None:
     print(
         f"  rag app:  {'yes' if params.get('include_haiku_rag_app') else 'no'}"
     )
+    if params.get("include_haiku_rag_app"):
+        print(f"            rag app {_port('haiku_rag_app_port')} (HTTPS)")
     print(f"  sandbox:  {'yes' if params.get('enable_sandbox') else 'no'}")
 
 
@@ -622,6 +629,13 @@ def coerce_and_derive(params: dict[str, object]) -> dict[str, object]:
     params["include_haiku_rag_app"] = _as_bool(
         params.get("include_haiku_rag_app"), "include_haiku_rag_app"
     )
+    # The web app is served only on its own nginx port: publish it whenever
+    # the app is included, and never otherwise.
+    if params["include_haiku_rag_app"]:
+        if params.get("haiku_rag_app_port") is None:
+            params["haiku_rag_app_port"] = HAIKU_RAG_APP_PORT_DEFAULT
+    else:
+        params["haiku_rag_app_port"] = None
 
     # Opt-in sandbox (consumed by the conditional 'security_opt' blocks in the
     # compose template).
