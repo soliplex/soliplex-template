@@ -15,12 +15,12 @@ the section your stack is at, and work forward from there.
 | Your stack | What its files show | Skill release to walk with | Start at |
 |---|---|---|---|
 | generated before soliplex-template v0.16 | the package sits directly under `src/` (`src/<package>/tools.py`), with `tests/` at the stack root | `v0.16.2` | [0](move-to-src-layout.md) |
-| soliplex 0.84 or earlier | `backend/constraints.txt` pins below `0.85` | `template-skill-2026.10.10-37f7a2d` | [1](move-to-soliplex-0.85.md) |
-| soliplex 0.85, built from PyPI | `backend/Dockerfile` runs `uv add … soliplex` | `template-skill-2026.10.14-9a17a20` | [2](build-on-soliplex-release-images.md) |
-| on the 0.85 release images | `backend/Dockerfile` builds `FROM ghcr.io/soliplex/soliplex-postgres:0.85` | `template-skill-2026.10.24-932e134` | [3](move-to-soliplex-0.86.1.md) |
-| soliplex 0.86.1 | `backend/Dockerfile` builds `FROM ghcr.io/soliplex/soliplex-postgres:0.86.1` | `template-skill-2026.10.26-b57f7ba` | [4](move-to-soliplex-0.87.md) |
-| soliplex 0.87 | `nginx/nginx.conf` rewrites other cookies' `SameSite` via a catch-all `proxy_cookie_flags`; the ingester bearer rides an `INGESTER_TOKEN` compose environment entry | `template-skill-2026.10.28-aadeb80` | [5](serve-through-nginx.md) |
-| soliplex 0.87, serving through nginx | `nginx/nginx.conf` routes `/ingester/`; `docker-compose.yml` has no `soliplex-provisioner` service | `template-skill-2026.10.31-750fcbd` | [6](provision-rooms-on-request.md) |
+| soliplex 0.84 or earlier | `backend/constraints.txt` pins below `0.85` | `v0.18b1` | [1](move-to-soliplex-0.85.md) |
+| soliplex 0.85, built from PyPI | `backend/Dockerfile` runs `uv add … soliplex` | `v0.18` | [2](build-on-soliplex-release-images.md) |
+| on the 0.85 release images | `backend/Dockerfile` builds `FROM ghcr.io/soliplex/soliplex-postgres:0.85` | `v0.19b1` | [3](move-to-soliplex-0.86.1.md) |
+| soliplex 0.86.1 | `backend/Dockerfile` builds `FROM ghcr.io/soliplex/soliplex-postgres:0.86.1` | `v0.19b2` | [4](move-to-soliplex-0.87.md) |
+| soliplex 0.87 | `nginx/nginx.conf` rewrites other cookies' `SameSite` via a catch-all `proxy_cookie_flags`; the ingester bearer rides an `INGESTER_TOKEN` compose environment entry | `v0.19` | [5](serve-through-nginx.md) |
+| soliplex 0.87, serving through nginx | `nginx/nginx.conf` routes `/ingester/`; `docker-compose.yml` has no `soliplex-provisioner` service | `v0.20` | [6](provision-rooms-on-request.md) |
 
 The `[tool.soliplex-template]` manifest at the end of the stack's
 `pyproject.toml` records the skill commit (`skill_source_commit`) and date
@@ -78,23 +78,25 @@ starts with the previous one unfinished.
    release that generated it, the one the rung moving *from* it
    needs.
 
-    For instance, upgrade rung #1 above specifies the
-    `template-skill-2026.10.10-37f7a2d` skill release.  If that is your
-    rung, ask your agent, e.g.:
+    Every rung names a software release (`v…`).  A rung whose end state
+    fell between two regular releases has a pre-release cut for it (e.g.
+    `v0.18b1`).
+
+    For instance, upgrade rung #1 above specifies the `v0.18b1` skill
+    release.  If that is your rung, ask your agent, e.g.:
 
     ```text
-    Set the installed soliplex-template skill to the `template-skill-2026.10.10-37f7a2d` release.
+    Set the installed soliplex-template skill to the `v0.18b1` release.
     ```
 
     or run its helper yourself (`list` shows the published releases,
-    `diff` what a move would change; both `upgrade` and `downgrade`
-    land on the target from whatever is installed — no need to pass
-    through the newest release first):
+    `diff` what a move would change; `upgrade` installs whichever
+    release it is given, older or newer than the installed one — no
+    need to pass through the newest release first):
 
     ```bash
     uv run <skill>/scripts/skill_versions.py list
-    uv run <skill>/scripts/skill_versions.py downgrade \
-        template-skill-2026.10.10-37f7a2d   # e.g. the rung-1 cut
+    uv run <skill>/scripts/skill_versions.py upgrade v0.18b1   # e.g. rung 1
     ```
 
     The rung's scripts come from the installed release, so walking a

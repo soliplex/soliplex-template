@@ -2,7 +2,7 @@
 
 Part of [Upgrading an existing stack](index.md).
 
-**Walk this rung with the `template-skill-2026.10.28-aadeb80` skill release** —
+**Walk this rung with the `v0.19` skill release** —
 its generator produces the rung's end state (only nginx published by default;
 the ingester control plane served behind nginx at `/ingester/`; its bearer
 token a file-backed Docker secret). The stack being upgraded names the
@@ -10,7 +10,7 @@ release that generated it in its own `[tool.soliplex-template]` manifest — use
 that one when climbing *from* an older shape.
 
 ```bash
-uv run <skill>/scripts/skill_versions.py downgrade template-skill-2026.10.28-aadeb80
+uv run <skill>/scripts/skill_versions.py upgrade v0.19
 ```
 
 This rung bumps no releases — soliplex, `haiku.rag`-slim, docling-serve and

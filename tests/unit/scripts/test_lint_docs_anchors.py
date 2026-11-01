@@ -89,6 +89,7 @@ def test_heading_ids(text, expected) -> None:
         ("[a](b.md#c){ .skill-link }\n", [(1, "b.md", "c")]),
         ("[a](https://example.com/b.md#c)\n", []),
         ("[a](b.md)\n", []),
+        ("`[a](b.md#c)` and [d](#e)\n", [(1, "", "e")]),
     ],
 )
 def test_fragment_links(text, expected) -> None:

@@ -140,9 +140,9 @@ from a squash-merged PR against `main`.
 
 4. (optional, for changes which introduce significant changes to the
    structure / configuration of generated stacks) Add the release's rung to
-   [Upgrading an existing stack](../upgrades/index.md):
-   one table row and a section describing the by-hand steps for stacks
-   at the previous rung, naming the skill release this tag introduces.
+   [Upgrading an existing stack](../upgrades/index.md), walked with
+   this tag's skill release: see
+   [Adding an upgrade rung](#adding-an-upgrade-rung).
 
 5. Tag and push:
 
@@ -171,6 +171,76 @@ One full generate-walk from the release branch, both auth modes plus one
 `*_port` opt-in case, walking the rendered result the way
 [Using a generated stack](../users/installation.md) describes. The gates above
 cover the contract; the smoke test covers the experience.
+
+### Adding an upgrade rung
+
+A rung is the by-hand route from one generated-stack shape to the next, for
+stack owners who cannot regenerate. Each rung has:
+
+- **A page** under `docs/upgrades/`, named for what it does
+  (`move-to-…`, `serve-through-nginx.md`), listed in the `zensical.toml`
+  nav and in the *Upgrade rungs* list on
+  [Upgrading an existing stack](../upgrades/index.md). The page opens with
+  "Part of [Upgrading an existing stack](index.md)" and the release to walk
+  it with, as a `skill_versions.py upgrade vX.Y` command, then numbered
+  steps ending in `[**Check it**](index.md#check-it)` and a commit.
+- **A row** in that page's *Where do I start?* table: the shape a stack is
+  in *before* the rung, a file signature that tells that shape apart, the
+  release to walk with, and the link.
+
+The release a rung walks with is the one whose generator produces the
+rung's **end state**: its scripts perform the rung, and its reference stack
+(see *Checking the whole stack against a reference* on that page) differs
+from an upgraded stack only where the stack owner's own changes do. It is
+always a software release (`v…`): the dated `template-skill-*` rolling
+builds are pruned after ten newer ones, so a rung that names one breaks.
+Usually it is the minor release that ships the change (step 4 above).
+
+#### When the end state falls between releases
+
+If `main` has moved on to the next shape before the release is cut, cut a
+pre-release from the commit that completes the rung's end state.
+`vX.YbN` names it, where `X.Y` is the next minor release and `N` counts the
+pre-releases cut ahead of it, so it sorts before `vX.Y`:
+
+1. Branch from that commit, in a new worktree:
+
+    ```bash
+    # from `main` worktree
+    git worktree add -b vX.YbN ../vX.YbN <sha>
+    ```
+
+2. Bump the package version in `pyproject.toml` from the `X.Ydev0`
+   spelling to `X.YbN`, and change nothing else. Publishing *any* release
+   runs `pypi.yaml` from the tagged commit, which would otherwise upload
+   the `X.Y.dev0` wheel:
+
+    ```bash
+    uv sync --all-groups
+    git commit pyproject.toml uv.lock -m "chore: prep 'vX.YbN' release"
+    ```
+
+3. Draft the changelog from the commits since the previous release's
+   branch point, and say that this is a synthetic, out-of-order release
+   cut for the rung, linking the rung's page.
+
+4. Tag, push the tag, and publish the GitHub release from it, marked as a
+   pre-release:
+
+    ```bash
+    git tag -s -F ../../release-notes/soliplex-template-vX.YbN.txt vX.YbN
+    git push origin vX.YbN
+    ```
+
+5. Check the result:
+
+    ```bash
+    git diff --quiet <sha> vX.YbN -- skills/ && echo "skill unchanged"
+    uv run skills/soliplex-template/scripts/skill_versions.py list --kind release
+    ```
+
+    The release carries `soliplex-template-skill.tar.gz`, `.zip`, and
+    `version.json`; `list` shows `vX.YbN`; PyPI has `X.YbN`.
 
 ## Backporting a fix
 

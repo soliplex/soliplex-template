@@ -11,8 +11,9 @@ of any raw HTML element (e.g. '<a id="appendix"></a>'), and reports every
 fragment link under 'docs/' that names a missing page or heading.
 
 Links to other sites, links without a fragment, and links inside fenced
-code blocks are not checked. 'docs/getting-started/includes/' holds
-verbatim copies of stack files and is skipped.
+code blocks or inline code spans are not checked.
+'docs/getting-started/includes/' holds verbatim copies of stack files and
+is skipped.
 
 Exits non-zero when any broken link is found.
 
@@ -61,6 +62,7 @@ _INLINE_LINK_RE = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 _SHORTCODE_RE = re.compile(r":[a-z0-9-]+:")
 _LINK_RE = re.compile(r"\]\(([^)\s#]*)#([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 _SCHEME_RE = re.compile(r"^[a-z][a-z0-9+.-]*:")
+_CODE_SPAN_RE = re.compile(r"(`+).+?\1")
 
 
 def prose_lines(text: str):
@@ -128,7 +130,7 @@ def fragment_links(text: str):
     'target' is '' for a link within the same page.
     """
     for number, line in prose_lines(text):
-        for match in _LINK_RE.finditer(line):
+        for match in _LINK_RE.finditer(_CODE_SPAN_RE.sub("", line)):
             target, fragment = match.groups()
 
             if _SCHEME_RE.match(target):
@@ -250,6 +252,7 @@ _SELF_TEST_CASES: list[tuple[str, dict[str, str], list[Finding]]] = [
                 "# A\n\n```text\n[x](b.md#nowhere)\n# Not a heading\n```\n\n"
                 "[y](https://example.com/b.md#nowhere)\n"
                 '[z](#a "a title")\n'
+                "Write `[w](b.md#nowhere)` or ``[v](`b.md#nowhere`)``.\n"
             ),
         },
         [],

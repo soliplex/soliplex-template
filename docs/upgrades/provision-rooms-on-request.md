@@ -2,13 +2,13 @@
 
 Part of [Upgrading an existing stack](index.md).
 
-**Walk this rung with the `template-skill-2026.10.31-750fcbd` skill release** —
+**Walk this rung with the `v0.20` skill release** —
 its generator produces the rung's end state. The stack being upgraded names
 the release that generated it in its own `[tool.soliplex-template]` manifest —
 use that one when climbing *from* an older shape.
 
 ```bash
-uv run <skill>/scripts/skill_versions.py downgrade template-skill-2026.10.31-750fcbd
+uv run <skill>/scripts/skill_versions.py upgrade v0.20
 ```
 
 This rung moves the stack to soliplex `0.89` and `haiku.rag`-slim `0.104.0`,
