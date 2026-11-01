@@ -17,6 +17,9 @@ repo_name = "soliplex/soliplex-template"
 copyright = """
 Copyright &copy; Soliplex
 """
+# Site-only styles, e.g. the "Ask the agent" back-links to
+# getting-started/using-the-skill.md.
+extra_css = ["stylesheets/extra.css"]
 
 # Explicit navigation. Pages not listed here still build, but the sidebar
 # order/grouping below is the source of truth.
@@ -29,6 +32,7 @@ nav = [
     { "Home" = "index.md" },
     { "Getting started" = [
         "getting-started/generator.md",
+        "getting-started/using-the-skill.md",
         "getting-started/migrating-layout.md",
     ] },
     { "Tutorials" = [

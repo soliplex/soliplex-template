@@ -77,6 +77,11 @@ demonstration `custom` room once you have your own.
 
 ## Adding a second project
 
+<!-- site-only -->
+[:lucide-wand-sparkles: Ask the agent](../getting-started/using-the-skill.md#work-on-another-project-alongside-the-stack "The soliplex-template skill can do this for you")
+{ .skill-link }
+<!-- endsite-only -->
+
 `src/` is where you clone any other repo you want to work on alongside this
 one — the `soliplex` backend itself, a library you depend on, a tool you are
 patching.

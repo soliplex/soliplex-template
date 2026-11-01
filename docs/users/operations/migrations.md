@@ -5,6 +5,9 @@ icon: lucide/database-backup
 # Database migrations
 
 <!-- site-only -->
+[:lucide-wand-sparkles: Ask the agent](../../getting-started/using-the-skill.md#migrate-databases-after-a-version-bump "The soliplex-template skill can do this for you")
+{ .skill-link }
+
 !!! note "About this page"
     This documents a stack **generated from `soliplex-template`**. A generated
     project ships its own copy of this page without this note.

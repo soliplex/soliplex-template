@@ -40,6 +40,9 @@ third-party dependency) into the stack without ignore rules per clone.
 
 ## Use the script
 
+[:lucide-wand-sparkles: Ask the agent](using-the-skill.md#move-an-older-stack-to-the-src-layout "The soliplex-template skill can do this for you")
+{ .skill-link }
+
 Do not do this by hand. The skill ships `scripts/migrate_layout.py`, which
 performs every step below and asserts on the text it expects to find at each
 one:
