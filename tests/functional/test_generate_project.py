@@ -191,6 +191,8 @@ def test_key_artifacts_exist(generated_project):
         "README.md",
         "backend/environment/installation.yaml",
         "nginx/nginx.conf",
+        # keeps the bind-mounted fragment directory in every stack
+        "nginx/conf.d/README.md",
         "postgres/config/init.sh",
         "scripts/generate_env.py",
         "scripts/generate_secrets.py",
@@ -388,6 +390,32 @@ def test_backend_cookie_exempted_from_proxy_cookie_flags(generated_project):
     assert exemption in nginx
     assert catch_all in nginx
     assert nginx.index(exemption) < nginx.index(catch_all)
+
+
+def test_nginx_conf_d_fragments(generated_project):
+    # Both servers include the stack's fragment directory, after a default
+    # for the '/ingester/' gate's sign-in provider that a fragment can
+    # override; compose mounts the directory read-only.
+    out, _params = generated_project
+
+    compose = yaml.safe_load(_read(out, "docker-compose.yml"))
+    nginx = _read(out, "nginx/nginx.conf")
+
+    default = 'set $soliplex_signin_provider "keycloak";'
+    include = "include /etc/nginx/conf.d/*.conf;"
+    assert nginx.count(default) == 2
+    assert nginx.count(include) == 2
+    first_server = nginx.index("listen 9000;")
+    second_server = nginx.index("listen 9443 ssl;")
+    for start, end in ((first_server, second_server), (second_server, None)):
+        server = nginx[start:end]
+        assert server.index(default) < server.index(include)
+    assert {
+        "type": "bind",
+        "source": "./nginx/conf.d",
+        "target": "/etc/nginx/conf.d",
+        "read_only": True,
+    } in compose["services"]["nginx"]["volumes"]
 
 
 def test_ingester_bearer_gate_wiring(generated_project):
@@ -1321,7 +1349,7 @@ def test_ingester_bearer_gate_auth_mode(
     assert nginx.count("location @ingester_signin {") == 2
     assert (
         nginx.count(
-            'return 302 "/api/login/keycloak?delivery=cookie'
+            'return 302 "/api/login/$soliplex_signin_provider?delivery=cookie'
             '&return_to=$request_uri"'
         )
         == 2

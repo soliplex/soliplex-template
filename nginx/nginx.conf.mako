@@ -115,6 +115,14 @@ http {
         limit_rate 1024k;
         proxy_cookie_path / /;
 
+        # Stack fragments: every '*.conf' under the stack's 'nginx/conf.d/'
+        # (mounted read-only at /etc/nginx/conf.d/), included by both
+        # servers. Skill scripts add and remove them, e.g. a route for an
+        # added service. The default below names the provider the
+        # '/ingester/' gate signs in with; a fragment's own 'set' replaces it.
+        set $soliplex_signin_provider "keycloak";
+        include /etc/nginx/conf.d/*.conf;
+
         # Custom error pages for nginx-generated errors
         error_page 400 401 405 408 414 431 497 /error-pages/400.html;
         error_page 403 /error-pages/403.html;
@@ -146,10 +154,10 @@ http {
         location @ingester_signin {
             if ($soliplex_navigate) {
                 # delivery=cookie makes the login set the authn cookie the
-                # check (and its callers) read; the provider id matches the
-                # auth_systems entry in 'oidc/config.yaml' -- keep the two
-                # in step when editing that config.
-                return 302 "/api/login/keycloak?delivery=cookie&return_to=$request_uri";
+                # check (and its callers) read. The provider id must match
+                # an auth_systems entry in 'oidc/config.yaml': it is set at
+                # the top of this server, or by a 'conf.d/' fragment.
+                return 302 "/api/login/$soliplex_signin_provider?delivery=cookie&return_to=$request_uri";
             }
             return 401 '{"error": "signin_required", "message": "Sign in with an admin account to use the ingester control plane"}';
         }
@@ -381,6 +389,14 @@ http {
         proxy_cookie_flags ~ HttpOnly Secure SameSite=None;
         proxy_cookie_path / /;
 
+        # Stack fragments: every '*.conf' under the stack's 'nginx/conf.d/'
+        # (mounted read-only at /etc/nginx/conf.d/), included by both
+        # servers. Skill scripts add and remove them, e.g. a route for an
+        # added service. The default below names the provider the
+        # '/ingester/' gate signs in with; a fragment's own 'set' replaces it.
+        set $soliplex_signin_provider "keycloak";
+        include /etc/nginx/conf.d/*.conf;
+
         # Custom error pages for nginx-generated errors
         error_page 400 401 405 408 414 431 497 /error-pages/400.html;
         error_page 403 /error-pages/403.html;
@@ -418,10 +434,10 @@ http {
         location @ingester_signin {
             if ($soliplex_navigate) {
                 # delivery=cookie makes the login set the authn cookie the
-                # check (and its callers) read; the provider id matches the
-                # auth_systems entry in 'oidc/config.yaml' -- keep the two
-                # in step when editing that config.
-                return 302 "/api/login/keycloak?delivery=cookie&return_to=$request_uri";
+                # check (and its callers) read. The provider id must match
+                # an auth_systems entry in 'oidc/config.yaml': it is set at
+                # the top of this server, or by a 'conf.d/' fragment.
+                return 302 "/api/login/$soliplex_signin_provider?delivery=cookie&return_to=$request_uri";
             }
             return 401 '{"error": "signin_required", "message": "Sign in with an admin account to use the ingester control plane"}';
         }

@@ -36,6 +36,12 @@ services:
         source: ./nginx/mime.types
         target: /etc/nginx/mime.types
         read_only: true
+      # Stack fragments (see nginx/conf.d/README.md): nginx reads them at
+      # start, so restart nginx after adding or removing one.
+      - type: bind
+        source: ./nginx/conf.d
+        target: /etc/nginx/conf.d
+        read_only: true
       - type: bind
         source: ./nginx/error-pages
         target: /app/error-pages
