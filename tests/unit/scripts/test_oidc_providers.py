@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import importlib.util
 import pathlib
+import runpy
 import stat
 import sys
 from unittest import mock
@@ -483,3 +484,182 @@ def test_remove_provider_refuses(tmp_path, provider_id, successor, error):
 
     assert _config(stack) == TWO
     assert oidc_providers.signin_provider(stack) == "alpha"
+
+
+# --------------------------------------------------------------------------
+# Command line
+# --------------------------------------------------------------------------
+def _main(stack, *argv):
+    return oidc_providers.main(["--project-dir", str(stack), *argv])
+
+
+def _pem_file(tmp_path) -> pathlib.Path:
+    path = tmp_path / "key.pem"
+    path.write_text(PEM + "\n")
+    return path
+
+
+def _add_argv(tmp_path, provider_id="authelia", *extra):
+    return [
+        "add",
+        "--id",
+        provider_id,
+        "--title",
+        "Authelia",
+        "--server-url",
+        "https://example.com/authelia",
+        "--client-id",
+        "soliplex",
+        "--pem-file",
+        str(_pem_file(tmp_path)),
+        *extra,
+    ]
+
+
+def test_main_list_empty(tmp_path, capsys):
+    stack = _stack(tmp_path)
+
+    code = _main(stack, "list")
+
+    assert code == 0
+    assert "runs without authentication" in capsys.readouterr().out
+
+
+def test_main_list_marks_signin(tmp_path, capsys):
+    stack = _stack(tmp_path, TWO, signin="beta")
+
+    code = _main(stack, "list")
+
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "  alpha  Alpha  \n" in out
+    assert "* beta  Beta  \n" in out
+
+
+def test_main_add_first(tmp_path, capsys):
+    stack = _stack(tmp_path)
+
+    code = _main(stack, *_add_argv(tmp_path))
+
+    out = capsys.readouterr().out
+    assert code == 0
+    assert _config(stack) == HEADER + "auth_systems:\n\n" + AUTHELIA_LINES
+    assert oidc_providers.RESTART_NGINX in out
+    assert "authentication is now ON" in out
+    assert oidc_providers.ADMIN_USERS_ADD in out
+
+
+def test_main_add_another(tmp_path, capsys):
+    stack = _stack(tmp_path, TWO, signin="alpha")
+
+    code = _main(stack, *_add_argv(tmp_path, "gamma", "--scope", "openid"))
+
+    out = capsys.readouterr().out
+    assert code == 0
+    assert oidc_providers.load_providers(stack)[-1]["scope"] == "openid"
+    assert oidc_providers.RESTART_NGINX not in out
+    assert "authentication is now ON" not in out
+
+
+def test_main_add_signin(tmp_path, capsys):
+    stack = _stack(tmp_path, TWO, signin="alpha")
+
+    code = _main(stack, *_add_argv(tmp_path, "gamma", "--signin"))
+
+    assert code == 0
+    assert oidc_providers.signin_provider(stack) == "gamma"
+    assert oidc_providers.RESTART_NGINX in capsys.readouterr().out
+
+
+def test_main_remove_last(tmp_path, capsys):
+    stack = _stack(tmp_path, HEADER + "auth_systems:\n\n" + AUTHELIA_LINES)
+    oidc_providers.set_signin_provider(stack, "authelia")
+
+    code = _main(stack, "remove", "authelia")
+
+    out = capsys.readouterr().out
+    assert code == 0
+    assert _config(stack) == EMPTY
+    assert oidc_providers.RESTART_NGINX in out
+    assert "WITHOUT authentication" in out
+    assert oidc_providers.STACK_INIT in out
+
+
+def test_main_remove_other(tmp_path, capsys):
+    stack = _stack(tmp_path, TWO, signin="alpha")
+
+    code = _main(stack, "remove", "beta")
+
+    out = capsys.readouterr().out
+    assert code == 0
+    assert oidc_providers.RESTART_NGINX not in out
+    assert "WITHOUT authentication" not in out
+
+
+def test_main_remove_with_successor(tmp_path, capsys):
+    stack = _stack(tmp_path, TWO, signin="alpha")
+
+    code = _main(stack, "remove", "alpha", "--signin-successor", "beta")
+
+    assert code == 0
+    assert oidc_providers.signin_provider(stack) == "beta"
+    assert oidc_providers.RESTART_NGINX in capsys.readouterr().out
+
+
+def test_main_signin(tmp_path, capsys):
+    stack = _stack(tmp_path, TWO, signin="alpha")
+
+    code = _main(stack, "signin", "beta")
+
+    assert code == 0
+    assert oidc_providers.signin_provider(stack) == "beta"
+    assert oidc_providers.RESTART_NGINX in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "argv, message",
+    [
+        (["remove", "gamma"], "no provider 'gamma'"),
+        (["signin", "gamma"], "no provider 'gamma'"),
+        (
+            [
+                "add",
+                "--id",
+                "x",
+                "--title",
+                "X",
+                "--server-url",
+                "https://x",
+                "--client-id",
+                "x",
+                "--pem-file",
+                "/nonexistent/key.pem",
+            ],
+            "/nonexistent/key.pem",
+        ),
+    ],
+)
+def test_main_reports_errors(tmp_path, capsys, argv, message):
+    stack = _stack(tmp_path, TWO, signin="alpha")
+
+    code = _main(stack, *argv)
+
+    err = capsys.readouterr().err
+    assert code == 2
+    assert err.startswith("error: ")
+    assert message in err
+    assert _config(stack) == TWO
+
+
+def test_script_entry_point(tmp_path, capsys):
+    stack = _stack(tmp_path)
+    argv = ["oidc_providers.py", "--project-dir", str(stack), "list"]
+
+    with (
+        mock.patch.object(sys, "argv", argv),
+        pytest.raises(SystemExit) as caught,
+    ):
+        runpy.run_path(str(_MODULE_PATH), run_name="__main__")
+
+    assert caught.value.code == 0
+    assert "runs without authentication" in capsys.readouterr().out

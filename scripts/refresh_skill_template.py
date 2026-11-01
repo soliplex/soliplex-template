@@ -538,7 +538,6 @@ PROBE = dict(
     gitea_http_port=7,
     gitea_ssh_port=8,
     server_name="probe",
-    backend_auth_flag="",
     tls_subject="probe",
     chat_model="m",
     chat_model_alt="m",

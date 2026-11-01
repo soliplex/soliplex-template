@@ -192,12 +192,12 @@ services:
       - "${backend_port}:8000"
 % endif
 
-    # Temporary: run with '--no-auth-mode'
+    # Never '--no-auth-mode': with no 'auth_systems' in 'oidc/config.yaml'
+    # the backend runs without authentication anyway, and adding one turns
+    # it on ('--reload=config' picks the change up). 'stack-init' (below)
+    # seeds the no-auth admin, which that flag used to do.
     command: >-
       /app/.venv/bin/soliplex-cli serve
-% if backend_auth_flag:
-      --no-auth-mode
-% endif
       --reload=config
       --reload-dirs=/app/src/${package_name}/src
       --host=0.0.0.0
@@ -326,6 +326,39 @@ services:
     environment: *backend_environment
 
     volumes: *soliplex_dev_volumes
+
+  # Prepares the stack before it first serves anyone, and again after a part
+  # is added: brings the Soliplex databases to their current schema, then
+  # runs every step in 'stack-init/init.d/' (see stack-init/README.md).
+  # Every step is safe to re-run. Run it before 'docker compose up':
+  #
+  #   docker compose run --rm --quiet-build stack-init
+  #
+  # The 'soliplex-dev' image, secrets and environment (YAML aliases), so the
+  # steps reach the databases as the backend does.
+  stack-init:
+
+    profiles: ["init"]
+
+    build: *soliplex_dev_build
+
+    env_file: ".env"
+    user: "<%text>${PUID:-1000}</%text>:<%text>${PGID:-1000}</%text>"
+
+    command: ["sh", "/stack-init/run.sh"]
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    secrets: *soliplex_dev_secrets
+
+    environment: *backend_environment
+
+    volumes:
+      - ./backend/environment:/environment/
+      - ./src:/app/src:ro
+      - ./stack-init:/stack-init:ro
 
   haiku-ingester:
 

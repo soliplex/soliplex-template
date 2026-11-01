@@ -129,8 +129,11 @@ DEFAULTS: dict[str, object] = {
     # 'docker compose build --pull'), an exact "<major>.<minor>.<patch>" or
     # "<major>.<minor>.<patch>-<build>", or "latest".
     "frontend_version": "0.114",
-    # Auth: "no-auth" | "auth"
-    "auth_mode": "no-auth",
+    # Deprecated, and ignored when "no-auth": a generated stack starts with
+    # no OIDC provider, and so without authentication. Providers are added
+    # afterwards, before the first 'docker compose up', with the skill's
+    # scripts/oidc_providers.py.
+    "auth_mode": None,
     # Gitea service (opt-in): nginx-proxied at /gitea/ on HTTPS,
     # provisioned by scripts/init_gitea.py. Web use needs no published
     # port; gitea_http_port / gitea_ssh_port serve direct HTTP and
@@ -155,6 +158,9 @@ NGINX_PORT_KEYS = (
     "nginx_http",
     "nginx_https",
 )
+# Accepted in --params for compatibility, but never prompted for.
+DEPRECATED_KEYS = ("auth_mode",)
+
 OPTIONAL_PORT_KEYS = (
     "ingester_port",
     "docling_port",
@@ -348,7 +354,17 @@ class BadAuthMode(GenError):
     def __init__(self, value):
         self.value = value
         super().__init__(
-            f"auth_mode must be 'no-auth' or 'auth', got {value!r}"
+            f"auth_mode is deprecated; if given it must be 'no-auth', "
+            f"got {value!r}"
+        )
+
+
+class AuthModeRemoved(GenError):
+    def __init__(self):
+        super().__init__(
+            "auth_mode 'auth' is no longer a generator option: generate the "
+            "stack, then add an OIDC provider with the skill's "
+            "scripts/oidc_providers.py before the first 'docker compose up'"
         )
 
 
@@ -513,7 +529,9 @@ def _print_report(params: dict[str, object], out) -> None:
         f"rag-qa={params['rag_qa_model']}"
     )
     print(f"  ollama:   {params['ollama_base_url']}")
-    print(f"  auth:     {params['auth_mode']}")
+    print(
+        "  auth:     none yet (add OIDC providers: scripts/oidc_providers.py)"
+    )
     print(f"  gitea:    {'yes' if params.get('include_gitea') else 'no'}")
     print(f"  tui:      {'yes' if params.get('include_tui') else 'no'}")
     print(f"  sandbox:  {'yes' if params.get('enable_sandbox') else 'no'}")
@@ -522,6 +540,8 @@ def _print_report(params: dict[str, object], out) -> None:
 def prompt_interactive(params: dict[str, object]) -> dict[str, object]:
     print("Enter values (blank = keep the shown default).\n")
     for key in DEFAULTS:
+        if key in DEPRECATED_KEYS:
+            continue
         current = params.get(key)
         if key in OPTIONAL_PORT_KEYS and current is None:
             label = f"  {key} [unpublished -- blank skips]: "
@@ -583,12 +603,6 @@ def coerce_and_derive(params: dict[str, object]) -> dict[str, object]:
         params["tls_subject"] = (
             f"/C=US/ST=State/L=City/O=Soliplex/CN={params['server_name']}"
         )
-
-    # Auth flag consumed by docker-compose.yml.mako (trailing space matters).
-    auth_mode = str(params["auth_mode"])
-    params["backend_auth_flag"] = (
-        "--no-auth-mode " if auth_mode == "no-auth" else ""
-    )
 
     # The docling-serve image ref: variant suffix + version, shape-checked
     # in validate().  Baked into the generated 'docker-compose.yml'.
@@ -675,6 +689,16 @@ def image_tag_satisfies(tag: str, constraint: str) -> bool:
     return any(f"{tag}.{patch}" in spec for patch in range(_SERIES_PATCHES))
 
 
+def warn_deprecated(params: dict[str, object]) -> None:
+    """Warn about deprecated parameters that were given but are ignored."""
+    if params["auth_mode"] == "no-auth":
+        print(
+            "warning: 'auth_mode' is deprecated and ignored: a generated "
+            "stack starts without authentication",
+            file=sys.stderr,
+        )
+
+
 def validate(params: dict[str, object]) -> None:
     if not str(params.get("ollama_base_url") or "").strip():
         raise OllamaRequired()
@@ -708,8 +732,11 @@ def validate(params: dict[str, object]) -> None:
         if not isinstance(val, int) or not (0 < val < 2**31):
             raise BadUID(key, val)
 
-    if params["auth_mode"] not in ("no-auth", "auth"):
-        raise BadAuthMode(params["auth_mode"])
+    auth_mode = params["auth_mode"]
+    if auth_mode == "auth":
+        raise AuthModeRemoved()
+    if auth_mode not in (None, "no-auth"):
+        raise BadAuthMode(auth_mode)
 
     constraint = str(params["soliplex_dev_constraint"])
     if not constraint.strip():
@@ -1040,6 +1067,7 @@ def main(argv: list[str]) -> int:
     params = load_params(args)
     params = coerce_and_derive(params)
     validate(params)
+    warn_deprecated(params)
 
     if out is None:
         out = (
@@ -1071,6 +1099,14 @@ def main(argv: list[str]) -> int:
     if not ran_secrets:
         steps.append("uv run scripts/generate_secrets.py")
     steps.append("docker compose build")
+    steps.append(
+        "(optional) to require sign-in, add OIDC providers now: "
+        f"python3 {SKILL_DIR / 'scripts' / 'oidc_providers.py'} add ..."
+    )
+    steps.append(
+        "docker compose run --rm --quiet-build stack-init"
+        "   # prepare the databases"
+    )
     steps.append("docker compose up -d   # start the stack in the background")
     steps.append("docker compose ps      # wait until services are healthy")
     print(f"  1. cd {out}")

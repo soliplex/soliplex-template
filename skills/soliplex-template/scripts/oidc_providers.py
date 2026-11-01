@@ -19,18 +19,32 @@ Its id lives in the fragment ``nginx/conf.d/signin-provider.conf``:
 
 nginx reads its fragments only at start: restart it after a change.
 
-This module is the core: every choice is an explicit argument, and nothing
-prompts. Edits to the config are made line by line, so comments and the
-other entries are kept; each edit is checked by parsing the result before
-the file is replaced.
+Every choice is an explicit argument, and nothing prompts. Edits to the
+config are made line by line, so comments and the other entries are kept;
+each edit is checked by parsing the result before the file is replaced.
+
+Run it from the stack directory (or pass ``--project-dir``)::
+
+    python3 scripts/oidc_providers.py list
+    python3 scripts/oidc_providers.py add --id authelia --title Authelia \
+        --server-url https://host:9443/authelia --client-id soliplex \
+        --pem-file signing-key.pub.pem [--scope "openid email profile"] \
+        [--signin]
+    python3 scripts/oidc_providers.py remove authelia [--signin-successor ID]
+    python3 scripts/oidc_providers.py signin authelia
+
+``add`` writes a public client (no client secret), with the token
+validation key given as a PEM file.
 """
 
 from __future__ import annotations
 
+import argparse
 import dataclasses
 import os
 import pathlib
 import re
+import sys
 import tempfile
 
 import yaml
@@ -438,3 +452,143 @@ def _atomic_write(path: pathlib.Path, text: str) -> None:
     except BaseException:
         pathlib.Path(tmp).unlink(missing_ok=True)
         raise
+
+
+# --------------------------------------------------------------------------
+# Command line
+# --------------------------------------------------------------------------
+RESTART_NGINX = "docker compose restart nginx"
+ADMIN_USERS_ADD = (
+    "docker compose run --rm --quiet-build soliplex-dev "
+    "soliplex-cli admin-users add /environment <your email>"
+)
+STACK_INIT = "docker compose run --rm --quiet-build stack-init"
+
+
+def do_list(stack: pathlib.Path, _args: argparse.Namespace) -> None:
+    entries = load_providers(stack)
+    if not entries:
+        print("no OIDC providers: the stack runs without authentication")
+        return
+    signin = signin_provider(stack)
+    for entry in entries:
+        mark = "*" if entry["id"] == signin else " "
+        print(
+            f"{mark} {entry['id']}  {entry.get('title', '')}  "
+            f"{entry.get('server_url', '')}"
+        )
+    print("(* = the provider '/ingester/' signs in with)")
+
+
+def do_add(stack: pathlib.Path, args: argparse.Namespace) -> None:
+    before = signin_provider(stack)
+    provider = Provider(
+        id=args.id,
+        title=args.title,
+        server_url=args.server_url,
+        client_id=args.client_id,
+        token_validation_pem=pathlib.Path(args.pem_file).read_text(),
+        scope=args.scope,
+    )
+    result = add_provider(stack, provider, use_for_signin=args.signin)
+    print(f"added OIDC provider {args.id!r}; the backend reloads it")
+    if result.signin != before:
+        print(
+            f"'/ingester/' now signs in with {result.signin!r}: "
+            f"run '{RESTART_NGINX}'"
+        )
+    if result.first:
+        print(
+            "authentication is now ON. Give your own account admin rights:\n"
+            f"  {ADMIN_USERS_ADD}"
+        )
+
+
+def do_remove(stack: pathlib.Path, args: argparse.Namespace) -> None:
+    before = signin_provider(stack)
+    result = remove_provider(
+        stack, args.id, signin_successor=args.signin_successor
+    )
+    print(f"removed OIDC provider {args.id!r}; the backend reloads it")
+    if result.signin != before:
+        print(f"the '/ingester/' sign-in changed: run '{RESTART_NGINX}'")
+    if not result.remaining:
+        print(
+            "no OIDC provider is left: the stack now runs WITHOUT "
+            "authentication, and admin-only routes (e.g. '/ingester/') admit "
+            "only the no-auth admin. To add it if it is missing:\n"
+            f"  {STACK_INIT}"
+        )
+
+
+def do_signin(stack: pathlib.Path, args: argparse.Namespace) -> None:
+    set_signin_provider(stack, args.id)
+    print(f"'/ingester/' now signs in with {args.id!r}: run '{RESTART_NGINX}'")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="oidc_providers.py",
+        description="Add, remove and list a stack's OIDC providers.",
+    )
+    parser.add_argument(
+        "--project-dir",
+        default=".",
+        help="the stack directory (default: the current directory)",
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    listing = sub.add_parser("list", help="list the providers")
+    listing.set_defaults(func=do_list)
+
+    add = sub.add_parser("add", help="add a provider (a public client)")
+    add.add_argument("--id", required=True, help="the provider id")
+    add.add_argument("--title", required=True, help="the login button label")
+    add.add_argument(
+        "--server-url", required=True, help="the issuer URL (no trailing '/')"
+    )
+    add.add_argument("--client-id", required=True)
+    add.add_argument(
+        "--pem-file",
+        required=True,
+        help="the PEM public key that validates the provider's tokens",
+    )
+    add.add_argument("--scope", default=DEFAULT_SCOPE)
+    add.add_argument(
+        "--signin",
+        action="store_true",
+        help="make it the provider '/ingester/' signs in with",
+    )
+    add.set_defaults(func=do_add)
+
+    remove = sub.add_parser("remove", help="remove a provider")
+    remove.add_argument("id")
+    remove.add_argument(
+        "--signin-successor",
+        metavar="ID",
+        help="the provider '/ingester/' signs in with from now on",
+    )
+    remove.set_defaults(func=do_remove)
+
+    signin = sub.add_parser(
+        "signin", help="choose the provider '/ingester/' signs in with"
+    )
+    signin.add_argument("id")
+    signin.set_defaults(func=do_signin)
+
+    return parser
+
+
+def main(argv: list[str]) -> int:
+    args = build_parser().parse_args(argv)
+    stack = pathlib.Path(args.project_dir).resolve()
+    try:
+        args.func(stack, args)
+    except (OIDCProvidersError, OSError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

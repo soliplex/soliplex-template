@@ -1,11 +1,14 @@
 """End-to-end test of the room provisioner on a running auth-mode stack.
 
-Generates an ``auth_mode: auth`` stack (no Gitea), builds and brings up what
-the provisioner talks to (see ``provisioning_stack``), and authenticates
-with *service tokens* (``soliplex-cli service-token mint``): the
-provisioner mints its own; the test mints the room users'. No identity
-provider is needed, since soliplex validates service tokens (and OIDC
-tokens, against the configured PEM) locally.
+Generates a stack (no Gitea) and turns authentication on by adding an OIDC
+provider with the skill's ``oidc_providers.py``, before anything starts. It
+then builds and brings up what the provisioner talks to (see
+``provisioning_stack``), and authenticates with *service tokens*
+(``soliplex-cli service-token mint``): the provisioner mints its own; the
+test mints the room users'. The provider is never contacted, since soliplex
+validates service tokens (and OIDC tokens, against the configured PEM)
+locally; it is there because a backend with no provider runs without
+authentication. With it in place, ``stack-init`` seeds no no-auth admin.
 
 The provisioner is refused until an ``admin_users`` entry admits its
 tokens' subject -- added with the command the provisioning docs give -- so
@@ -41,7 +44,6 @@ import pytest
 _PARAMS = {
     "project_name": "soliplex-provision-auth-functest",
     "ollama_base_url": "http://ollama.invalid:11434",
-    "auth_mode": "auth",
 }
 _PROVISIONER_ENTRY = '$[?$.sub == "soliplex-provisioner"]'
 _USERS = {
@@ -102,6 +104,7 @@ def auth_stack(tmp_path_factory, refresh_embedded_template):
     ps.require_tools()
     work = tmp_path_factory.mktemp("provision-auth")
     out = ps.generate(work, _PARAMS)
+    ps.add_test_provider(out, work)
     try:
         ps.build_images(out, work)
         _skip_without_service_tokens(out)

@@ -93,7 +93,6 @@ http {
         ''      close;
     }
 
-% if not backend_auth_flag:
     # '/ingester/' gate: a 401 redirects the browser's top-level navigations
     # to sign-in, while the dashboard's own polling fetch()es must get a
     # plain 401. Any 'Sec-Fetch-Mode: navigate' request is a browser
@@ -102,7 +101,6 @@ http {
         default 0;
         navigate 1;
     }
-% endif
 
     server {
         listen 9000;
@@ -118,9 +116,10 @@ http {
         # Stack fragments: every '*.conf' under the stack's 'nginx/conf.d/'
         # (mounted read-only at /etc/nginx/conf.d/), included by both
         # servers. Skill scripts add and remove them, e.g. a route for an
-        # added service. The default below names the provider the
-        # '/ingester/' gate signs in with; a fragment's own 'set' replaces it.
-        set $soliplex_signin_provider "keycloak";
+        # added service. The variable below names the provider the
+        # '/ingester/' gate signs in with: none until 'oidc_providers.py'
+        # adds one and writes it into 'conf.d/signin-provider.conf'.
+        set $soliplex_signin_provider "";
         include /etc/nginx/conf.d/*.conf;
 
         # Custom error pages for nginx-generated errors
@@ -146,24 +145,24 @@ http {
             root /app/error-pages;
             try_files /50x.html =503;
         }
-% if not backend_auth_flag:
         # Named location for the '/ingester/' gate's 401: navigations to
         # sign-in, everything else a plain JSON 401 (see the map above).
         # '$request_uri' is still the original request's URI, so the
         # sign-in flow returns the browser to the page it wanted.
         location @ingester_signin {
+            if ($soliplex_signin_provider = "") {
+                return 401 '{"error": "signin_unavailable", "message": "No OIDC provider to sign in with; add one with scripts/oidc_providers.py"}';
+            }
             if ($soliplex_navigate) {
                 # delivery=cookie makes the login set the authn cookie the
-                # check (and its callers) read. The provider id must match
-                # an auth_systems entry in 'oidc/config.yaml': it is set at
-                # the top of this server, or by a 'conf.d/' fragment.
+                # check (and its callers) read. The provider id is an
+                # auth_systems entry in 'oidc/config.yaml', set by the
+                # 'conf.d/signin-provider.conf' fragment.
                 return 302 "/api/login/$soliplex_signin_provider?delivery=cookie&return_to=$request_uri";
             }
             return 401 '{"error": "signin_required", "message": "Sign in with an admin account to use the ingester control plane"}';
         }
-% endif
 
-% if not backend_auth_flag:
         # Internal auth_request target for the '/ingester/' gate:
         # - 204 lets the request proceed
         # - 401 lands in @ingester_signin
@@ -175,7 +174,6 @@ http {
             proxy_pass_request_body off;
             proxy_set_header Content-Length "";
         }
-% endif
 
         # Redirect HTTP to HTTPS when behind a proxy that sets
         # X-Forwarded-Proto.  Uses $http_host (not $host) to preserve the
@@ -285,15 +283,13 @@ http {
             proxy_intercept_errors off;
             error_page 502 503 504 = @backend_down;
             error_page 403 /error-pages/403.html;
-% if not backend_auth_flag:
-            # The gate (auth-mode stacks): an admin's authn cookie passes
-            # the check; anything else 401s into @ingester_signin (401) or
-            # the stack's 403 page. In no-auth stacks the backend check
-            # would answer 204 for everyone, so the gate is omitted.
+            # The gate: an admin's authn cookie passes the check; anything
+            # else 401s into @ingester_signin (401) or the stack's 403 page.
+            # A stack with no OIDC provider runs without authentication, and
+            # the check admits its no-auth admin (seeded by 'stack-init').
             auth_request /_authz_check;
             auth_request_set $soliplex_user $upstream_http_x_soliplex_user;
             error_page 401 = @ingester_signin;
-% endif
             limit_req zone=api burst=100 nodelay;
 
             # Use variable to force DNS re-resolution via the resolver directive
@@ -309,11 +305,9 @@ http {
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Port $backend_port;
             proxy_set_header X-Forwarded-Proto $backend_proto;
-% if not backend_auth_flag:
             # Set by the auth_request above ('X-Soliplex-User'); names the
             # caller for the control plane's logs.
             proxy_set_header X-Soliplex-User $soliplex_user;
-% endif
             proxy_set_header Authorization "Bearer @@INGESTER_BEARER@@";
             proxy_connect_timeout 10;
             proxy_send_timeout 60;
@@ -392,9 +386,10 @@ http {
         # Stack fragments: every '*.conf' under the stack's 'nginx/conf.d/'
         # (mounted read-only at /etc/nginx/conf.d/), included by both
         # servers. Skill scripts add and remove them, e.g. a route for an
-        # added service. The default below names the provider the
-        # '/ingester/' gate signs in with; a fragment's own 'set' replaces it.
-        set $soliplex_signin_provider "keycloak";
+        # added service. The variable below names the provider the
+        # '/ingester/' gate signs in with: none until 'oidc_providers.py'
+        # adds one and writes it into 'conf.d/signin-provider.conf'.
+        set $soliplex_signin_provider "";
         include /etc/nginx/conf.d/*.conf;
 
         # Custom error pages for nginx-generated errors
@@ -410,7 +405,6 @@ http {
             alias /app/error-pages/;
         }
 
-% if not backend_auth_flag:
         location = /_authz_check {
             internal;
             set $backend_authz "backend";
@@ -418,7 +412,6 @@ http {
             proxy_pass_request_body off;
             proxy_set_header Content-Length "";
         }
-% endif
 
         # Named location for backend-down errors on proxied requests.
         # Returns JSON for API/MCP clients and HTML for browser clients.
@@ -430,18 +423,19 @@ http {
             root /app/error-pages;
             try_files /50x.html =503;
         }
-% if not backend_auth_flag:
         location @ingester_signin {
+            if ($soliplex_signin_provider = "") {
+                return 401 '{"error": "signin_unavailable", "message": "No OIDC provider to sign in with; add one with scripts/oidc_providers.py"}';
+            }
             if ($soliplex_navigate) {
                 # delivery=cookie makes the login set the authn cookie the
-                # check (and its callers) read. The provider id must match
-                # an auth_systems entry in 'oidc/config.yaml': it is set at
-                # the top of this server, or by a 'conf.d/' fragment.
+                # check (and its callers) read. The provider id is an
+                # auth_systems entry in 'oidc/config.yaml', set by the
+                # 'conf.d/signin-provider.conf' fragment.
                 return 302 "/api/login/$soliplex_signin_provider?delivery=cookie&return_to=$request_uri";
             }
             return 401 '{"error": "signin_required", "message": "Sign in with an admin account to use the ingester control plane"}';
         }
-% endif
 
         # index.html should never be cached - it bootstraps the versioned assets
         location = /index.html {
@@ -538,15 +532,13 @@ http {
             proxy_intercept_errors off;
             error_page 502 503 504 = @backend_down;
             error_page 403 /error-pages/403.html;
-% if not backend_auth_flag:
-            # The gate (auth-mode stacks): an admin's authn cookie passes
-            # the check; anything else 401s into @ingester_signin (401) or
-            # the stack's 403 page. In no-auth stacks the backend check
-            # would answer 204 for everyone, so the gate is omitted.
+            # The gate: an admin's authn cookie passes the check; anything
+            # else 401s into @ingester_signin (401) or the stack's 403 page.
+            # A stack with no OIDC provider runs without authentication, and
+            # the check admits its no-auth admin (seeded by 'stack-init').
             auth_request /_authz_check;
             auth_request_set $soliplex_user $upstream_http_x_soliplex_user;
             error_page 401 = @ingester_signin;
-% endif
             limit_req zone=api burst=100 nodelay;
 
             # Use variable to force DNS re-resolution via the resolver directive
@@ -562,11 +554,9 @@ http {
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Port $backend_port;
             proxy_set_header X-Forwarded-Proto https;
-% if not backend_auth_flag:
             # Set by the auth_request above ('X-Soliplex-User'); names the
             # caller for the control plane's logs.
             proxy_set_header X-Soliplex-User $soliplex_user;
-% endif
             proxy_set_header Authorization "Bearer @@INGESTER_BEARER@@";
             proxy_connect_timeout 10;
             proxy_send_timeout 60;

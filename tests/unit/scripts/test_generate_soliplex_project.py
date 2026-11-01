@@ -189,7 +189,13 @@ def test_prompt_interactive_overrides(monkeypatch):
 
     result = gen.prompt_interactive(params)
 
-    assert all(result[key] == "X" for key in gen.DEFAULTS)
+    assert all(
+        result[key] == "X"
+        for key in gen.DEFAULTS
+        if key not in gen.DEPRECATED_KEYS
+    )
+    # deprecated keys are never prompted for
+    assert all(result[key] == gen.DEFAULTS[key] for key in gen.DEPRECATED_KEYS)
 
 
 def test_prompt_interactive_eof_keeps_defaults(monkeypatch):
@@ -216,7 +222,8 @@ def test_coerce_derives_defaults():
     assert result["setup_id"] == "soliplex-dojo-conf"
     assert result["server_name"] == "soliplex-dojo.localhost"
     assert result["tls_subject"].endswith("CN=soliplex-dojo.localhost")
-    assert result["backend_auth_flag"] == "--no-auth-mode "
+    # generated stacks never pass '--no-auth-mode': nothing to derive
+    assert "backend_auth_flag" not in result
     assert result["nginx_http"] == 9000
     assert "frontend_release_path" not in result
 
@@ -229,19 +236,17 @@ def test_coerce_int_error():
         gen.coerce_and_derive(params)
 
 
-def test_coerce_keeps_supplied_values_and_auth_mode():
+def test_coerce_keeps_supplied_values():
     params = dict(gen.DEFAULTS)
     params["setup_id"] = "given-id"
     params["server_name"] = "given.example"
     params["tls_subject"] = "/CN=given"
-    params["auth_mode"] = "auth"
 
     result = gen.coerce_and_derive(params)
 
     assert result["setup_id"] == "given-id"
     assert result["server_name"] == "given.example"
     assert result["tls_subject"] == "/CN=given"
-    assert result["backend_auth_flag"] == ""
 
 
 def test_coerce_derives_package_name_from_project_name():
@@ -607,12 +612,44 @@ def test_validate_bad_uid(key, value):
         gen.validate(params)
 
 
-def test_validate_bad_auth_mode():
+@pytest.mark.parametrize("value", [None, "no-auth"])
+def test_validate_accepts_deprecated_auth_mode(value):
     params = _valid_params()
-    params["auth_mode"] = "maybe"
+    params["auth_mode"] = value
 
-    with pytest.raises(gen.BadAuthMode):
+    gen.validate(params)  # does not raise
+
+
+@pytest.mark.parametrize(
+    "value, error",
+    [
+        ("auth", gen.AuthModeRemoved),
+        ("maybe", gen.BadAuthMode),
+    ],
+)
+def test_validate_bad_auth_mode(value, error):
+    params = _valid_params()
+    params["auth_mode"] = value
+
+    with pytest.raises(error):
         gen.validate(params)
+
+
+@pytest.mark.parametrize(
+    "value, warned",
+    [
+        (None, False),
+        ("no-auth", True),
+    ],
+)
+def test_warn_deprecated_auth_mode(capsys, value, warned):
+    params = _valid_params()
+    params["auth_mode"] = value
+
+    gen.warn_deprecated(params)
+
+    err = capsys.readouterr().err
+    assert ("'auth_mode' is deprecated" in err) is warned
 
 
 def test_validate_empty_constraint():
@@ -1285,6 +1322,12 @@ def test_main_happy_no_secrets_no_git(
     assert rc == 0
     assert "scripts/generate_secrets.py" in captured
     assert "not initialized" in captured
+    # providers go in before 'stack-init', which goes in before 'up'
+    assert (
+        captured.index("oidc_providers.py add")
+        < captured.index("run --rm --quiet-build stack-init")
+        < captured.index("docker compose up -d")
+    )
     load_params.assert_called_once()
     coerce_and_derive.assert_called_once_with(PARAMS)
     validate.assert_called_once_with(PARAMS)
