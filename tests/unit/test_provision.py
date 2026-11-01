@@ -77,7 +77,13 @@ def settings(tmp_path, git_config):
         mako_template.Template(
             filename=str(REPO / "haiku.rag" / "haiku.rag.yaml.mako"),
             strict_undefined=True,
-        ).render(chunk_size=256, rag_embed_model="m", rag_embed_dim=8)
+        ).render(
+            chunk_size=256,
+            rag_embed_model="m",
+            rag_embed_dim=8,
+            rag_qa_model="m",
+            include_haiku_rag_app=False,
+        )
     )
     (tmp_path / "db").mkdir()
     return provision.Settings(
