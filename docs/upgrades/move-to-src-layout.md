@@ -1,8 +1,19 @@
----
-icon: lucide/folder-tree
----
+# Move to the `src/` project layout
 
-# Migrating to the `src/` project layout
+Part of [Upgrading an existing stack](index.md).
+
+**Walk this rung with the `v0.16.2` skill release** — the release whose
+generator produces the rung's end state, and whose `migrate_layout.py`
+performs it.  It is a software release, so its skill build stays published
+(the dated `template-skill-*` builds are pruned after ten newer ones).
+
+```bash
+uv run <skill>/scripts/skill_versions.py downgrade v0.16.2
+```
+
+That release's own `skill_versions.py` has no `downgrade` command;  to move
+on to rung 1, name the next rung's release to `upgrade`, which installs
+whichever release it is given.
 
 Stacks generated before soliplex-template v0.16 put the project's package
 *directly* under `src/`, with its tests at the stack root:
@@ -29,46 +40,69 @@ every entry under `src/` a project directory of the same shape:
     <other>/                # anything you clone alongside it
 ```
 
-Nothing forces an existing stack to convert — the old layout keeps working.
-Convert when you want to clone a second repo (a `soliplex` checkout, a
-third-party dependency) into the stack without ignore rules per clone.
-
-!!! note "Not the only upgrade"
-    This page covers the `src/` layout alone. For the dependency and image
-    changes in later template releases, see
-    [Upgrading an existing stack](../upgrades/index.md).
+Every later rung assumes the new layout (rung 1, for instance, locks
+`src/<package>/pyproject.toml`), so a stack still in the old one starts
+here.  The rung moves files only:  it changes no database, RAG store,
+pin, or image.
 
 ## Use the script
 
-[:lucide-wand-sparkles: Ask the agent](using-the-skill.md#move-an-older-stack-to-the-src-layout "The soliplex-template skill can do this for you")
+[:lucide-wand-sparkles: Ask the agent](../getting-started/using-the-skill.md#move-an-older-stack-to-the-src-layout "The soliplex-template skill can do this for you")
 { .skill-link }
 
 Do not do this by hand. The skill ships `scripts/migrate_layout.py`, which
-performs every step below and asserts on the text it expects to find at each
-one:
-
-```bash
-cd <stack>
-uv run <skill>/scripts/migrate_layout.py --dry-run   # show the plan
-uv run <skill>/scripts/migrate_layout.py             # apply it
-```
-
-It reads the package name from this stack's own
-`[tool.soliplex-template.params]`, moves the tree with `git mv` so history
-follows as renames, splits `pyproject.toml`, repoints the backend's
+performs every step of [Doing it by hand](#doing-it-by-hand) and asserts on
+the text it expects to find at each one.  It reads the package name from
+this stack's own `[tool.soliplex-template.params]`, moves the tree with
+`git mv` so history follows as renames, splits `pyproject.toml` (keeping
+the stack's own `soliplex` constraint), repoints the backend's
 `PYTHONPATH`, and appends the `src/` ignore rule. Nothing is written until
-every check has passed, so a stack that has drifted from the exemplar aborts
-**intact** — it names the file and the anchor it could not find, rather than
-leaving you half-converted.
+every check has passed, so a stack that has drifted from the exemplar
+aborts **intact** — it names the file and the anchor it could not find,
+rather than leaving you half-converted.
 
-It requires a clean git checkout, so the result is reviewable as a diff
-(`--force` waives that). Verify with:
+1. **Show the plan**, from the stack directory:
 
-```bash
-cd src/<package> && uv sync && uv run pytest
-cd <stack> && uv sync && uv run zensical build
-docker compose up -d backend
-```
+    ```bash
+    uv run <skill>/scripts/migrate_layout.py --dry-run
+    ```
+
+2. **Apply it.**  It requires the clean git checkout that
+   [Before you start](index.md#before-you-start) set up, so the result is
+   reviewable as a diff (`--force` waives that, and moves files without
+   `git mv`):
+
+    ```bash
+    uv run <skill>/scripts/migrate_layout.py
+    ```
+
+    If it reports a drifted file, reconcile that one file by hand, using
+    the matching step of [Doing it by hand](#doing-it-by-hand), and
+    re-run.
+
+3. **Verify both halves.**  The library, from its own project directory,
+   and the stack root, which is the half a hand migration usually breaks:
+
+    ```bash
+    (cd src/<package> && uv sync && uv run pytest)
+    uv sync && uv run zensical build
+    ```
+
+4. **Start the stack** with `docker compose up -d`, so the backend picks
+   up the new `PYTHONPATH`.  Ask the `custom` room to greet someone, which
+   exercises the dotted `<package>.tools.greeting` name through it:
+
+    ```bash
+    docker compose run --rm --no-deps backend \
+        soliplex-cli ask /environment custom "Greet Alice"
+    ```
+
+    Then [**Check it**](index.md#check-it), and commit.
+
+5. **Tidy the loose ends**, at your leisure: the dotted names in
+   `backend/environment/` do not change, but comments in
+   `installation.yaml` and `backend/environment/rooms/custom/room_config.yaml`
+   still point at the old paths.
 
 The rest of this page documents what the script does, step by step. Read it if
 the script reported a drifted file and you need to reconcile that step by
@@ -260,51 +294,10 @@ uv run zensical build   # must not fail with "Failed to spawn: zensical"
 Then open the `custom` room and ask it to greet someone: that exercises the
 dotted `<package>.tools.greeting` name through the new `PYTHONPATH`.
 
-## Checking the whole stack against a reference
+## Once converted
 
-For more than a smoke test, generate a throwaway stack from this stack's own
-generation manifest and diff the two. The manifest under
-`[tool.soliplex-template.params]` records every parameter the stack was built
-with, so the reference is the stack as the current generator would scaffold
-it:
-
-```bash
-cd <stack>
-
-# Build a params file from the manifest. The generator recomputes derived
-# values, so they are not accepted as input -- drop them. (If it rejects
-# others, its error message names them; add those to the list.)
-python3 - <<'EOF' > /tmp/ref-params.json
-import json, pathlib, tomllib
-
-manifest = tomllib.loads(pathlib.Path("pyproject.toml").read_text())
-params = manifest["tool"]["soliplex-template"]["params"]
-for derived in ("package_name", "frontend_release_path", "backend_auth_flag"):
-    params.pop(derived, None)
-print(json.dumps(params, indent=2))
-EOF
-
-# <skill> is wherever the soliplex-template skill is installed, e.g.
-# ~/.claude/skills/soliplex-template
-uv run <skill>/scripts/generate_soliplex_project.py \
-    --out /tmp/ref-stack --params /tmp/ref-params.json \
-    --no-git --no-generate-secrets
-
-diff -u /tmp/ref-stack/pyproject.toml pyproject.toml
-diff -ru /tmp/ref-stack/src src
-```
-
-Two differences are expected and harmless: `skill_source_commit` and
-`skill_generated` in the manifest record *your* stack's generation, and the
-reference's are blank or current. Anything else is a real divergence.
-
-## Loose ends
-
-The dotted names in `backend/environment/` do not change — only where the
-package directory sits on disk does. Comments in `installation.yaml` and
-`backend/environment/rooms/custom/room_config.yaml` still point at the old
-paths; update them at your leisure.
-
-Once converted, see [Custom Python
+See [Custom Python
 package](../users/custom-package.md#adding-a-second-project) for what to do
-when you clone another repo into `src/`.
+when you clone another repo into `src/`, and compare the result against a
+reference stack (see the tip at the top of
+[Upgrading an existing stack](index.md)) for more than a smoke test.

@@ -14,6 +14,7 @@ the section your stack is at, and work forward from there.
 
 | Your stack | What its files show | Skill release to walk with | Start at |
 |---|---|---|---|
+| generated before soliplex-template v0.16 | the package sits directly under `src/` (`src/<package>/tools.py`), with `tests/` at the stack root | `v0.16.2` | [0](move-to-src-layout.md) |
 | soliplex 0.84 or earlier | `backend/constraints.txt` pins below `0.85` | `template-skill-2026.10.10-37f7a2d` | [1](move-to-soliplex-0.85.md) |
 | soliplex 0.85, built from PyPI | `backend/Dockerfile` runs `uv add … soliplex` | `template-skill-2026.10.14-9a17a20` | [2](build-on-soliplex-release-images.md) |
 | on the 0.85 release images | `backend/Dockerfile` builds `FROM ghcr.io/soliplex/soliplex-postgres:0.85` | `template-skill-2026.10.24-932e134` | [3](move-to-soliplex-0.86.1.md) |
@@ -31,7 +32,7 @@ with. (`skill_version` may be empty.)
     generate a throwaway stack with **the skill release the rung
     walks with** (see Before you start #1) and your own parameters,
     and diff the two; see
-    [Checking the whole stack against a reference](../getting-started/migrating-layout.md#checking-the-whole-stack-against-a-reference).
+    [Checking the whole stack against a reference](#checking-the-whole-stack-against-a-reference).
 
 !!! note "Which `haiku.rag` pairs with which soliplex?"
     The two pins are not a free pair: the ingester writes the LanceDB the
@@ -286,6 +287,47 @@ reasons of its own, such as models missing on the Ollama server
 and persist its thread. Open the frontend (`http://localhost:9000` by
 default) for a last look.
 
+### Checking the whole stack against a reference
+
+For more than a smoke test, generate a throwaway stack from this stack's own
+generation manifest, with the skill release the rung walks with, and diff the
+two. The manifest under `[tool.soliplex-template.params]` records every
+parameter the stack was built with, so the reference is the stack as that
+release's generator would scaffold it:
+
+```bash
+cd <stack>
+
+# Build a params file from the manifest. The generator recomputes derived
+# values, so they are not accepted as input -- drop them. (If it rejects
+# others, its error message names them; add those to the list.)
+python3 - <<'EOF' > /tmp/ref-params.json
+import json, pathlib, tomllib
+
+manifest = tomllib.loads(pathlib.Path("pyproject.toml").read_text())
+params = manifest["tool"]["soliplex-template"]["params"]
+for derived in ("package_name", "frontend_release_path", "backend_auth_flag"):
+    params.pop(derived, None)
+print(json.dumps(params, indent=2))
+EOF
+
+uv run <skill>/scripts/generate_soliplex_project.py \
+    --out /tmp/ref-stack --params /tmp/ref-params.json \
+    --no-git --no-generate-secrets
+```
+
+Then diff the files the rung changed, e.g. for
+[rung 0](move-to-src-layout.md):
+
+```bash
+diff -u /tmp/ref-stack/pyproject.toml pyproject.toml
+diff -ru /tmp/ref-stack/src src
+```
+
+Two differences are expected and harmless: `skill_source_commit` and
+`skill_generated` in the manifest record *your* stack's generation, and the
+reference's are blank or current. Anything else is a real divergence.
+
 ### Afterwards
 
 The stack's own agent guide (`AGENTS.md`, or `CLAUDE.md` in older
@@ -312,6 +354,7 @@ rolls out is the *state*:  the migration steps the rung rehearsed run
 
 One page per rung:
 
+- [0: Move to the `src/` project layout](move-to-src-layout.md)
 - [1: Move to soliplex 0.85](move-to-soliplex-0.85.md)
 - [2: Build on the soliplex release images](build-on-soliplex-release-images.md)
 - [3: Move to soliplex 0.86.1 and haiku.rag 0.101.0](move-to-soliplex-0.86.1.md)

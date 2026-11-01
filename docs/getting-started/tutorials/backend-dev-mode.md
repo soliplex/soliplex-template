@@ -27,7 +27,7 @@ up at least once.
 
 - A stack **in the v0.16 `src/` project layout**. If you generated yours by
   following an earlier version of these tutorials, convert it first — see
-  [Migrating to the `src/` project layout](../migrating-layout.md). This is
+  [Move to the `src/` project layout](../../upgrades/move-to-src-layout.md). This is
   not optional, and nothing will stop you: an older stack has
   `PYTHONPATH: /app/src`, which `src_projects.py` happily appends to, leaving
   the mount point itself an import root. `src/` is then a `sys.path` entry, so
