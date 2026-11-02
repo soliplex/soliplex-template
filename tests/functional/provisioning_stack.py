@@ -33,6 +33,7 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCRIPTS = REPO_ROOT / "skills" / "soliplex-template" / "scripts"
 GENERATOR = SCRIPTS / "generate_soliplex_project.py"
 PROVISION_ROOM = SCRIPTS / "provision_room.py"
+OIDC_PROVIDERS = SCRIPTS / "oidc_providers.py"
 SOLIPLEX_CLI = "/app/.venv/bin/soliplex-cli"
 
 SOLIPLEX_REPO_ENV = "SOLIPLEX_FUNCTEST_SOLIPLEX_REPO"
@@ -142,8 +143,9 @@ def _soliplex_override(work: pathlib.Path) -> pathlib.Path | None:
 
 
 def build_images(out: pathlib.Path, work: pathlib.Path) -> None:
-    """Build ``backend`` (any soliplex override), ``soliplex-dev`` and
-    ``soliplex-provisioner`` (which shares the latter's build).
+    """Build ``backend`` (any soliplex override), ``soliplex-dev``,
+    ``soliplex-provisioner`` and ``stack-init`` (which share the
+    ``soliplex-dev`` build).
 
     ``backend/requirements.txt`` gains an extra that depends on soliplex
     (soliplex itself), which installs only when the image's own soliplex is
@@ -189,14 +191,17 @@ def build_images(out: pathlib.Path, work: pathlib.Path) -> None:
             f"SOLIPLEX_TEMPLATE={requirement}",
             "soliplex-dev",
             "soliplex-provisioner",
+            "stack-init",
         ),
-        "building soliplex-dev / soliplex-provisioner",
+        "building soliplex-dev / soliplex-provisioner / stack-init",
     )
 
 
 def up(out: pathlib.Path) -> None:
-    """Bring up postgres, then the backend and the ingester."""
+    """Bring up postgres, run ``stack-init``, then bring up the backend and
+    the ingester: the order the generator's next steps give."""
     check(compose(out, "up", "-d", "--wait", "postgres"), "postgres up")
+    check(compose(out, "run", "--rm", "--no-TTY", "stack-init"), "stack-init")
     check(
         compose(
             out,
@@ -210,6 +215,51 @@ def up(out: pathlib.Path) -> None:
             "haiku-ingester",
         ),
         "backend / haiku-ingester up",
+    )
+
+
+# The token-validation key of the provider 'add_test_provider' writes: a
+# real RSA public key whose private half nobody holds. Nothing ever signs in
+# with that provider; it is there so the backend runs with authentication.
+_TEST_PROVIDER_PEM = """\
+-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAutt7XlnN7OtFx7p6WMif
+SlUYMQ62RO/7x5hwWsvYhdHejd9KDBP8EZxIWk3vsMD0JhVl2cMNwMEqyU0CqHrS
+E13+79lpG9trpfM674JyE9LwuGYX0YCkwtWA5zwlXjbHObr7WgziDP4+Nfs/1mtv
+qERlvChBX6pyz/bgFtA9a0eZlXZbXSP5XwiHtHhMTil4MWBihLiN7nU7r0goduyf
+eB7WiOJQ/p6kl/Y+FKdnVt8KHAudA2iErJ8mlPKaWLob5MipNsCB7WVTn16qq/O/
+PYiyk134+YXSMfWM8GxRb8/WtfwYlkaXXCB1YAj5M0O3RJLhTEvXMo2KUilOhKXX
+DQIDAQAB
+-----END PUBLIC KEY-----
+"""
+
+
+def add_test_provider(out: pathlib.Path, work: pathlib.Path) -> None:
+    """Turn authentication on: add a never-contacted OIDC provider with the
+    skill's ``oidc_providers.py``, as an operator would before ``up``."""
+    pem = work / "test-provider.pem"
+    pem.write_text(_TEST_PROVIDER_PEM)
+    check(
+        run(
+            "uv",
+            "run",
+            "--quiet",
+            OIDC_PROVIDERS,
+            "--project-dir",
+            out,
+            "add",
+            "--id",
+            "functest",
+            "--title",
+            "Functest",
+            "--server-url",
+            "https://idp.invalid/realms/functest",
+            "--client-id",
+            "soliplex",
+            "--pem-file",
+            pem,
+        ),
+        "adding the test OIDC provider",
     )
 
 

@@ -191,6 +191,12 @@ def test_key_artifacts_exist(generated_project):
         "README.md",
         "backend/environment/installation.yaml",
         "nginx/nginx.conf",
+        # keeps the bind-mounted fragment directory in every stack
+        "nginx/conf.d/README.md",
+        "stack-init/README.md",
+        "stack-init/run.sh",
+        "stack-init/init.d/10-no-auth-admin.py",
+        "stack-init/init.d/20-provisioner-admin.py",
         "postgres/config/init.sh",
         "scripts/generate_env.py",
         "scripts/generate_secrets.py",
@@ -390,13 +396,73 @@ def test_backend_cookie_exempted_from_proxy_cookie_flags(generated_project):
     assert nginx.index(exemption) < nginx.index(catch_all)
 
 
+def test_nginx_conf_d_fragments(generated_project):
+    # Both servers include the stack's fragment directory, after a default
+    # for the '/ingester/' gate's sign-in provider that a fragment can
+    # override; compose mounts the directory read-only.
+    out, _params = generated_project
+
+    compose = yaml.safe_load(_read(out, "docker-compose.yml"))
+    nginx = _read(out, "nginx/nginx.conf")
+
+    default = 'set $soliplex_signin_provider "";'
+    include = "include /etc/nginx/conf.d/*.conf;"
+    assert nginx.count(default) == 2
+    assert nginx.count(include) == 2
+    first_server = nginx.index("listen 9000;")
+    second_server = nginx.index("listen 9443 ssl;")
+    for start, end in ((first_server, second_server), (second_server, None)):
+        server = nginx[start:end]
+        assert server.index(default) < server.index(include)
+    assert {
+        "type": "bind",
+        "source": "./nginx/conf.d",
+        "target": "/etc/nginx/conf.d",
+        "read_only": True,
+    } in compose["services"]["nginx"]["volumes"]
+
+
+def test_stack_starts_without_a_provider(generated_project):
+    # D1/D3: no provider at generation, so no authentication; the backend
+    # never runs '--no-auth-mode' (zero auth_systems already means no-auth),
+    # and the placeholder 'keycloak' provider is gone.
+    out, _params = generated_project
+
+    compose = yaml.safe_load(_read(out, "docker-compose.yml"))
+    oidc = yaml.safe_load(_read(out, "backend/environment/oidc/config.yaml"))
+
+    assert oidc["auth_systems"] == []
+    assert "--no-auth-mode" not in compose["services"]["backend"]["command"]
+    assert not (out / "keycloak").exists()
+    assert not (out / "nginx" / "conf.d" / "signin-provider.conf").exists()
+
+
+def test_stack_init_service(generated_project):
+    # D1: a profiled one-shot that prepares the databases and runs the
+    # 'stack-init/init.d/' steps before the first 'up'.
+    out, _params = generated_project
+
+    compose = yaml.safe_load(_read(out, "docker-compose.yml"))
+
+    services = compose["services"]
+    init = services["stack-init"]
+    assert init["profiles"] == ["init"]
+    assert init["command"] == ["sh", "/stack-init/run.sh"]
+    assert init["build"] == services["soliplex-dev"]["build"]
+    assert init["secrets"] == services["soliplex-dev"]["secrets"]
+    assert init["environment"] == services["backend"]["environment"]
+    assert init["depends_on"] == {"postgres": {"condition": "service_healthy"}}
+    assert "./stack-init:/stack-init:ro" in init["volumes"]
+    assert "./backend/environment:/environment/" in init["volumes"]
+
+
 def test_ingester_bearer_gate_wiring(generated_project):
     # #104/#244: nginx injects the control plane's bearer (from the
     # ingester_bearer secret) on everything it proxies under /ingester/, and
     # the ingester serves the control plane under that prefix
     # (serve --root-path /ingester: routes match the stripped path; root_path
     # keeps the dashboard's <base href> and generated redirects inside it).
-    # This module's stack is a no-auth stack: no gate machinery rendered.
+    # The gate renders whether or not the stack has an OIDC provider.
     out, _params = generated_project
 
     compose = _read(out, "docker-compose.yml")
@@ -416,9 +482,30 @@ def test_ingester_bearer_gate_wiring(generated_project):
     # the prefix strip (root_path pairing) and no rewrite of the app's own
     # trailing-redirect behaviour
     assert nginx.count(r"rewrite ^/ingester/?(.*)$ /$1 break;") == 2
-    # no-auth: no gate
-    assert "auth_request" not in nginx
-    assert "@ingester_signin" not in nginx
+    # the gate renders into both servers, pointing at the backend's check
+    # endpoint for the ingester resource
+    assert nginx.count("auth_request /_authz_check;") == 2
+    assert nginx.count("location = /_authz_check {") == 2
+    assert (
+        nginx.count(
+            "auth_request_set $soliplex_user $upstream_http_x_soliplex_user;"
+        )
+        == 2
+    )
+    # navigations sign in with the fragment's provider (none until one is
+    # added); fetches get the JSON 401
+    assert "map $http_sec_fetch_mode $soliplex_navigate {" in nginx
+    assert nginx.count("location @ingester_signin {") == 2
+    assert nginx.count('if ($soliplex_signin_provider = "") {') == 2
+    assert (
+        nginx.count(
+            'return 302 "/api/login/$soliplex_signin_provider?delivery=cookie'
+            '&return_to=$request_uri"'
+        )
+        == 2
+    )
+    assert '{"error": "signin_required", "message"' in nginx
+    assert '{"error": "signin_unavailable", "message"' in nginx
 
     # nginx renders the bearer into its config at container start, loudly
     # failing when the secret file is missing/empty
@@ -1268,15 +1355,11 @@ def test_include_tui_renders_valid_compose(
     assert cfg.returncode == 0, cfg.stderr
 
 
-@pytest.mark.needs_docker
-def test_ingester_bearer_gate_auth_mode(
-    tmp_path, docker_required, refresh_embedded_template
+def test_generation_refuses_auth_mode_auth(
+    tmp_path, refresh_embedded_template
 ):
-    # #104: with auth_mode=auth the proxy gates /ingester/ behind the
-    # backend's admin check: 204 passes; a 401 redirects top-level
-    # navigations (Sec-Fetch-Mode: navigate) to sign-in while the dashboard's
-    # polling fetches get a plain JSON 401; a check-side 403 gets the stack's
-    # error page. And the backend runs WITHOUT --no-auth-mode.
+    # D3: providers are never configured at generation; 'auth_mode: auth'
+    # points at the skill's add-provider step instead.
     missing = [t for t in _GEN_TOOLS if shutil.which(t) is None]
     if missing:
         pytest.skip(f"generation needs {', '.join(_GEN_TOOLS)}")
@@ -1301,39 +1384,9 @@ def test_ingester_bearer_gate_auth_mode(
         text=True,
     )
 
-    assert result.returncode == 0, result.stderr
-
-    compose = _read(out, "docker-compose.yml")
-    nginx = _read(out, "nginx/nginx.conf")
-
-    # the gate renders into both servers, pointing at the backend's check
-    # endpoint for the ingester resource
-    assert nginx.count("auth_request /_authz_check;") == 2
-    assert nginx.count("location = /_authz_check {") == 2
-    assert (
-        nginx.count(
-            "auth_request_set $soliplex_user $upstream_http_x_soliplex_user;"
-        )
-        == 2
-    )
-    # navigations sign in; fetches get the JSON 401
-    assert "map $http_sec_fetch_mode $soliplex_navigate {" in nginx
-    assert nginx.count("location @ingester_signin {") == 2
-    assert (
-        nginx.count(
-            'return 302 "/api/login/keycloak?delivery=cookie'
-            '&return_to=$request_uri"'
-        )
-        == 2
-    )
-    assert '{"error": "signin_required", "message"' in nginx
-
-    assert (
-        "--no-auth-mode"
-        not in yaml.safe_load(compose)["services"]["backend"]["command"]
-    )
-    cfg = _compose(out, "config", "-q")
-    assert cfg.returncode == 0, cfg.stderr
+    assert result.returncode == 2
+    assert "oidc_providers.py" in result.stderr
+    assert not out.exists()
 
 
 @pytest.fixture

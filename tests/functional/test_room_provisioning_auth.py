@@ -1,15 +1,19 @@
 """End-to-end test of the room provisioner on a running auth-mode stack.
 
-Generates an ``auth_mode: auth`` stack (no Gitea), builds and brings up what
-the provisioner talks to (see ``provisioning_stack``), and authenticates
-with *service tokens* (``soliplex-cli service-token mint``): the
-provisioner mints its own; the test mints the room users'. No identity
-provider is needed, since soliplex validates service tokens (and OIDC
-tokens, against the configured PEM) locally.
+Generates a stack (no Gitea) and turns authentication on by adding an OIDC
+provider with the skill's ``oidc_providers.py``, before anything starts. It
+then builds and brings up what the provisioner talks to (see
+``provisioning_stack``), and authenticates with *service tokens*
+(``soliplex-cli service-token mint``): the provisioner mints its own; the
+test mints the room users'. The provider is never contacted, since soliplex
+validates service tokens (and OIDC tokens, against the configured PEM)
+locally; it is there because a backend with no provider runs without
+authentication. With it in place, ``stack-init`` seeds no no-auth admin.
 
-The provisioner is refused until an ``admin_users`` entry admits its
-tokens' subject -- added with the command the provisioning docs give -- so
-the tests run in file order: the refusal first, then the admitted run.
+``stack-init`` (run by ``ps.up``) adds the ``admin_users`` entry that
+admits the provisioner's tokens; without it the provisioner is refused. So
+the tests run in file order: the entry ``stack-init`` added, the refusal once
+it is deleted, then the admitted run after ``stack-init`` restores it.
 Last, the provisioner service provisions a room for a requester admitted
 by a ``__provision__`` policy, and refuses one who is not.
 
@@ -41,7 +45,6 @@ import pytest
 _PARAMS = {
     "project_name": "soliplex-provision-auth-functest",
     "ollama_base_url": "http://ollama.invalid:11434",
-    "auth_mode": "auth",
 }
 _PROVISIONER_ENTRY = '$[?$.sub == "soliplex-provisioner"]'
 _USERS = {
@@ -94,7 +97,8 @@ def _mint(out, claims) -> str:
 
 @pytest.fixture(scope="module")
 def auth_stack(tmp_path_factory, refresh_embedded_template):
-    """A generated auth-mode stack, up, with no admin users yet.
+    """A generated stack with a provider, up: ``stack-init`` has admitted
+    only the provisioner.
 
     Yields ``(out, tokens)``: ``tokens`` maps each name in ``_USERS`` to a
     minted service token.
@@ -102,6 +106,7 @@ def auth_stack(tmp_path_factory, refresh_embedded_template):
     ps.require_tools()
     work = tmp_path_factory.mktemp("provision-auth")
     out = ps.generate(work, _PARAMS)
+    ps.add_test_provider(out, work)
     try:
         ps.build_images(out, work)
         _skip_without_service_tokens(out)
@@ -116,20 +121,40 @@ def _provision(out, name):
     return ps.provision(out, "--username", "alice", "--name", name)
 
 
+def _admin_users(out) -> list[str]:
+    listed = ps.check(
+        ps.soliplex_cli(out, "admin-users", "list", "/environment"),
+        "admin-users list",
+    )
+    return json.loads(listed.strip().splitlines()[-1])["admin_users"]
+
+
 @pytest.fixture(scope="module")
-def provisioned(auth_stack):
-    """The provisioning run, once an admin entry admits the provisioner."""
+def unadmitted(auth_stack):
+    """The stack, with the provisioner's admin entry deleted."""
     out, tokens = auth_stack
     ps.check(
         ps.soliplex_cli(
             out,
             "admin-users",
-            "add",
+            "delete",
             "/environment",
             "--json-path",
             _PROVISIONER_ENTRY,
         ),
-        "admin-users add",
+        "admin-users delete",
+    )
+    return out, tokens
+
+
+@pytest.fixture(scope="module")
+def provisioned(unadmitted):
+    """The provisioning run, once a re-run of ``stack-init`` admits the
+    provisioner again."""
+    out, tokens = unadmitted
+    ps.check(
+        ps.compose(out, "run", "--rm", "--no-TTY", "stack-init"),
+        "stack-init",
     )
     return out, tokens, _provision(out, "Q3 Plans")
 
@@ -151,8 +176,18 @@ def _rooms_as(out, token) -> dict:
 
 
 @pytest.mark.needs_docker
-def test_provision_room_refused_until_admitted(auth_stack):
+def test_stack_init_admits_the_provisioner(auth_stack):
     out, _tokens = auth_stack
+
+    admins = _admin_users(out)
+
+    # the provisioner's entry, and no no-auth admin: the stack has a provider
+    assert admins == [_PROVISIONER_ENTRY]
+
+
+@pytest.mark.needs_docker
+def test_provision_room_refused_until_admitted(unadmitted):
+    out, _tokens = unadmitted
 
     result = _provision(out, "Refused Before Admission")
 
@@ -161,6 +196,7 @@ def test_provision_room_refused_until_admitted(auth_stack):
         result.stderr
     )
     assert f"'{_PROVISIONER_ENTRY}'" in result.stderr
+    assert "stack-init" in result.stderr
     clone = out / "src" / "rooms-provisioned"
     assert not (clone / "alice:refused-before-admission").exists()
 

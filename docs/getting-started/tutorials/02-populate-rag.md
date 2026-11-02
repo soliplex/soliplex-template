@@ -16,9 +16,11 @@ continues from [First steps](01-first-steps.md).
 
 ## 1. Bring the stack up
 
-From the generated project directory:
+From the generated project directory, prepare the databases once (if you
+haven't yet), then start the stack:
 
 ```bash
+docker compose run --rm --quiet-build stack-init
 docker compose up
 ```
 
@@ -38,10 +40,11 @@ rsync -rv ~/projects/soliplex/docs/ rag/docs/
 
 Watch progress on the ingester dashboard:
 
-- No-auth stacks (the default) serve it at <http://localhost:9000/ingester/>
-  with the bearer injected at the proxy — nothing to type;
+- Stacks with no OIDC provider (the default) serve it at
+  <http://localhost:9000/ingester/> with the bearer injected at the proxy —
+  nothing to type;
 
-- Auth-mode stacks serve it (gated on the soliplex admin check)
+- Stacks with a provider serve it (gated on the soliplex admin check)
   at <https://localhost:9443/ingester/> and redirect to sign-in first.
 
 Once `/stats` shows the documents processed and the job queue drained, the

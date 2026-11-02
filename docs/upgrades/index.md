@@ -21,6 +21,7 @@ the section your stack is at, and work forward from there.
 | soliplex 0.86.1 | `backend/Dockerfile` builds `FROM ghcr.io/soliplex/soliplex-postgres:0.86.1` | `v0.19b2` | [4](move-to-soliplex-0.87.md) |
 | soliplex 0.87 | `nginx/nginx.conf` rewrites other cookies' `SameSite` via a catch-all `proxy_cookie_flags`; the ingester bearer rides an `INGESTER_TOKEN` compose environment entry | `v0.19` | [5](serve-through-nginx.md) |
 | soliplex 0.87, serving through nginx | `nginx/nginx.conf` routes `/ingester/`; `docker-compose.yml` has no `soliplex-provisioner` service | `v0.20` | [6](provision-rooms-on-request.md) |
+| soliplex 0.89, provisioning rooms | `docker-compose.yml` has a `soliplex-provisioner` service but no `stack-init` one; `nginx/nginx.conf` includes nothing from `conf.d/` | `v0.21b1` | [7](oidc-providers-and-stack-init.md) |
 
 The `[tool.soliplex-template]` manifest at the end of the stack's
 `pyproject.toml` records the skill commit (`skill_source_commit`) and date
@@ -363,6 +364,7 @@ One page per rung:
 - [4: Move to soliplex 0.87](move-to-soliplex-0.87.md)
 - [5: Serve through nginx](serve-through-nginx.md)
 - [6: Provision rooms on request](provision-rooms-on-request.md)
+- [7: OIDC providers and stack-init](oidc-providers-and-stack-init.md)
 
 ??? note "Appendix: the generated `soliplex` ↔ `haiku.rag-slim` pairing table"
 

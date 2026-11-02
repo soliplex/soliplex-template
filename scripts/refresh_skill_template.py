@@ -186,6 +186,15 @@ Set `OLLAMA_BASE_URL` in `.env` if it is not already correct.
 
 <%text>## Run the stack</%text>
 
+Before the first `up`, prepare the databases (see
+[stack-init/README.md](stack-init/README.md)):
+
+```bash
+docker compose run --rm --quiet-build stack-init
+```
+
+Then:
+
 ```bash
 docker compose up            # foreground
 docker compose up -d         # detached
@@ -193,6 +202,14 @@ docker compose logs -f backend
 docker compose down          # stop (keeps the postgres_data volume)
 docker compose down -v       # stop AND wipe the postgres volume
 ```
+
+<%text>## Sign-in</%text>
+
+The stack starts with no OIDC provider, and so **without authentication**:
+anyone who reaches nginx uses it as Soliplex's no-auth user. To require
+sign-in, add a provider with the `soliplex-template` skill's
+`scripts/oidc_providers.py` (ideally before the first `up`), then give your
+own account admin rights as it tells you.
 
 <%text>## Ports</%text>
 
@@ -538,7 +555,6 @@ PROBE = dict(
     gitea_http_port=7,
     gitea_ssh_port=8,
     server_name="probe",
-    backend_auth_flag="",
     tls_subject="probe",
     chat_model="m",
     chat_model_alt="m",
