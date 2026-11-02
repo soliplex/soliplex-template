@@ -64,6 +64,15 @@ embeddings:
     name: ${rag_embed_model}
     provider: ollama
     vector_dim: ${rag_embed_dim}
+% if include_haiku_rag_app:
+
+# The haiku.rag web app's chat ('haiku-rag-app-backend' reads this file):
+# match the backend's 'qa' model, rather than haiku.rag's own default.
+qa:
+  model:
+    name: ${rag_qa_model}
+    provider: ollama
+% endif
 
 providers:
   docling_serve:

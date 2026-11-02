@@ -575,6 +575,8 @@ PROBE = dict(
     docs_dir="d",
     include_gitea=True,
     include_tui=True,
+    include_haiku_rag_app=True,
+    haiku_rag_app_port=9444,
     enable_sandbox=True,
     soliplex_template_manifest="[tool.soliplex-template]\n",
 )
