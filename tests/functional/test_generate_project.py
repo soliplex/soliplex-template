@@ -196,6 +196,7 @@ def test_key_artifacts_exist(generated_project):
         "stack-init/README.md",
         "stack-init/run.sh",
         "stack-init/init.d/10-no-auth-admin.py",
+        "stack-init/init.d/20-provisioner-admin.py",
         "postgres/config/init.sh",
         "scripts/generate_env.py",
         "scripts/generate_secrets.py",

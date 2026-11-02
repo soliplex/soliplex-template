@@ -692,12 +692,11 @@ first use), which reloads the ingester and the backend. The stack's
    ```
 
    The provisioner authenticates with service tokens it mints for itself
-   (subject `soliplex-provisioner`). With OIDC on, the backend admits them
-   only through an `admin_users` entry; the provisioner checks before
-   changing anything, and names the entry it needs. Adding it is the
-   operator's one-time decision (the stack's
-   `docs/operations/room-provisioning.md` gives the command): ask the user
-   rather than adding it yourself.
+   (subject `soliplex-provisioner`). The backend admits them through an
+   `admin_users` entry, which `stack-init` adds; the provisioner checks
+   before changing anything, and names the entry when it is missing. Then
+   offer to run `docker compose run --rm --quiet-build stack-init`, which
+   adds it; ask the user rather than running it yourself.
 
 3. **Read the outcome**: exit `0` means the room is live; `1` means the room
    is committed but a later step failed — relay each printed "still to do"

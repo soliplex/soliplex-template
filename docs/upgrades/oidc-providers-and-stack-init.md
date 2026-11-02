@@ -24,9 +24,10 @@ require sign-in, and adds a setup step that runs before `up`. What changes:
   provider the `/ingester/` gate signs in with
 - the `/ingester/` gate is in every stack, not only in stacks with a provider
 - a `stack-init` service brings the Soliplex databases to their current
-  schema and runs the setup steps in `stack-init/init.d/`; its first step
-  makes Soliplex's no-auth user an admin while the stack has no provider,
-  which `--no-auth-mode` used to do implicitly
+  schema and runs the setup steps in `stack-init/init.d/`: one makes
+  Soliplex's no-auth user an admin while the stack has no provider, which
+  `--no-auth-mode` used to do implicitly; another adds the `admin_users`
+  entry that admits the room provisioner
 
 Where a step differs, it says which kind of stack it means:
 
@@ -164,8 +165,12 @@ compare against a stack the rung's release generates.
     ```
 
     In a **stack without a provider**, `--no-auth-mode` already made the
-    no-auth user an admin, so `stack-init` reports that it is one. In a
-    **stack with a provider**, it adds no admin.
+    no-auth user an admin, so `stack-init` reports that fact. In a
+    **stack with a provider**, it does not add the no-auth user as an
+    admin.
+
+    In both, it admits the room provisioner, unless rung 6's step 12
+    already did: it reports either way.
 
 10. [**Check it**](index.md#check-it).
 

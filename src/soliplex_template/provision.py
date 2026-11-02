@@ -47,9 +47,10 @@ the backend's reload and the tracking issue's update run without it.
 It authenticates to the backend with a service token it mints for each
 call (subject ``soliplex-provisioner`` by default, five minutes'
 lifetime), signed with the stack's ``url_safe_token_secret`` as the backend
-reads it; an ``admin_users`` entry matching that subject admits it. Before
-taking the lock, it checks that the backend does (a backend in no-auth mode
-admits any caller).
+reads it; an ``admin_users`` entry matching that subject admits it, which
+the stack's ``stack-init`` adds. Before taking the lock, it checks that the
+backend does (a backend with no OIDC provider treats every caller as its
+no-auth user, which ``stack-init`` also makes an admin).
 
 The ``soliplex-provision-room`` console script (:func:`main`) runs it from
 the command line, configured from the environment (see
@@ -157,8 +158,9 @@ class AdminAccessDenied(ProvisionError):
         self.code, self.subject, self.mint_error = code, subject, mint_error
         message = (
             f"the backend refused the provisioner's admin access (HTTP "
-            f"{code}): add an 'admin_users' entry matching its service "
-            f"tokens, '$[?$.sub == {json.dumps(subject)}]'"
+            f"{code}): run 'docker compose run --rm --quiet-build "
+            f"stack-init', which adds the 'admin_users' entry matching its "
+            f"service tokens, '$[?$.sub == {json.dumps(subject)}]'"
         )
         if mint_error is not None:
             message += f"; minting its service token failed: {mint_error}"
@@ -396,7 +398,8 @@ def _backend(settings: Settings, method: str, path: str) -> dict:
     """Call the backend's API with a freshly minted service token.
 
     When minting fails, the call goes out without a token (which a backend
-    in no-auth mode accepts); a refusal then reports the minting failure.
+    with no OIDC provider accepts as its no-auth user); a refusal then
+    reports the minting failure.
     """
     url = f"{settings.backend_url.rstrip('/')}/api{path}"
     headers = {"Accept": "application/json"}
@@ -431,7 +434,7 @@ def check_admin_access(settings: Settings) -> None:
     """Raise :class:`AdminAccessDenied` unless the backend admits us.
 
     That is, unless it admits the provisioner's service tokens as an admin's
-    (or runs in no-auth mode).
+    (or, with no OIDC provider, its no-auth user is an admin).
     """
     _backend(settings, "GET", "/v1/installation")
 

@@ -113,8 +113,20 @@ provisioning fails its rooms audit and rolls back.
 The provisioner authenticates to the backend with service tokens it mints
 for itself (`soliplex-cli service-token mint`, signed with the stack's
 `url_safe_token_secret`): a fresh one for each call, valid for five
-minutes, with the subject `soliplex-provisioner`. Nothing is stored. Admit
-those tokens as an admin once, by their subject:
+minutes, with the subject `soliplex-provisioner`. Nothing is stored. The
+backend admits those tokens as an admin's through an `admin_users` entry
+matching their subject, which `stack-init` adds (its
+`init.d/20-provisioner-admin.py` step):
+
+```bash
+docker compose run --rm --quiet-build stack-init
+```
+
+Without the entry, the provisioner stops before changing anything, naming
+the entry it needs, and the `soliplex-provisioner` service reports itself
+unhealthy (`docker compose ps`): its log, and its `/ok`, name the entry
+too. It keeps checking, so running `stack-init` is enough. To add the entry
+by hand instead:
 
 ```bash
 docker compose run --rm --quiet-build soliplex-dev \
@@ -122,12 +134,9 @@ docker compose run --rm --quiet-build soliplex-dev \
     --json-path '$[?$.sub == "soliplex-provisioner"]'
 ```
 
-Until then, the provisioner stops before changing anything, naming the
-entry it needs, and the `soliplex-provisioner` service reports itself
-unhealthy (`docker compose ps`): its log, and its `/ok`, name the entry
-too. It keeps checking, so adding the entry is enough. A stack with no OIDC
-provider runs without authentication, and admits the provisioner without the
-entry once `stack-init` has made the no-auth user an admin.
+A stack with no OIDC provider runs without authentication: it treats the
+provisioner's calls as its no-auth user, which `stack-init` also makes an
+admin.
 
 ## The provisioner service
 
@@ -187,7 +196,7 @@ The provisioner reads these from the stack's `.env`:
 
 | Variable | Meaning |
 | --- | --- |
-| `PROVISIONER_SERVICE_SUBJECT` | The subject (`sub` claim) of the provisioner's service tokens (default `soliplex-provisioner`); the `admin_users` entry above must match it. |
+| `PROVISIONER_SERVICE_SUBJECT` | The subject (`sub` claim) of the provisioner's service tokens (default `soliplex-provisioner`); the `admin_users` entry above must match it, as `stack-init` makes it do. |
 | `PROVISIONER_OWNER_CLAIM` | The claim a room's owner comes from (default `preferred_username`). |
 | `PROVISIONER_FLATTEN_OWNER` | `true` to turn `@` into `_` in the owner, for email-shaped claims. |
 | `GITEA_HOST` / `GITEA_ACCESS_TOKEN` | The Gitea for tracking issues and the provisioned-rooms repository; unset means none. `scripts/init_gitea.py` sets both for the stack's own Gitea. |

@@ -112,15 +112,14 @@ committed to the stack's `src/rooms-provisioned` repository. It asks for the
 user's username (plus email and display name if known) and the room's name;
 the room id becomes `<username>:<slug>`.
 
-It leaves two things to you:
+The provisioner needs an `admin_users` entry, which the stack's `stack-init`
+adds. If the entry is missing, the agent says so and offers to run
+`stack-init`.
 
-- **The provisioner's admin entry.** With OIDC on, the provisioner needs a
-  one-time `admin_users` entry. The agent names the entry; adding it is your
-  decision.
-- **Leftovers from a room removed by hand.** If an earlier room with the same
-  id left its database, uploads, or authorization policy behind, provisioning
-  refuses and the agent lists what is left. It does not delete them to get
-  past the error.
+It leaves one thing to you: **leftovers from a room removed by hand.** If an
+earlier room with the same id left its database, uploads, or authorization
+policy behind, provisioning refuses and the agent lists what is left. It
+does not delete them to get past the error.
 
 By hand: `<skill>/scripts/provision_room.py`; see
 [Room provisioning](../users/operations/room-provisioning.md).

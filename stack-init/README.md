@@ -24,3 +24,6 @@ The steps that ship with the stack:
   stack has no OIDC provider, so admin-only routes such as `/ingester/`
   admit it. A stack with a provider gets no such entry: add your real
   admins with `soliplex-cli admin-users add`.
+- `20-provisioner-admin.py` admits the room provisioner's service tokens as
+  an admin's: an `admin_users` entry matching their subject
+  (`PROVISIONER_SERVICE_SUBJECT`, default `soliplex-provisioner`).
