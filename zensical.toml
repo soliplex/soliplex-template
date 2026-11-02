@@ -69,6 +69,7 @@ nav = [
         "upgrades/move-to-soliplex-0.87.md",
         "upgrades/serve-through-nginx.md",
         "upgrades/provision-rooms-on-request.md",
+        "upgrades/oidc-providers-and-stack-init.md",
     ] },
     { "Contributing" = [
         "contributing/index.md",
