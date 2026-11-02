@@ -76,7 +76,7 @@ files carrying `ingester_token` are rejected with a pointer at the file.
 | `docling_serve_variant` | `cpu` | one of `cpu`, `base`, `cu128`, `cu130` | composed into the `docling-serve` `image:` in `docker-compose.yml` (docling-serve/README.md) |
 | `docling_serve_version` | `v1.38.0` | `v<major>.<minor>.<patch>`, or `latest` for `cpu`/`base` only (the CUDA variants are version-tag-only upstream); must pair with the pinned `haiku_rag_version` | same |
 | `frontend_version` | `0.114` | `latest`, `<major>.<minor>` (moving), `<major>.<minor>.<patch>` or `<major>.<minor>.<patch>-<build>` (exact); a `v…` release tag is refused, with the image tag to use | `FROM` in `nginx/Dockerfile` (`ghcr.io/soliplex/frontend-web`, the published web client); `AGENTS.md` |
-| `auth_mode` | `no-auth` | `no-auth` or `auth` | backend `command` (`--no-auth-mode` present/absent) |
+| `auth_mode` | *(unset)* | **deprecated**: `no-auth` is accepted with a warning and ignored; `auth` is refused, pointing at `scripts/oidc_providers.py` | nothing: a generated stack always starts with no OIDC provider (`auth_systems: []`), and so without authentication; add providers with `scripts/oidc_providers.py` before `stack-init` and the first `up` |
 | `include_gitea` | `false` | bool (`true`/`false`, or `yes`/`no`/`1`/`0`) | adds the opt-in gitea service (postgres-backed, nginx `/gitea/` on 9443, `gitea_db_password` secret) plus `scripts/init_gitea.py` (run after `up`; `--admin-user NAME` adds a web-UI login, `--push-to-gitea` sets `origin` to a Gitea repo over SSH and pushes the initial commit); omitted entirely when false |
 | `include_tui` | `false` | bool (`true`/`false`, or `yes`/`no`/`1`/`0`) | adds the opt-in `tui` service (web TUI proxied by nginx at `/tui/`) plus the `tui/` build context; omitted entirely when false |
 | `enable_sandbox` | `false` | bool (`true`/`false`, or `yes`/`no`/`1`/`0`) | lets the `bubble-sandbox` skill run code: emits the `security_opt` block (`seccomp`, `apparmor` and `systempaths` unconfined) on `backend` and `soliplex-dev` live; when false the block ships commented out, and `add_room.py` refuses (and `list --project-dir` skips) room templates that configure the skill, such as `sandbox` |
@@ -92,8 +92,6 @@ files carrying `ingester_token` are rejected with a pointer at the file.
   `SSH_DOMAIN` deliberately stays `localhost` so `git clone` works on hosts that
   don't resolve `*.localhost`.
 - `tls_subject` ← `/C=US/ST=State/L=City/O=Soliplex/CN=<server_name>` when not supplied.
-- `backend_auth_flag` ← `--no-auth-mode` plus a trailing space when `auth_mode == "no-auth"`, else empty
-  (consumed by `docker-compose.yml.mako`).
 - `puid` / `pgid` ← the host operator's `os.getuid()` / `os.getgid()` when not
   supplied (an auto-detected `0`/root falls back to `1000`). These land in `.env`
   as `PUID` / `PGID`; Compose reads them for every built image's `build.args`, the

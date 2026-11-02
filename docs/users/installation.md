@@ -64,7 +64,35 @@ and rebuild; see [Secrets](operations/secrets.md).
 The generator wrote `.env` with the `OLLAMA_BASE_URL` you supplied. Confirm it
 points at your Ollama server and adjust if needed.
 
-## 3. Bring the stack up
+## 3. Decide whether to require sign-in
+
+The stack starts with no OIDC provider, and so **without authentication**:
+anyone who can reach nginx uses it as Soliplex's fixed no-auth user. That is
+fine on a workstation; before you expose the stack, add a provider with the
+`soliplex-template` skill's `scripts/oidc_providers.py`:
+
+```bash
+python3 <skill>/scripts/oidc_providers.py add --id <id> --title "<label>" \
+    --server-url <issuer URL> --client-id <client id> \
+    --pem-file <the provider's token-signing public key>
+```
+
+Adding the first provider turns authentication on; the script then prints
+the command that gives your own account admin rights. Adding one before the
+next step means the no-auth user never becomes an admin. See
+[Sign-in and admins](#sign-in-and-admins).
+
+## 4. Prepare the databases
+
+```bash
+docker compose run --rm --quiet-build stack-init
+```
+
+`stack-init` brings the Soliplex databases to their current schema, then
+runs the setup steps in `stack-init/init.d/` (see `stack-init/README.md`).
+Every step is safe to re-run.
+
+## 5. Bring the stack up
 
 ```bash
 docker compose up        # foreground
@@ -110,6 +138,32 @@ The direct-access rows below render only for ports you published:
 <!-- endif -->
 
 (Container-internal ports are fixed; these are the host-published sides.)
+
+## Sign-in and admins
+
+Authentication follows `backend/environment/oidc/config.yaml`. With no
+`auth_systems` there, the backend runs without authentication, and treats
+every request as Soliplex's no-auth user (`phreddy@example.com`).
+`stack-init` makes that user an admin while there is no provider, so
+admin-only routes such as `/ingester/` admit it.
+
+`scripts/oidc_providers.py` (in the `soliplex-template` skill) manages the
+providers:
+
+- `list` shows them, marking the one `/ingester/` signs in with.
+- `add` adds one. The first turns authentication on: give real accounts admin
+  rights with the `soliplex-cli admin-users add` command it prints.
+- `remove` removes one. Removing the last turns authentication off: re-run
+  `stack-init` to make the no-auth user an admin again.
+- `signin` chooses the provider `/ingester/` signs in with.
+
+The backend picks up a change by itself. nginx reads its sign-in fragment
+(`nginx/conf.d/signin-provider.conf`) only at start, so restart it when the
+script says so:
+
+```bash
+docker compose restart nginx
+```
 
 ## Verify the stack
 

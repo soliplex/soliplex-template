@@ -20,6 +20,7 @@ Ask your agent to generate a stack **with the Gitea service included**
 (`include_gitea`). Then bring it up from the project directory:
 
 ```bash
+docker compose run --rm --quiet-build stack-init
 docker compose up
 ```
 

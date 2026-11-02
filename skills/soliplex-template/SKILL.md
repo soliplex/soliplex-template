@@ -1,6 +1,6 @@
 ---
 name: soliplex-template
-description: "Generate a new, runnable Soliplex Docker Compose stack from an embedded template, or inspect and change an existing one — query its resolved installation config, create or update extra RAG databases (with guidance for wiring them into rooms), add a room, clone another Python project into the stack's src/ and make it importable by the backend, migrate an older stack to the src/ project layout, or migrate its Soliplex / RAG databases after a version bump. Use when a user wants to stand up, bootstrap, or create a new Soliplex deployment / compose stack; to inspect, configure, or add a RAG database or room to an existing one; to add, clone, or wire a Python project or repo checkout into a stack's backend (PYTHONPATH); to upgrade a stack's src/ layout; or to check or apply database migrations after bumping soliplex or haiku.rag."
+description: "Generate a new, runnable Soliplex Docker Compose stack from an embedded template, or inspect and change an existing one — query its resolved installation config, add or remove the OIDC providers users sign in with, create or update extra RAG databases (with guidance for wiring them into rooms), add a room, clone another Python project into the stack's src/ and make it importable by the backend, migrate an older stack to the src/ project layout, or migrate its Soliplex / RAG databases after a version bump. Use when a user wants to stand up, bootstrap, or create a new Soliplex deployment / compose stack; to turn sign-in on or off, or add or remove an identity provider; to inspect, configure, or add a RAG database or room to an existing one; to add, clone, or wire a Python project or repo checkout into a stack's backend (PYTHONPATH); to upgrade a stack's src/ layout; or to check or apply database migrations after bumping soliplex or haiku.rag."
 ---
 
 # Soliplex project generation and configuration
@@ -76,7 +76,12 @@ from the user and invoke it.
      `ingester_port`, `docling_port`, `postgres_port`, `backend_port`,
      and, when `include_gitea`, `gitea_http_port`/`gitea_ssh_port`.
      Unset = unpublished.
-   - **auth** — `auth_mode`: `no-auth` (default) or `auth`.
+   - **sign-in** — a generated stack always starts with no OIDC provider,
+     and so without authentication. Ask whether the user wants sign-in. If
+     so, collect each provider's details and add them after generating,
+     **before** `stack-init` and the first `up` (see *Adding or removing an
+     OIDC provider* below). Do not pass `auth_mode`: it is deprecated, and
+     `auth` is refused.
    - **models** — offer "use defaults" vs "customize"; `models=default`
      pre-answers this. Whichever way the models are chosen, **probe them
      against `ollama_base_url` before generating** — see *Choosing and checking
@@ -260,7 +265,7 @@ from the user and invoke it.
 
    ```json
    { "project_name": "acme", "ollama_base_url": "http://ollama:11434",
-     "nginx_http": 9100, "auth_mode": "auth" }
+     "nginx_http": 9100 }
    ```
 
 3. **Run the generator:**
@@ -285,9 +290,11 @@ from the user and invoke it.
 
    If you go on to bring the stack up yourself, **build the images explicitly
    first** rather than letting `up` build them implicitly: run
-   `docker compose build`, then `docker compose up -d`, then poll
-   `docker compose ps` (or `docker compose logs -f`) until services report
-   healthy. The nginx image copies the prebuilt, cache-busted web client
+   `docker compose build`; add any OIDC providers the user asked for; run
+   `docker compose run --rm --quiet-build stack-init`, which prepares the
+   databases and runs the `stack-init/init.d/` setup steps; then
+   `docker compose up -d`, then poll `docker compose ps` (or
+   `docker compose logs -f`) until services report healthy. The nginx image copies the prebuilt, cache-busted web client
    from the published `ghcr.io/soliplex/frontend-web` image, so there is
    no Flutter build in the stack; a separate `build` step still keeps its
    output legible instead of hiding it inside `up`.
@@ -312,7 +319,8 @@ from the user and invoke it.
 
    On success the audit prints only `OK` per URL, not the models it checked.
    To show the user which models (and roles) the install resolved, ask the
-   backend — an admin-only endpoint, open to anyone in no-auth mode:
+   backend — an admin-only endpoint, open to anyone while the stack has no
+   OIDC provider (`stack-init` makes the no-auth user an admin):
 
    ```bash
    curl -s http://localhost:<nginx_http>/api/v1/installation/providers | jq
@@ -330,6 +338,48 @@ from the user and invoke it.
 - The generated project includes its own Zensical documentation site under
   `docs/` (parameterized for that project) plus `zensical` in its `dev`
   dependency group; the owner can preview it with `uv run zensical serve`.
+
+## Adding or removing an OIDC provider
+
+A stack's OIDC providers are the `auth_systems` entries in
+`backend/environment/oidc/config.yaml`. With none, the backend runs without
+authentication and treats every request as Soliplex's no-auth user
+(`phreddy@example.com`); the first provider turns authentication on. Run
+`scripts/oidc_providers.py` from the stack directory (or pass
+`--project-dir`); it never prompts, and its PEP 723 header pulls in
+`pyyaml` under `uv run`:
+
+```bash
+uv run scripts/oidc_providers.py list
+uv run scripts/oidc_providers.py add --id <id> --title "<button label>" \
+    --server-url <issuer URL, no trailing slash> --client-id <client id> \
+    --pem-file <the provider's token-signing public key, PEM> \
+    [--scope "openid email profile"] [--signin]
+uv run scripts/oidc_providers.py remove <id> [--signin-successor <id>]
+uv run scripts/oidc_providers.py signin <id>
+```
+
+`add` writes a public client (no client secret). The id must be lowercase
+letters, digits, `_` and `-`: it appears in the login and callback URLs.
+Discovery, client secrets and key refresh are not supported yet; ask the
+user for the issuer URL, client id and signing key.
+
+The script also keeps nginx's `/ingester/` sign-in in step: the first
+provider becomes the one it signs in with, a later one only with `--signin`,
+and removing that provider while others remain needs `--signin-successor`.
+Relay what it prints, and act on it:
+
+- **The first provider was added** (authentication is now on): no account is
+  an admin yet. Ask for the user's email and give it admin rights:
+  `docker compose run --rm --quiet-build soliplex-dev soliplex-cli admin-users add /environment <email>`.
+- **The last provider was removed** (authentication is now off): admin-only
+  routes admit only the no-auth user, once it is an admin. Offer to re-run
+  `docker compose run --rm --quiet-build stack-init`, which makes it one if it
+  is not already; don't make the user type the `admin-users` command.
+- **The sign-in provider changed**: `docker compose restart nginx`. nginx
+  reads `nginx/conf.d/signin-provider.conf` only at start.
+
+The backend picks up every change by itself (`--reload=config`): no restart.
 
 ## Inspecting a running stack's config
 

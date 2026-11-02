@@ -32,14 +32,18 @@ the dead-letter queue, and trigger source refreshes.
 3. The proxy also gates `/ingester/` on the backend's admin check
    via an `auth_request` against `/_authz_check`:
    signed-in admins get through, anonymous requests are redirected to
-   sign-in, and non-admins get the stack's error page.
+   sign-in, and non-admins get the stack's error page. In a stack with no
+   OIDC provider, every request is the no-auth user, which `stack-init`
+   makes an admin, so the gate lets it through.
 
 ## Reaching it
 
-**Via nginx** — the normal route. In a no-auth stack open
+**Via nginx** — the normal route. In a stack with no OIDC provider, open
 <http://localhost:${nginx_http}/ingester/> and you're done (the token is
-injected at the proxy). In an auth-mode stack open
-<https://${server_name}:${nginx_https}/ingester/>:
+injected at the proxy). If that answers with the "access denied" page, the
+no-auth user is not an admin: run
+`docker compose run --rm --quiet-build stack-init`. In a stack with a
+provider, open <https://${server_name}:${nginx_https}/ingester/>:
 not signed in → sign-in page; signed in as an admin → the dashboard; signed
 in as a non-admin → the stack's "access denied" page.
 

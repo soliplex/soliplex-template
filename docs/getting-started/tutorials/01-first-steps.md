@@ -37,15 +37,17 @@ scaffolds a fresh project directory, and generates its secrets.
 
 ## 3. Bring it up
 
-From the generated project directory:
+From the generated project directory, prepare the databases, then start the
+stack:
 
 ```bash
+docker compose run --rm --quiet-build stack-init
 docker compose up
 ```
 
-The first run builds the `nginx` and `backend` images and initializes Postgres,
-so it takes a few minutes. Once it settles, the web frontend is at
-<http://localhost:9000>. The stack runs with auth off by default, so there is no
+The first run builds the images and initializes Postgres, so it takes a few
+minutes. Once it settles, the web frontend is at <http://localhost:9000>. The
+stack starts with no OIDC provider, so authentication is off and there is no
 login step.
 
 ## 4. Visit the `custom` room

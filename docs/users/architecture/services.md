@@ -44,10 +44,17 @@ graph LR
 
 - Terminates TLS on host port ${nginx_https} with a self-signed cert.
 
+- Both servers include every `nginx/conf.d/*.conf` fragment, which skill
+  scripts add and remove (see `nginx/conf.d/README.md`). nginx reads them
+  only at start: `docker compose restart nginx` after a change.
+
 ## backend
 
 Runs `soliplex-cli serve /environment`, from an image built on the published
-soliplex release image (see [Backend image & dependencies](backend.md)). The `--reload=config`
+soliplex release image (see [Backend image & dependencies](backend.md)).
+Authentication follows `backend/environment/oidc/config.yaml`: with no
+OIDC provider there, the backend runs without authentication (see
+[Sign-in and admins](../installation.md#sign-in-and-admins)). The `--reload=config`
 flag means edits under `backend/environment/` take effect without a rebuild,
 and one `--reload-dirs` flag per project on its `PYTHONPATH` (this project's
 own package, plus any added with `src_projects.py`) restarts it when their
@@ -100,6 +107,21 @@ aliases in `docker-compose.yml`), including its read-write `src/`, where
 the provisioner commits each room and its database fragment to the
 provisioned-rooms clone. The ingester mounts that clone read-only, and its
 config includes the fragments.
+
+## stack-init
+
+A one-shot setup run, held out of `docker compose up` by
+`profiles: ["init"]`. Run it before the stack first comes up, and again after
+adding a part of the stack that brings its own setup step:
+
+```bash
+docker compose run --rm --quiet-build stack-init
+```
+
+It shares `soliplex-dev`'s image, secrets and environment. `stack-init/run.sh`
+brings the Soliplex databases to their current schema
+(`soliplex-cli database upgrade`), then runs every step in
+`stack-init/init.d/`, in name order. Each step is safe to re-run.
 
 ## haiku-ingester
 
