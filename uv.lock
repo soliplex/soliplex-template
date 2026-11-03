@@ -3569,8 +3569,6 @@ provisioner = [
 [package.dev-dependencies]
 dev = [
     { name = "coverage" },
-    { name = "fastapi" },
-    { name = "httpx2" },
     { name = "mako" },
     { name = "packaging" },
     { name = "pytest" },
@@ -3591,8 +3589,6 @@ provides-extras = ["provisioner"]
 [package.metadata.requires-dev]
 dev = [
     { name = "coverage" },
-    { name = "fastapi" },
-    { name = "httpx2" },
     { name = "mako" },
     { name = "packaging" },
     { name = "pytest" },

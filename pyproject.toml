@@ -25,7 +25,7 @@ provisioner = [
 ]
 
 [project.scripts]
-soliplex-provision-room = "soliplex_template.provision:main"
+soliplex-provision-room = "soliplex_template.provisioner.wiring:main"
 
 # Tooling for the soliplex-template skill. The scripts also carry PEP 723
 # inline metadata so they can run standalone via `uv run <script>`, but the
@@ -44,8 +44,6 @@ soliplex-provision-room = "soliplex_template.provision:main"
 [dependency-groups]
 dev = [
     "coverage",
-    "fastapi",  # 'provision_service'
-    "httpx2",  # fastapi's TestClient
     "mako",
     "packaging",  # 'generate_soliplex_project.py'
     "pyyaml",
