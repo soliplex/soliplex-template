@@ -17,11 +17,11 @@ dependencies = []
 # host-side PEP 723 shims (secrets, env, gitea, the migrations) stay
 # stdlib-only.
 [project.optional-dependencies]
+# The room provisioner: the template's adapters over soliplex-concierge's
+# provisioner framework, whose own extra brings fastapi + uvicorn (the
+# service), PyYAML and soliplex-plumber.
 provisioner = [
-    "fastapi",  # 'provision_service'
-    "pyyaml",
-    "soliplex-plumber >= 0.4",
-    "uvicorn",  # serves 'provision_service'
+    "soliplex-concierge[provisioner] >= 0.14",
 ]
 
 [project.scripts]
@@ -55,6 +55,9 @@ dev = [
     "skills-ref==0.1.1",  # 'generate_soliplex_project.py'
     "soliplex-skills >= 0.5",
     "soliplex-plumber >= 0.4", # skill's 'add_room.py'/'soliplex_config.py'
+    # The provisioner's own extra, so every '--group dev' sync (CI included)
+    # installs what its adapters and tests import.
+    "soliplex-template[provisioner]",
     "zensical",
 ]
 
