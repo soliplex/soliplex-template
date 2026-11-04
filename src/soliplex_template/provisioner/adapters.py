@@ -213,6 +213,13 @@ class GitRoomStore:
                 issue_url=issue.url if issue is not None else None,
             )
         )
+        (room_dir / rendering.PROVISION_FILE).write_text(
+            rendering.provision_record(
+                request,
+                identity_claim=self.identity_claim,
+                issue_url=issue.url if issue is not None else None,
+            )
+        )
         return interfaces.Undo(
             description="remove the room directory",
             run=lambda: shutil.rmtree(room_dir),

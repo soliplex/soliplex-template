@@ -304,6 +304,14 @@ def test_store_add_room(stack, issue):
     record = (room_dir / rendering.RECORD_FILE).read_text()
     assert "- **Requested by:** Alice Example (`alice`)\n" in record
     assert ("Tracking issue" in record) is (issue is not None)
+    provisioned = yaml.safe_load(
+        (room_dir / rendering.PROVISION_FILE).read_text()
+    )
+    assert provisioned["room_id"] == ROOM
+    assert provisioned["requester"]["value"] == "alice"
+    assert provisioned["tracking_issue"] == (
+        issue.url if issue is not None else None
+    )
     assert undo.description == "remove the room directory"
 
 
