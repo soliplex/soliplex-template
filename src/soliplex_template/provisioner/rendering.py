@@ -9,6 +9,12 @@ The concierge's provisioner core renders nothing; the template's adapters
 - the request's record (:func:`record`), which serves twice: as the body of
   the tracking issue (:func:`issue_title` its title), and as ``REQUEST.md``
   (:data:`RECORD_FILE`) beside the room's config
+- the request as data (:func:`provision_record`), as ``provision.yaml``
+  (:data:`PROVISION_FILE`) beside the room's config, for tools that read
+  it back (reconcile, a re-render)
+- the room's authz policy as applied (:func:`authz_document`), as
+  ``authz.yaml`` (:data:`AUTHZ_FILE`) beside the room's config, which
+  reconcile replays
 - the room's haiku.rag fragment (:func:`fragment`), registering its database
   with the ingester (:data:`FRAGMENTS_DIR`, :func:`fragment_name`)
 - the commit recording the room (:func:`commit_message`), and the comment
@@ -23,13 +29,19 @@ which YAML loaders decode one UTF-16 unit at a time.
 from __future__ import annotations
 
 import datetime
+import importlib.metadata
 import json
 import re
 
+import yaml
 from soliplex_concierge.provisioner import interfaces
 
 AGENT_TEMPLATE = "provisioned_rag"
 RECORD_FILE = "REQUEST.md"
+PROVISION_FILE = "provision.yaml"
+AUTHZ_FILE = "authz.yaml"
+# The packages whose versions a provision record names: they render a room.
+RENDERING_PACKAGES = ("soliplex-template", "soliplex-concierge")
 TITLE_PREFIX = "New room request: "
 
 # The fragments' directory in the provisioned-rooms clone, and where the
@@ -121,23 +133,37 @@ def issue_title(request: interfaces.RoomRequest) -> str:
     return f"{TITLE_PREFIX}{_one_line(request.name)}"
 
 
-def describe_rule(json_path: str) -> str:
-    """Whom an owner's access rule grants the room, in words.
+def owner_form(json_path: str) -> dict[str, str]:
+    """The form an owner's access rule was built from.
 
-    The rules the concierge's ``access_rules`` builds read as such; any
-    other is quoted.
+    ``{"claim": ..., "value": ...}`` or ``{"predicate": ...}`` for the two
+    rules the concierge's ``access_rules`` builds; empty for any other.
     """
     claim = _CLAIM_RULE_RE.fullmatch(json_path)
     if claim is not None:
         try:
             value = json.loads(claim.group(2))
         except json.JSONDecodeError:
-            pass  # not a single JSON string: quote the rule
+            pass  # not a single JSON string: no recognized form
         else:
-            return f"where claim {code(claim.group(1))} is {code(value)}"
+            return {"claim": claim.group(1), "value": value}
     predicate = _PREDICATE_RULE_RE.fullmatch(json_path)
     if predicate is not None:
-        return f"to users the predicate {code(predicate.group(1))} passes"
+        return {"predicate": predicate.group(1)}
+    return {}
+
+
+def describe_rule(json_path: str) -> str:
+    """Whom an owner's access rule grants the room, in words.
+
+    The rules the concierge's ``access_rules`` builds read as such; any
+    other is quoted.
+    """
+    form = owner_form(json_path)
+    if "claim" in form:
+        return f"where claim {code(form['claim'])} is {code(form['value'])}"
+    if "predicate" in form:
+        return f"to users the predicate {code(form['predicate'])} passes"
     return f"by the access rule {code(json_path)}"
 
 
@@ -167,12 +193,7 @@ def record(
     when one was filed.
     """
     room_id = request.room
-    requested_at = (
-        request.requested_at.astimezone(datetime.UTC)
-        .replace(microsecond=0)
-        .isoformat()
-        .replace("+00:00", "Z")
-    )
+    requested_at = _timestamp(request.requested_at)
     lines = [
         f"# {_one_line(request.name)}",
         "",
@@ -200,6 +221,81 @@ def record(
         "",
     ]
     return "\n".join(lines)
+
+
+def _timestamp(moment: datetime.datetime) -> str:
+    return (
+        moment.astimezone(datetime.UTC)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+
+
+def _versions() -> dict[str, str | None]:
+    """The installed versions of :data:`RENDERING_PACKAGES` (None: absent)."""
+    versions = {}
+    for package in RENDERING_PACKAGES:
+        try:
+            versions[package] = importlib.metadata.version(package)
+        except importlib.metadata.PackageNotFoundError:
+            versions[package] = None
+    return versions
+
+
+def provision_record(
+    request: interfaces.RoomRequest,
+    *,
+    identity_claim: str,
+    issue_url: str | None = None,
+) -> str:
+    """The request, as YAML data: ``provision.yaml``.
+
+    - the room's id, name and description; the request's time and tracking
+      issue (``null`` when none was filed)
+    - the requester: their identifying claim (``identity_claim``), its
+      value, and their ``name`` claim (``null`` when either is not a
+      non-blank string)
+    - the owner: the id's owner part and access rule, with the form the rule
+      was built from (``claim`` / ``value``, or ``predicate``) when it is one
+      ``access_rules`` builds
+    - the versions of the packages that rendered the room
+    """
+    claims = request.requester_claims
+    value = claims.get(identity_claim)
+    name = claims.get("name")
+    owner = request.owner
+    data = {
+        "room_id": request.room,
+        "name": request.name,
+        "description": request.description,
+        "requested_at": _timestamp(request.requested_at),
+        "tracking_issue": issue_url,
+        "requester": {
+            "claim": identity_claim,
+            "value": value if isinstance(value, str) else None,
+            "name": name if isinstance(name, str) and name.strip() else None,
+        },
+        "owner": {
+            "owner": owner.owner,
+            **owner_form(owner.json_path),
+            "json_path": owner.json_path,
+        },
+        "versions": _versions(),
+    }
+    return yaml.safe_dump(data, sort_keys=False, allow_unicode=True)
+
+
+def authz_document(policy: str) -> str:
+    """The room's authz policy as YAML: ``authz.yaml``.
+
+    ``policy`` is the JSON document ``soliplex_cli.owner_policy`` builds;
+    the YAML is the same document, which ``room-authz from-yaml`` reads as
+    it reads the JSON.
+    """
+    return yaml.safe_dump(
+        json.loads(policy), sort_keys=False, allow_unicode=True
+    )
 
 
 # ---------------------------------------------------------------------------

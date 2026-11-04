@@ -304,6 +304,14 @@ def test_store_add_room(stack, issue):
     record = (room_dir / rendering.RECORD_FILE).read_text()
     assert "- **Requested by:** Alice Example (`alice`)\n" in record
     assert ("Tracking issue" in record) is (issue is not None)
+    provisioned = yaml.safe_load(
+        (room_dir / rendering.PROVISION_FILE).read_text()
+    )
+    assert provisioned["room_id"] == ROOM
+    assert provisioned["requester"]["value"] == "alice"
+    assert provisioned["tracking_issue"] == (
+        issue.url if issue is not None else None
+    )
     assert undo.description == "remove the room directory"
 
 
@@ -609,7 +617,12 @@ def _authz(stack):
     return adapters.SoliplexCliAuthz(
         cli="soliplex-cli",
         environment=pathlib.Path("/environment"),
+        clone=stack["clone"],
     )
+
+
+def _authz_record(stack, room=ROOM):
+    return stack["clone"] / room / rendering.AUTHZ_FILE
 
 
 @pytest.mark.parametrize(
@@ -634,6 +647,7 @@ def test_authz_grant_owner(stack, monkeypatch):
     request = _request(
         owner=foremen, room_id=room_ids.RoomId("foremen", "q3-plans")
     )
+    (stack["clone"] / "foremen:q3-plans").mkdir()
 
     undo = _authz(stack).grant_owner(request)
 
@@ -647,11 +661,14 @@ def test_authz_grant_owner(stack, monkeypatch):
     assert json.loads(policy) == json.loads(
         soliplex_cli.owner_policy("foremen:q3-plans", "$[?is_foreman($)]")
     )
+    record = _authz_record(stack, "foremen:q3-plans").read_text()
+    assert yaml.safe_load(record) == json.loads(policy)
     assert undo.description == "remove the room's authz policy"
 
 
 def test_authz_grant_owner_undo(stack, monkeypatch):
     cli = _Cli(monkeypatch)
+    (stack["clone"] / ROOM).mkdir()
     undo = _authz(stack).grant_owner(_request())
 
     undo.run()
@@ -662,6 +679,20 @@ def test_authz_grant_owner_undo(stack, monkeypatch):
         "/environment",
         ROOM,
     )
+    assert not _authz_record(stack).exists()
+
+
+def test_authz_grant_owner_fails(stack, monkeypatch):
+    def set_policy(*args):
+        raise soliplex_cli.CliFailed("soliplex-cli", ("room-authz",), "no")
+
+    monkeypatch.setattr(adapters.soliplex_cli, "set_policy", set_policy)
+    (stack["clone"] / ROOM).mkdir()
+
+    with pytest.raises(soliplex_cli.CliFailed):
+        _authz(stack).grant_owner(_request())
+
+    assert not _authz_record(stack).exists()
 
 
 def test_authz_audit(stack, monkeypatch):
@@ -693,7 +724,9 @@ def test_authz_predicates(stack, jsonpath_registry):
         '    - {name: "is_foreman", func: "json.dumps"}\n'
     )
     authz_adapter = adapters.SoliplexCliAuthz(
-        cli="soliplex-cli", environment=stack["environment"]
+        cli="soliplex-cli",
+        environment=stack["environment"],
+        clone=stack["clone"],
     )
 
     result = authz_adapter.predicates()
@@ -796,6 +829,28 @@ def test_backend_check_access_unreachable(stack, secret_file, monkeypatch):
         _backend(stack, secret_file).check_access()
 
 
+def test_backend_reload_rooms_delta(stack, secret_file, monkeypatch):
+    delta = {"added": ["x:y"], "removed": [], "changed": []}
+    api = _Api(monkeypatch, delta=delta)
+
+    result = _backend(stack, secret_file).reload_rooms_delta()
+
+    assert result == delta
+    [(name, _base_url, token)] = api.calls
+    assert name == "reload_rooms"
+    assert token is not None
+
+
+def test_backend_reload_rooms_delta_denied(stack, secret_file, monkeypatch):
+    denied = soliplex_api.AccessDenied("http://backend:8000/api/x", 401)
+    _Api(monkeypatch, errors={"reload_rooms": denied})
+
+    with pytest.raises(adapters.AdminAccessDenied) as caught:
+        _backend(stack, secret_file).reload_rooms_delta()
+
+    assert caught.value.code == 401
+
+
 @pytest.mark.parametrize(
     "delta, errors, expected",
     [
@@ -807,8 +862,13 @@ def test_backend_check_access_unreachable(stack, secret_file, monkeypatch):
             {"reload_rooms": soliplex_api.RequestFailed("u", "HTTP 500: x")},
             ["reload the backend's rooms: POST /api/v1/installation/"],
         ),
+        (
+            {},
+            {"reload_rooms": soliplex_api.AccessDenied("u", 403)},
+            ["reload the backend's rooms: POST /api/v1/installation/"],
+        ),
     ],
-    ids=["added", "changed", "not-loaded", "failed"],
+    ids=["added", "changed", "not-loaded", "failed", "denied"],
 )
 def test_backend_reload_rooms(
     stack, secret_file, monkeypatch, delta, errors, expected
@@ -820,6 +880,19 @@ def test_backend_reload_rooms(
     assert len(result) == len(expected)
     for step, start in zip(result, expected, strict=True):
         assert step.startswith(start)
+
+
+def test_backend_reload_rooms_refused_gives_the_stack_init_advice(
+    stack, secret_file, monkeypatch
+):
+    denied = soliplex_api.AccessDenied("http://backend:8000/api/x", 403)
+    _Api(monkeypatch, errors={"reload_rooms": denied})
+
+    result = _backend(stack, secret_file).reload_rooms(_request())
+
+    [step] = result
+    assert "run 'docker compose run --rm --quiet-build stack-init'" in step
+    assert """'$[?$.sub == "soliplex-provisioner"]'""" in step
 
 
 # ---- ConciergeGiteaTracker ----

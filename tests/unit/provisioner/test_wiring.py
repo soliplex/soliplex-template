@@ -169,7 +169,9 @@ def test_build_provisioner():
     assert result.registrar.data_dir == "/srv/db"
     assert result.uploads == adapters.LocalUploads(root=settings.uploads_dir)
     assert result.authz == adapters.SoliplexCliAuthz(
-        cli=settings.soliplex_cli, environment=settings.environment
+        cli=settings.soliplex_cli,
+        environment=settings.environment,
+        clone=settings.clone,
     )
     assert result.backend.service_subject == settings.service_subject
     assert result.tracker == adapters.ConciergeGiteaTracker(
@@ -490,6 +492,66 @@ def test_main_uses_the_process_environment(token_file, monkeypatch):
 
     [(_claims, kwargs)] = calls
     assert kwargs["provisioner"].backend.service_subject == "from-env"
+
+
+def test_main_requires_claims_and_name(capsys):
+    with pytest.raises(SystemExit) as caught:
+        wiring.main(["--name", "Q3 Plans"], {})
+
+    assert caught.value.code == 2
+    assert "--claims and --name are required" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "reconciled, code, out",
+    [
+        (
+            wiring.reconcile.Reconciled(),
+            0,
+            "nothing to change: the stack matches the clone\n",
+        ),
+        (
+            wiring.reconcile.Reconciled(
+                changes=("room 'a:b': applied its authz.yaml",),
+                notes=("room 'c:d' has no authz.yaml",),
+            ),
+            1,
+            "note: room 'c:d' has no authz.yaml\n"
+            "room 'a:b': applied its authz.yaml\n",
+        ),
+    ],
+    ids=["unchanged", "changed"],
+)
+def test_main_reconcile(
+    token_file, monkeypatch, capsys, reconciled, code, out
+):
+    calls = []
+
+    def reconcile(settings):
+        calls.append(settings)
+        return reconciled
+
+    monkeypatch.setattr(wiring.reconcile, "reconcile", reconcile)
+
+    result = wiring.main(["--reconcile"], _environ(token_file))
+
+    assert result == code
+    assert capsys.readouterr().out == out
+    assert calls == [wiring.Settings(ingester_token="bearer")]
+
+
+def test_main_reconcile_error(token_file, monkeypatch, capsys):
+    def reconcile(settings):
+        raise wiring.reconcile.BadRecord("/x/authz.yaml", "bad")
+
+    monkeypatch.setattr(wiring.reconcile, "reconcile", reconcile)
+
+    result = wiring.main(["--reconcile"], _environ(token_file))
+
+    assert result == 2
+    assert "cannot read the policy record /x/authz.yaml" in (
+        capsys.readouterr().err
+    )
 
 
 # ---- the shims ----

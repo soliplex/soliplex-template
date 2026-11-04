@@ -213,6 +213,13 @@ class GitRoomStore:
                 issue_url=issue.url if issue is not None else None,
             )
         )
+        (room_dir / rendering.PROVISION_FILE).write_text(
+            rendering.provision_record(
+                request,
+                identity_claim=self.identity_claim,
+                issue_url=issue.url if issue is not None else None,
+            )
+        )
         return interfaces.Undo(
             description="remove the room directory",
             run=lambda: shutil.rmtree(room_dir),
@@ -414,11 +421,14 @@ class LocalUploads:
 class SoliplexCliAuthz:
     """Room policies, through ``cli`` against the installation.
 
-    ``environment`` is the installation's directory as ``cli`` sees it.
+    ``environment`` is the installation's directory as ``cli`` sees it;
+    ``clone`` the provisioned-rooms clone, where each room's policy is also
+    recorded, as its ``authz.yaml``.
     """
 
     cli: str
     environment: pathlib.Path
+    clone: pathlib.Path
 
     def clashes(self, request: interfaces.RoomRequest) -> list[str]:
         stale = soliplex_cli.stale_policy_ids(self.cli, str(self.environment))
@@ -427,18 +437,30 @@ class SoliplexCliAuthz:
         return []
 
     def grant_owner(self, request: interfaces.RoomRequest) -> interfaces.Undo:
+        """Record the room's owner-only policy in the clone, then store it.
+
+        When storing it fails, the record is removed again.
+        """
         environment = str(self.environment)
-        soliplex_cli.set_policy(
-            self.cli,
-            environment,
-            request.room,
-            soliplex_cli.owner_policy(request.room, request.owner.json_path),
+        policy = soliplex_cli.owner_policy(
+            request.room, request.owner.json_path
         )
+        record = self.clone / request.room / rendering.AUTHZ_FILE
+        record.write_text(rendering.authz_document(policy))
+        try:
+            soliplex_cli.set_policy(
+                self.cli, environment, request.room, policy
+            )
+        except Exception:
+            record.unlink(missing_ok=True)
+            raise
+
+        def undo():
+            soliplex_cli.remove_policy(self.cli, environment, request.room)
+            record.unlink(missing_ok=True)
+
         return interfaces.Undo(
-            description="remove the room's authz policy",
-            run=lambda: soliplex_cli.remove_policy(
-                self.cli, environment, request.room
-            ),
+            description="remove the room's authz policy", run=undo
         )
 
     def audit(self) -> None:
@@ -496,11 +518,32 @@ class SoliplexBackend:
                 error.code, self.service_subject, mint_error
             ) from error
 
-    def reload_rooms(self, request: interfaces.RoomRequest) -> list[str]:
-        token, _mint_error = self._token()
+    def reload_rooms_delta(self) -> dict:
+        """Have the backend reload its room configs; return the delta.
+
+        The delta lists room ids under ``added``, ``removed`` and
+        ``changed``.
+
+        Raises :class:`AdminAccessDenied` when the backend refuses us, and
+        :class:`soliplex_api.RequestFailed` for any other failure.
+        """
+        token, mint_error = self._token()
         try:
-            delta = soliplex_api.reload_rooms(self.base_url, token=token)
-        except soliplex_api.BackendError as error:
+            return soliplex_api.reload_rooms(self.base_url, token=token)
+        except soliplex_api.AccessDenied as error:
+            raise AdminAccessDenied(
+                error.code, self.service_subject, mint_error
+            ) from error
+
+    def reload_rooms(self, request: interfaces.RoomRequest) -> list[str]:
+        """Have the backend load the room, after its commit.
+
+        The ``Backend`` interface's step: returns how to finish when the
+        reload fails, or does not load the room; never raises for either.
+        """
+        try:
+            delta = self.reload_rooms_delta()
+        except (AdminAccessDenied, soliplex_api.BackendError) as error:
             return [
                 f"reload the backend's rooms: POST {RELOAD_ROOMS_PATH} as an "
                 f"admin, or restart the backend ({error})"

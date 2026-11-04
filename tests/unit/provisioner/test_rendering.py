@@ -11,12 +11,15 @@ from __future__ import annotations
 
 import dataclasses
 import datetime
+import importlib.metadata
+import json
 
 import pytest
 import yaml
 from soliplex_concierge.provisioner import access_rules
 from soliplex_concierge.provisioner import interfaces
 from soliplex_concierge.provisioner import room_ids
+from soliplex_concierge.provisioner import soliplex_cli
 
 from soliplex_template.provisioner import rendering
 
@@ -240,6 +243,164 @@ def test_describe_rule(json_path, expected):
     result = rendering.describe_rule(json_path)
 
     assert result == expected
+
+
+# ---- owner_form ----
+
+
+@pytest.mark.parametrize(
+    "json_path, expected",
+    [
+        (
+            access_rules.claim_rule("email", 'b"q@x.example'),
+            {"claim": "email", "value": 'b"q@x.example'},
+        ),
+        (
+            access_rules.predicate_rule("is_foreman"),
+            {"predicate": "is_foreman"},
+        ),
+        ("$[?'staff' in @.groups]", {}),
+        ('$[?$.email == "a" "b"]', {}),
+    ],
+    ids=["claim", "predicate", "other", "claim-like-but-not-json"],
+)
+def test_owner_form(json_path, expected):
+    result = rendering.owner_form(json_path)
+
+    assert result == expected
+
+
+# ---- provision_record ----
+
+
+def _versions():
+    return {
+        package: importlib.metadata.version(package)
+        for package in rendering.RENDERING_PACKAGES
+    }
+
+
+def test_provision_record():
+    result = rendering.provision_record(
+        REQUEST, identity_claim="email", issue_url=ISSUE_URL
+    )
+
+    assert yaml.safe_load(result) == {
+        "room_id": "bharney_sitename.example:q3-plans",
+        "name": "Q3 Plans",
+        "description": "Plans and briefs\nfor the Q3 campaign.",
+        "requested_at": "2026-10-28T14:15:30Z",
+        "tracking_issue": ISSUE_URL,
+        "requester": {
+            "claim": "email",
+            "value": "bharney@sitename.example",
+            "name": "Bharney Rubble",
+        },
+        "owner": {
+            "owner": "bharney_sitename.example",
+            "claim": "email",
+            "value": "bharney@sitename.example",
+            "json_path": '$[?$.email == "bharney@sitename.example"]',
+        },
+        "versions": _versions(),
+    }
+
+
+def test_provision_record_keeps_its_key_order():
+    result = rendering.provision_record(REQUEST, identity_claim="email")
+
+    assert list(yaml.safe_load(result)) == [
+        "room_id",
+        "name",
+        "description",
+        "requested_at",
+        "tracking_issue",
+        "requester",
+        "owner",
+        "versions",
+    ]
+
+
+def test_provision_record_for_a_named_owner():
+    request = dataclasses.replace(
+        REQUEST,
+        owner=FOREMEN,
+        room_id=room_ids.RoomId(owner="foremen", slug="q3-plans"),
+    )
+
+    result = rendering.provision_record(request, identity_claim="email")
+
+    record = yaml.safe_load(result)
+    assert record["owner"] == {
+        "owner": "foremen",
+        "predicate": "is_foreman",
+        "json_path": "$[?is_foreman($)]",
+    }
+    assert record["requester"]["value"] == "bharney@sitename.example"
+    assert record["tracking_issue"] is None
+
+
+def test_provision_record_for_an_unrecognized_rule():
+    owner = room_ids.named_owner("staff", "$[?'staff' in @.groups]")
+    request = dataclasses.replace(
+        REQUEST,
+        owner=owner,
+        room_id=room_ids.RoomId(owner="staff", slug="q3-plans"),
+    )
+
+    result = rendering.provision_record(request, identity_claim="email")
+
+    assert yaml.safe_load(result)["owner"] == {
+        "owner": "staff",
+        "json_path": "$[?'staff' in @.groups]",
+    }
+
+
+@pytest.mark.parametrize(
+    "claims, expected",
+    [
+        ({}, {"claim": "email", "value": None, "name": None}),
+        (
+            {"email": ["x"], "name": "  "},
+            {"claim": "email", "value": None, "name": None},
+        ),
+    ],
+    ids=["missing", "not-strings"],
+)
+def test_provision_record_requester_fallbacks(claims, expected):
+    request = dataclasses.replace(REQUEST, requester_claims=claims)
+
+    result = rendering.provision_record(request, identity_claim="email")
+
+    assert yaml.safe_load(result)["requester"] == expected
+
+
+def test_provision_record_names_an_absent_package(monkeypatch):
+    def version(package):
+        raise importlib.metadata.PackageNotFoundError(package)
+
+    monkeypatch.setattr(rendering.importlib.metadata, "version", version)
+
+    result = rendering.provision_record(REQUEST, identity_claim="email")
+
+    assert yaml.safe_load(result)["versions"] == {
+        "soliplex-template": None,
+        "soliplex-concierge": None,
+    }
+
+
+# ---- authz_document ----
+
+
+def test_authz_document():
+    policy = soliplex_cli.owner_policy(
+        "foremen:q3-plans", access_rules.predicate_rule("is_foreman")
+    )
+
+    result = rendering.authz_document(policy)
+
+    assert yaml.safe_load(result) == json.loads(policy)
+    assert result.startswith("room_id: foremen:q3-plans\n")
 
 
 # ---- fragment ----
