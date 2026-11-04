@@ -54,7 +54,7 @@ NGINX_CERT = "/etc/nginx/ssl/server.crt"
 ADMIN_USER = "soliplex-admin"
 ADMIN_EMAIL = "admin@soliplex.localhost"
 REPO_NAME = "soliplex-requests"
-# The provisioned-rooms clone's origin (see soliplex_template.provision).
+# The provisioned-rooms clone's origin (see soliplex_template.provisioner).
 ROOMS_REPO_NAME = "rooms-provisioned"
 
 # Gitea's built-in SSH server: the login user is 'git'; the host port is the

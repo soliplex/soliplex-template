@@ -14,13 +14,13 @@ import os
 import subprocess
 import sys
 
-from soliplex_template import provision
+from soliplex_template.provisioner import adapters
 
 CLI = "/app/.venv/bin/soliplex-cli"
 ENVIRONMENT = "/environment"
 SUBJECT = (
     os.environ.get("PROVISIONER_SERVICE_SUBJECT")
-    or provision.DEFAULT_SERVICE_SUBJECT
+    or adapters.DEFAULT_SERVICE_SUBJECT
 )
 JSON_PATH = f"$[?$.sub == {json.dumps(SUBJECT)}]"
 

@@ -24,7 +24,7 @@ FROM ghcr.io/astral-sh/uv:0.12.18 AS uv
 
 FROM backend
 
-ARG SOLIPLEX_TEMPLATE="soliplex-template[provisioner]>=0.20"
+ARG SOLIPLEX_TEMPLATE="soliplex-template[provisioner]>=0.21"
 
 # The backend image runs as the 'soliplex' user; installing needs root.
 USER root

@@ -37,7 +37,7 @@ import warnings
 import pytest
 import yaml
 
-from soliplex_template import provisioned_room
+from soliplex_template.provisioner import rendering
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _SCRIPT = (
@@ -838,7 +838,7 @@ def test_provisioner_service_wiring(generated_project):
     assert service["command"][:3] == [
         "/app/.venv/bin/uvicorn",
         "--factory",
-        "soliplex_template.provision_service:create_app",
+        "soliplex_template.provisioner.wiring:create_app",
     ]
 
 
@@ -852,7 +852,7 @@ def test_provisioned_rooms_agent_config(generated_project):
 
     configs = {c["id"]: c for c in installation["agent_configs"]}
 
-    agent = configs[provisioned_room.AGENT_TEMPLATE]
+    agent = configs[rendering.AGENT_TEMPLATE]
     assert agent["model_name"] == configs["default_chat"]["model_name"]
     assert agent["system_prompt"].strip()
 

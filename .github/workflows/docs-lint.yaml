@@ -44,7 +44,9 @@ jobs:
 
       - uses: actions/setup-python@v6
         with:
-          python-version-file: "pyproject.toml"
+          # Pinned: 'python-version-file' resolves requires-python to the
+          # newest CPython, ahead of the locked dependencies' wheels.
+          python-version: "3.13"
 
       # Runs `pre-commit run pymarkdown --all-files`, using the repo's
       # .pre-commit-config.yaml (hook pin) + pyproject.toml (rules).
@@ -64,7 +66,9 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version-file: "pyproject.toml"
+          # Pinned: 'python-version-file' resolves requires-python to the
+          # newest CPython, ahead of the locked dependencies' wheels.
+          python-version: "3.13"
 
       # The 'dev' group provides zensical (pinned via uv.lock).
       - name: Install dependencies

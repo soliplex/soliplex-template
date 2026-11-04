@@ -299,7 +299,7 @@ services:
     command:
       - /app/.venv/bin/uvicorn
       - --factory
-      - soliplex_template.provision_service:create_app
+      - soliplex_template.provisioner.wiring:create_app
       - --host=0.0.0.0
       - --port=8090
 
