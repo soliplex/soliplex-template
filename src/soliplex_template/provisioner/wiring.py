@@ -201,7 +201,9 @@ def build_provisioner(settings: Settings) -> provision.Provisioner:
         ),
         uploads=adapters.LocalUploads(root=settings.uploads_dir),
         authz=adapters.SoliplexCliAuthz(
-            cli=settings.soliplex_cli, environment=settings.environment
+            cli=settings.soliplex_cli,
+            environment=settings.environment,
+            clone=settings.clone,
         ),
         backend=adapters.SoliplexBackend(
             base_url=settings.backend_url,

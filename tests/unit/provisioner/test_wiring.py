@@ -169,7 +169,9 @@ def test_build_provisioner():
     assert result.registrar.data_dir == "/srv/db"
     assert result.uploads == adapters.LocalUploads(root=settings.uploads_dir)
     assert result.authz == adapters.SoliplexCliAuthz(
-        cli=settings.soliplex_cli, environment=settings.environment
+        cli=settings.soliplex_cli,
+        environment=settings.environment,
+        clone=settings.clone,
     )
     assert result.backend.service_subject == settings.service_subject
     assert result.tracker == adapters.ConciergeGiteaTracker(

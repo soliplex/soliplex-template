@@ -617,7 +617,12 @@ def _authz(stack):
     return adapters.SoliplexCliAuthz(
         cli="soliplex-cli",
         environment=pathlib.Path("/environment"),
+        clone=stack["clone"],
     )
+
+
+def _authz_record(stack, room=ROOM):
+    return stack["clone"] / room / rendering.AUTHZ_FILE
 
 
 @pytest.mark.parametrize(
@@ -642,6 +647,7 @@ def test_authz_grant_owner(stack, monkeypatch):
     request = _request(
         owner=foremen, room_id=room_ids.RoomId("foremen", "q3-plans")
     )
+    (stack["clone"] / "foremen:q3-plans").mkdir()
 
     undo = _authz(stack).grant_owner(request)
 
@@ -655,11 +661,14 @@ def test_authz_grant_owner(stack, monkeypatch):
     assert json.loads(policy) == json.loads(
         soliplex_cli.owner_policy("foremen:q3-plans", "$[?is_foreman($)]")
     )
+    record = _authz_record(stack, "foremen:q3-plans").read_text()
+    assert yaml.safe_load(record) == json.loads(policy)
     assert undo.description == "remove the room's authz policy"
 
 
 def test_authz_grant_owner_undo(stack, monkeypatch):
     cli = _Cli(monkeypatch)
+    (stack["clone"] / ROOM).mkdir()
     undo = _authz(stack).grant_owner(_request())
 
     undo.run()
@@ -670,6 +679,20 @@ def test_authz_grant_owner_undo(stack, monkeypatch):
         "/environment",
         ROOM,
     )
+    assert not _authz_record(stack).exists()
+
+
+def test_authz_grant_owner_fails(stack, monkeypatch):
+    def set_policy(*args):
+        raise soliplex_cli.CliFailed("soliplex-cli", ("room-authz",), "no")
+
+    monkeypatch.setattr(adapters.soliplex_cli, "set_policy", set_policy)
+    (stack["clone"] / ROOM).mkdir()
+
+    with pytest.raises(soliplex_cli.CliFailed):
+        _authz(stack).grant_owner(_request())
+
+    assert not _authz_record(stack).exists()
 
 
 def test_authz_audit(stack, monkeypatch):
@@ -701,7 +724,9 @@ def test_authz_predicates(stack, jsonpath_registry):
         '    - {name: "is_foreman", func: "json.dumps"}\n'
     )
     authz_adapter = adapters.SoliplexCliAuthz(
-        cli="soliplex-cli", environment=stack["environment"]
+        cli="soliplex-cli",
+        environment=stack["environment"],
+        clone=stack["clone"],
     )
 
     result = authz_adapter.predicates()

@@ -12,12 +12,14 @@ from __future__ import annotations
 import dataclasses
 import datetime
 import importlib.metadata
+import json
 
 import pytest
 import yaml
 from soliplex_concierge.provisioner import access_rules
 from soliplex_concierge.provisioner import interfaces
 from soliplex_concierge.provisioner import room_ids
+from soliplex_concierge.provisioner import soliplex_cli
 
 from soliplex_template.provisioner import rendering
 
@@ -385,6 +387,20 @@ def test_provision_record_names_an_absent_package(monkeypatch):
         "soliplex-template": None,
         "soliplex-concierge": None,
     }
+
+
+# ---- authz_document ----
+
+
+def test_authz_document():
+    policy = soliplex_cli.owner_policy(
+        "foremen:q3-plans", access_rules.predicate_rule("is_foreman")
+    )
+
+    result = rendering.authz_document(policy)
+
+    assert yaml.safe_load(result) == json.loads(policy)
+    assert result.startswith("room_id: foremen:q3-plans\n")
 
 
 # ---- fragment ----

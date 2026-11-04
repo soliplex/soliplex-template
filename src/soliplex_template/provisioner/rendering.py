@@ -12,6 +12,9 @@ The concierge's provisioner core renders nothing; the template's adapters
 - the request as data (:func:`provision_record`), as ``provision.yaml``
   (:data:`PROVISION_FILE`) beside the room's config, for tools that read
   it back (reconcile, a re-render)
+- the room's authz policy as applied (:func:`authz_document`), as
+  ``authz.yaml`` (:data:`AUTHZ_FILE`) beside the room's config, which
+  reconcile replays
 - the room's haiku.rag fragment (:func:`fragment`), registering its database
   with the ingester (:data:`FRAGMENTS_DIR`, :func:`fragment_name`)
 - the commit recording the room (:func:`commit_message`), and the comment
@@ -36,6 +39,7 @@ from soliplex_concierge.provisioner import interfaces
 AGENT_TEMPLATE = "provisioned_rag"
 RECORD_FILE = "REQUEST.md"
 PROVISION_FILE = "provision.yaml"
+AUTHZ_FILE = "authz.yaml"
 # The packages whose versions a provision record names: they render a room.
 RENDERING_PACKAGES = ("soliplex-template", "soliplex-concierge")
 TITLE_PREFIX = "New room request: "
@@ -280,6 +284,18 @@ def provision_record(
         "versions": _versions(),
     }
     return yaml.safe_dump(data, sort_keys=False, allow_unicode=True)
+
+
+def authz_document(policy: str) -> str:
+    """The room's authz policy as YAML: ``authz.yaml``.
+
+    ``policy`` is the JSON document ``soliplex_cli.owner_policy`` builds;
+    the YAML is the same document, which ``room-authz from-yaml`` reads as
+    it reads the JSON.
+    """
+    return yaml.safe_dump(
+        json.loads(policy), sort_keys=False, allow_unicode=True
+    )
 
 
 # ---------------------------------------------------------------------------
