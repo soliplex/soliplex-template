@@ -159,6 +159,8 @@ services:
       # Append ':/app/src/<other>/src' for each further
       # project directory whose code you want importable.
       PYTHONPATH: /app/src/${package_name}/src
+      # 'soliplex-cli' commands work w/o explicit environment argument
+      SOLIPLEX_INSTALLATION_PATH: /environment
 
     volumes:
       - type: bind

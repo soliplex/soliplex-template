@@ -1103,6 +1103,7 @@ def test_compose_puts_the_project_dir_on_backend_pythonpath(
     # graft its repo root onto that distribution's namespace package (#176).
     assert f"PYTHONPATH: /app/src/{_PACKAGE}/src\n" in compose
     assert "PYTHONPATH: /app/src\n" not in compose
+    assert "SOLIPLEX_INSTALLATION_PATH: /environment" in compose
     assert 'source: "./src"' in compose
     assert 'target: "/app/src"' in compose
 
