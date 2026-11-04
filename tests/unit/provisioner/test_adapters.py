@@ -829,6 +829,28 @@ def test_backend_check_access_unreachable(stack, secret_file, monkeypatch):
         _backend(stack, secret_file).check_access()
 
 
+def test_backend_reload_rooms_delta(stack, secret_file, monkeypatch):
+    delta = {"added": ["x:y"], "removed": [], "changed": []}
+    api = _Api(monkeypatch, delta=delta)
+
+    result = _backend(stack, secret_file).reload_rooms_delta()
+
+    assert result == delta
+    [(name, _base_url, token)] = api.calls
+    assert name == "reload_rooms"
+    assert token is not None
+
+
+def test_backend_reload_rooms_delta_denied(stack, secret_file, monkeypatch):
+    denied = soliplex_api.AccessDenied("http://backend:8000/api/x", 401)
+    _Api(monkeypatch, errors={"reload_rooms": denied})
+
+    with pytest.raises(adapters.AdminAccessDenied) as caught:
+        _backend(stack, secret_file).reload_rooms_delta()
+
+    assert caught.value.code == 401
+
+
 @pytest.mark.parametrize(
     "delta, errors, expected",
     [
@@ -840,8 +862,13 @@ def test_backend_check_access_unreachable(stack, secret_file, monkeypatch):
             {"reload_rooms": soliplex_api.RequestFailed("u", "HTTP 500: x")},
             ["reload the backend's rooms: POST /api/v1/installation/"],
         ),
+        (
+            {},
+            {"reload_rooms": soliplex_api.AccessDenied("u", 403)},
+            ["reload the backend's rooms: POST /api/v1/installation/"],
+        ),
     ],
-    ids=["added", "changed", "not-loaded", "failed"],
+    ids=["added", "changed", "not-loaded", "failed", "denied"],
 )
 def test_backend_reload_rooms(
     stack, secret_file, monkeypatch, delta, errors, expected
@@ -853,6 +880,19 @@ def test_backend_reload_rooms(
     assert len(result) == len(expected)
     for step, start in zip(result, expected, strict=True):
         assert step.startswith(start)
+
+
+def test_backend_reload_rooms_refused_gives_the_stack_init_advice(
+    stack, secret_file, monkeypatch
+):
+    denied = soliplex_api.AccessDenied("http://backend:8000/api/x", 403)
+    _Api(monkeypatch, errors={"reload_rooms": denied})
+
+    result = _backend(stack, secret_file).reload_rooms(_request())
+
+    [step] = result
+    assert "run 'docker compose run --rm --quiet-build stack-init'" in step
+    assert """'$[?$.sub == "soliplex-provisioner"]'""" in step
 
 
 # ---- ConciergeGiteaTracker ----

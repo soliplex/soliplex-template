@@ -97,6 +97,8 @@ def test_provision_room_live(provisioned):
     assert committed[0] == "alice|Provision"
     assert f"{_ROOM_ID}/REQUEST.md" in committed
     assert f"{_ROOM_ID}/room_config.yaml" in committed
+    assert f"{_ROOM_ID}/provision.yaml" in committed
+    assert f"{_ROOM_ID}/authz.yaml" in committed
     assert (out / "rag" / "db" / f"{_ROOM_ID}.lancedb").is_dir()
     assert (out / "uploads" / "rooms" / _ROOM_ID).is_dir()
 
@@ -152,6 +154,63 @@ def test_provision_room_again_is_refused(provisioned):
     assert result.returncode == 2
     assert f"room '{_ROOM_ID}' already exists" in result.stderr
     assert ps.committed_id(clone) == head
+
+
+# ---- reconcile: on a room of its own, so the tests above keep theirs ----
+
+_RECONCILE_ROOM = "alice:reconcile-me"
+
+
+@pytest.fixture(scope="module")
+def reconcile_room(provisioned):
+    out, _first = provisioned
+    result = ps.provision(out, *_ROOM_ARGS, "--name", "Reconcile Me")
+    assert result.returncode == 0, result.stdout + result.stderr
+    return out
+
+
+def _stored_policy(out, room):
+    shown = ps.soliplex_cli(
+        out, "room-authz", "as-yaml", "/environment", room, "--allow-stale"
+    )
+    return yaml.safe_load(ps.check(shown, "room-authz as-yaml"))
+
+
+@pytest.mark.needs_docker
+def test_reconcile_restores_a_wiped_policy(reconcile_room):
+    # As after 'docker compose down -v': the room's policy row is gone.
+    out = reconcile_room
+    ps.check(
+        ps.soliplex_cli(
+            out,
+            "room-authz",
+            "from-yaml",
+            "/environment",
+            _RECONCILE_ROOM,
+            stdin="null\n",
+        ),
+        "room-authz from-yaml null",
+    )
+
+    result = ps.reconcile(out)
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert f"room '{_RECONCILE_ROOM}': applied its authz.yaml" in result.stdout
+    policy = _stored_policy(out, _RECONCILE_ROOM)
+    assert policy["default_allow_deny"] == "DENY"
+    assert {
+        entry["preferred_username"] for entry in policy["acl_entries"]
+    } == {"alice"}
+
+
+@pytest.mark.needs_docker
+def test_reconcile_again_changes_nothing(reconcile_room):
+    out = reconcile_room
+
+    result = ps.reconcile(out)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "nothing to change" in result.stdout
 
 
 @pytest.mark.needs_docker

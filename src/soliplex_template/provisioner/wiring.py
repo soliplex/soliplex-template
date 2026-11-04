@@ -9,7 +9,8 @@ core. Two entry points use them:
 - :func:`create_app`: the ``soliplex-provisioner`` service, for
   ``uvicorn --factory soliplex_template.provisioner.wiring:create_app``
 - :func:`main`: the ``soliplex-provision-room`` command line, provisioning
-  one room
+  one room, or (``--reconcile``) making the stack match the clone (see
+  :mod:`soliplex_template.provisioner.reconcile`)
 """
 
 from __future__ import annotations
@@ -35,6 +36,7 @@ from soliplex_concierge.provisioner import soliplex_cli
 
 from soliplex_template import gitea
 from soliplex_template.provisioner import adapters
+from soliplex_template.provisioner import reconcile
 from soliplex_template.provisioner import rendering
 
 SERVICE_TOKEN_SECRET_FILE = "/run/secrets/url_safe_token_secret"
@@ -258,35 +260,65 @@ USER_ERRORS = (
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="soliplex-provision-room",
-        description="Provision a private RAG room for a requester.",
+        description=(
+            "Provision a private RAG room for a requester, or (with "
+            "--reconcile) make the stack match the provisioned-rooms clone."
+        ),
+    )
+    parser.add_argument(
+        "--reconcile",
+        action="store_true",
+        help=(
+            "make every provisioned room's policy, uploads directory and "
+            "database match the clone, instead of provisioning one"
+        ),
     )
     parser.add_argument(
         "--claims",
-        required=True,
         type=json.loads,
         help="the requester's token claims, as a JSON object",
     )
-    parser.add_argument(
-        "--name", required=True, help="the room's human-readable name"
-    )
+    parser.add_argument("--name", help="the room's human-readable name")
     parser.add_argument("--description", help="defaults to the name")
     parser.add_argument("--slug", help="defaults to one derived from the name")
     return parser
 
 
-def main(argv=None, environ=None) -> int:
-    """Provision one room.
+def _reconcile(environ) -> int:
+    try:
+        reconciled = reconcile.reconcile(Settings.from_env(environ))
+    except USER_ERRORS as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+    for note in reconciled.notes:
+        print(f"note: {note}")
+    for change in reconciled.changes:
+        print(change)
+    if not reconciled.changes:
+        print("nothing to change: the stack matches the clone")
+        return 0
+    return 1
 
-    Exits 0 when the room is live, 1 when steps remain, 2 on an error.
+
+def main(argv=None, environ=None) -> int:
+    """Provision one room, or reconcile the stack with the clone.
+
+    Provisioning exits 0 when the room is live, 1 when steps remain, 2 on
+    an error. Reconciling exits 0 when nothing needed changing, 1 when it
+    changed something, 2 on an error.
     """
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    environ = os.environ if environ is None else environ
+    if args.reconcile:
+        return _reconcile(environ)
+    if args.claims is None or args.name is None:
+        parser.error("--claims and --name are required to provision a room")
     if not isinstance(args.claims, dict):
         print("error: --claims must be a JSON object", file=sys.stderr)
         return 2
     try:
-        settings = Settings.from_env(
-            os.environ if environ is None else environ
-        )
+        settings = Settings.from_env(environ)
         result = provision.provision_room(
             args.claims,
             name=args.name,

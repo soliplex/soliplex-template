@@ -518,11 +518,32 @@ class SoliplexBackend:
                 error.code, self.service_subject, mint_error
             ) from error
 
-    def reload_rooms(self, request: interfaces.RoomRequest) -> list[str]:
-        token, _mint_error = self._token()
+    def reload_rooms_delta(self) -> dict:
+        """Have the backend reload its room configs; return the delta.
+
+        The delta lists room ids under ``added``, ``removed`` and
+        ``changed``.
+
+        Raises :class:`AdminAccessDenied` when the backend refuses us, and
+        :class:`soliplex_api.RequestFailed` for any other failure.
+        """
+        token, mint_error = self._token()
         try:
-            delta = soliplex_api.reload_rooms(self.base_url, token=token)
-        except soliplex_api.BackendError as error:
+            return soliplex_api.reload_rooms(self.base_url, token=token)
+        except soliplex_api.AccessDenied as error:
+            raise AdminAccessDenied(
+                error.code, self.service_subject, mint_error
+            ) from error
+
+    def reload_rooms(self, request: interfaces.RoomRequest) -> list[str]:
+        """Have the backend load the room, after its commit.
+
+        The ``Backend`` interface's step: returns how to finish when the
+        reload fails, or does not load the room; never raises for either.
+        """
+        try:
+            delta = self.reload_rooms_delta()
+        except (AdminAccessDenied, soliplex_api.BackendError) as error:
             return [
                 f"reload the backend's rooms: POST {RELOAD_ROOMS_PATH} as an "
                 f"admin, or restart the backend ({error})"

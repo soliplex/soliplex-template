@@ -338,6 +338,20 @@ def soliplex_cli(out, *args, stdin=None):
     )
 
 
+def reconcile(out):
+    """Run ``soliplex-provision-room --reconcile`` in ``soliplex-dev``."""
+    return compose(
+        out,
+        "run",
+        "--rm",
+        "--no-TTY",
+        "--quiet-build",
+        "soliplex-dev",
+        "/app/.venv/bin/soliplex-provision-room",
+        "--reconcile",
+    )
+
+
 def provision(out, *args):
     """Run the skill's ``provision_room.py``; return the completed process."""
     return run(sys.executable, PROVISION_ROOM, "--project-dir", out, *args)
