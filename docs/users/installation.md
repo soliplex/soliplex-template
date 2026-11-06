@@ -193,7 +193,7 @@ This creates a rotating service account (its password is never persisted),
 and writes `GITEA_HOST` / `GITEA_ACCESS_TOKEN` into `.env`. It also creates
 the tracking repository's provision-status labels (`provision-start`,
 `provision-complete`, `provision-incomplete`, `provision-failed`; see
-[Room provisioning](operations/room-provisioning.md)). It reaches Gitea
+[Room provisioning](operations/room-provisioning/index.md)). It reaches Gitea
 through nginx's `/gitea/`, trusting only the stack's own certificate (or
 through `gitea_http_port`, when that is set). Then recreate the services that
 read `.env`:

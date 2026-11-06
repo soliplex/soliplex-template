@@ -675,7 +675,7 @@ to the stack's `src/rooms-provisioned` repository — run
 `scripts/provision_room.py`. Unlike `add_room.py`, it needs the stack up:
 it runs the provisioner in a one-off `soliplex-dev` container (built on
 first use), which reloads the ingester and the backend. The stack's
-`docs/operations/room-provisioning.md` describes every step and setting.
+`docs/operations/room-provisioning/` pages describe every step and setting.
 
 1. **Gather** the requester (`--username`, plus `--email` and
    `--display-name` when known; or their claims as JSON with `--claims`)

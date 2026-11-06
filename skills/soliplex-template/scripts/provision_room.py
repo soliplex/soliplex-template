@@ -19,7 +19,7 @@ Runs the stack's room provisioner (``soliplex-provision-room``, from the
 
 The stack must be up (backend, ingester). With OIDC on, the backend must
 admit the provisioner's service tokens through an ``admin_users`` entry
-(see the stack's ``docs/operations/room-provisioning.md``).
+(see the stack's ``docs/operations/room-provisioning/configuration.md``).
 
 Exits with the provisioner's status: 0 when the room is live, 1 when steps
 after its commit remain (each is printed), 2 on an error.

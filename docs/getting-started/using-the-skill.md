@@ -122,7 +122,7 @@ policy behind, provisioning refuses and the agent lists what is left. It
 does not delete them to get past the error.
 
 By hand: `<skill>/scripts/provision_room.py`; see
-[Room provisioning](../users/operations/room-provisioning.md).
+[Room provisioning](../users/operations/room-provisioning/index.md).
 
 ## Work on another project alongside the stack
 

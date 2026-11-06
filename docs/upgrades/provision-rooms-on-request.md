@@ -315,7 +315,7 @@ compare against a stack the rung's release generates.
 12. **Admit the provisioner, in auth-mode stacks.** The provisioner calls
     the backend with service tokens whose subject is `soliplex-provisioner`;
     admit them as an admin once (see
-    [Room provisioning](../users/operations/room-provisioning.md#with-oidc-on)):
+    [Room provisioning](../users/operations/room-provisioning/configuration.md#with-oidc-on)):
 
     ```bash
     docker compose run --rm --quiet-build soliplex-dev \
@@ -330,7 +330,7 @@ compare against a stack the rung's release generates.
 
     To let users other than admins request rooms through the provisioner
     service, write a policy for the reserved room id `__provision__` (see
-    [The provisioner service](../users/operations/room-provisioning.md#the-provisioner-service)).
+    [The provisioner service](../users/operations/room-provisioning/service.md)).
 
 13. [**Check it**](index.md#check-it). Then provision a test room, and
     check that it is live:

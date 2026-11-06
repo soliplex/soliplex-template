@@ -81,7 +81,7 @@ plane. In `haiku.rag/haiku.rag.yaml`, list their locations under
 default database in both maps when adding another. (Provisioned rooms'
 databases are not listed here: each is in a fragment of its own, which the
 file's `databases_include` merges in; see
-[Room provisioning](room-provisioning.md).)
+[Room provisioning](room-provisioning/index.md).)
 
 ```yaml
 lancedb:

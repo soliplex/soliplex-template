@@ -27,7 +27,7 @@ depends on `soliplex-concierge[provisioner] >= 0.15` for. What changes:
   `provision-complete`, `provision-incomplete`, `provision-failed`); the
   provisioner files `new-room` issues tagged `provision-start`, and tags one
   of the others when the provision resolves or fails (see
-  [Room provisioning](../users/operations/room-provisioning.md))
+  [Room provisioning](../users/operations/room-provisioning/index.md))
 
 Where a step differs, it says which kind of stack it means:
 
