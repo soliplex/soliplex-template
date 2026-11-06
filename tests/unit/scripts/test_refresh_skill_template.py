@@ -221,6 +221,52 @@ def test_t_user_doc():
     assert "% if include_tui:\ntui only\n% endif\n" in out
 
 
+def test_t_user_doc_mermaid_comment_fences():
+    text = (
+        "```mermaid\n"
+        "flowchart LR\n"
+        "  nginx --> backend\n"
+        "  %% if:gitea\n"
+        '  nginx -->|"/gitea/"| gitea\n'
+        "  %% endif\n"
+        "  %% ifp:ingester_port\n"
+        "  host --> ingester\n"
+        "  %% endif\n"
+        "```\n"
+    )
+
+    out = rst.t_user_doc(text)
+
+    assert out == (
+        "```mermaid\n"
+        "flowchart LR\n"
+        "  nginx --> backend\n"
+        "% if include_gitea:\n"
+        '  nginx -->|"/gitea/"| gitea\n'
+        "% endif\n"
+        "% if ingester_port:\n"
+        "  host --> ingester\n"
+        "% endif\n"
+        "```\n"
+    )
+
+
+def test_t_user_doc_strips_mermaid_site_only_block():
+    text = (
+        "```mermaid\n"
+        "flowchart LR\n"
+        "  nginx --> tui\n"
+        "  %% site-only\n"
+        "  class tui optional\n"
+        "  %% endsite-only\n"
+        "```\n"
+    )
+
+    out = rst.t_user_doc(text)
+
+    assert out == "```mermaid\nflowchart LR\n  nginx --> tui\n```\n"
+
+
 def test_t_user_doc_strips_site_only_block():
     text = (
         "# Title\n"

@@ -68,8 +68,13 @@ points at your Ollama server and adjust if needed.
 
 The stack starts with no OIDC provider, and so **without authentication**:
 anyone who can reach nginx uses it as Soliplex's fixed no-auth user. That is
-fine on a workstation; before you expose the stack, add a provider with the
-`soliplex-template` skill's `scripts/oidc_providers.py`:
+fine on a workstation; before you expose the stack, add a provider. The two
+ways:
+
+- an **in-stack Authelia** provider, which the skill's
+  `scripts/install_authelia.py` installs — see
+  [Sign-in: choosing and running an identity provider](authentication.md);
+- an **external provider** registered with whoever runs your IdP:
 
 ```bash
 python3 <skill>/scripts/oidc_providers.py add --id <id> --title "<label>" \
@@ -80,7 +85,7 @@ python3 <skill>/scripts/oidc_providers.py add --id <id> --title "<label>" \
 Adding the first provider turns authentication on; the script then prints
 the command that gives your own account admin rights. Adding one before the
 next step means the no-auth user never becomes an admin. See
-[Sign-in and admins](#sign-in-and-admins).
+[Sign-in: choosing and running an identity provider](authentication.md).
 
 ## 4. Prepare the databases
 
@@ -147,8 +152,15 @@ every request as Soliplex's no-auth user (`phreddy@example.com`).
 `stack-init` makes that user an admin while there is no provider, so
 admin-only routes such as `/ingester/` admit it.
 
+Providers come in two sorts, both added from the `soliplex-template` skill:
+an in-stack Authelia installed with `scripts/install_authelia.py` and
+managed day to day with `scripts/authelia_users.py`, or external IdPs
+managed by the `scripts/oidc_providers.py` below. See
+[Sign-in: choosing and running an identity provider](authentication.md) for
+the commands and what they print.
+
 `scripts/oidc_providers.py` (in the `soliplex-template` skill) manages the
-providers:
+external providers:
 
 - `list` shows them, marking the one `/ingester/` signs in with.
 - `add` adds one. The first turns authentication on: give real accounts admin

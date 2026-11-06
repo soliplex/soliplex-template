@@ -31,6 +31,25 @@ with `--reload=config`, edits here take effect without a rebuild.
 comments describe **defaults** — so a section being empty or absent is not the
 same as being unconfigured.
 
+## Sign-in configuration
+
+Authentication lives off `installation.yaml`, in its own files:
+
+- `oidc/config.yaml` — the `auth_systems` entries. With none, the backend
+  runs without authentication; the first turns it on. Written by the
+  skill's `scripts/oidc_providers.py` and `scripts/install_authelia.py`
+  (see [Sign-in: choosing and running an identity
+  provider](../authentication.md)); the backend reloads it by itself.
+- `oidc/cacert.pem` — the backend's extra trust list for issuer
+  certificates it would not otherwise trust (the in-stack Authelia's
+  self-signed certificate); scripts append to it.
+- `nginx/conf.d/` — nginx fragments, read at start only: one names the
+  provider the `/ingester/` gate signs in with, and an Authelia-installed
+  stack gains a route for `/authelia/`.
+- `authelia/configuration.yml` (in Authelia stacks) — the provider-side
+  configuration: server, storage, notifier, and the registered
+  `soliplex` client.
+
 !!! note "Two sources of truth to remember"
     - `room_paths` in `installation.yaml` lists the directories rooms load
       from. It points at `./rooms`, so every `rooms/<name>/room_config.yaml`
