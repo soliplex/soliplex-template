@@ -28,7 +28,7 @@ _PARAMS = {
     "ollama_base_url": "http://ollama.invalid:11434",
 }
 _ROOM_ARGS = ("--username", "alice", "--email", "alice@example.com")
-_ROOM_ID = "alice:q3-plans"
+_ROOM_ID = "alice--q3-plans"
 
 
 @pytest.fixture(scope="module")
@@ -158,7 +158,7 @@ def test_provision_room_again_is_refused(provisioned):
 
 # ---- reconcile: on a room of its own, so the tests above keep theirs ----
 
-_RECONCILE_ROOM = "alice:reconcile-me"
+_RECONCILE_ROOM = "alice--reconcile-me"
 
 
 @pytest.fixture(scope="module")

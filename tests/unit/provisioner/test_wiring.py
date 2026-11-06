@@ -34,7 +34,7 @@ from soliplex_template.provisioner import wiring
 
 REPO = pathlib.Path(__file__).resolve().parents[3]
 CLAIMS = {"preferred_username": "alice", "email": "alice@example.com"}
-ROOM = "alice:q3-plans"
+ROOM = "alice--q3-plans"
 SECRET = "test" * 8
 
 
@@ -67,6 +67,8 @@ def test_settings_from_env(token_file):
         PROVISIONER_SERVICE_SUBJECT="ops-provisioner",
         PROVISIONER_OWNER_CLAIM="email",
         PROVISIONER_FLATTEN_OWNER="True",
+        PROVISIONER_LOWERCASE_OWNER="false",
+        PROVISIONER_ROOM_ID_SEPARATOR="::",
         GITEA_HOST="https://gitea.example.com",
         GITEA_ACCESS_TOKEN="gt",
         GITEA_OWNER="ops",
@@ -81,6 +83,8 @@ def test_settings_from_env(token_file):
         service_subject="ops-provisioner",
         owner_claim="email",
         flatten_owner=True,
+        lowercase_owner=False,
+        room_id_separator="::",
         gitea=adapters.GiteaSettings(
             host="https://gitea.example.com",
             token="gt",
@@ -121,7 +125,12 @@ def test_settings_from_env_reads_the_secret_by_default(monkeypatch):
     [
         ({"GITEA_HOST": "http://gitea:3000"}, wiring.GiteaTokenMissing),
         ({"PROVISIONER_FLATTEN_OWNER": "maybe"}, wiring.BadFlag),
+        ({"PROVISIONER_LOWERCASE_OWNER": "maybe"}, wiring.BadFlag),
         ({"PROVISIONER_OWNER_CLAIM": "a-b"}, access_rules.BadOwnerClaim),
+        (
+            {"PROVISIONER_ROOM_ID_SEPARATOR": "a"},
+            room_ids.BadSeparator,
+        ),
     ],
 )
 def test_settings_from_env_rejects(token_file, extra, exc_type):
@@ -149,6 +158,8 @@ def test_build_provisioner():
         ingester_token="bearer",
         owner_claim="email",
         flatten_owner=True,
+        lowercase_owner=False,
+        room_id_separator="::",
         ingester_data_dir="/srv/db",
         gitea=adapters.GiteaSettings(host="h", token="t"),
     )
@@ -157,6 +168,8 @@ def test_build_provisioner():
 
     assert result.owner_claim == "email"
     assert result.flatten_owner is True
+    assert result.lowercase_owner is False
+    assert result.room_id_separator == "::"
     assert result.store == adapters.GitRoomStore(
         clone=settings.clone,
         environment=settings.environment,
@@ -339,7 +352,7 @@ class _Harness:
         self.not_admitted_token = _token("carol")
 
     def occupy(self, name):
-        room = f"alice:{room_ids.slugify(name)}"
+        room = f"alice--{room_ids.slugify(name)}"
         (self.settings.clone / room).mkdir(parents=True)
 
 

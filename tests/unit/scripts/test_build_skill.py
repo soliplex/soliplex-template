@@ -28,7 +28,7 @@ bs = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(bs)
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def run(monkeypatch):
     """Stub the refresh subprocess so unit tests never shell out to uv."""
     run = mock.Mock()

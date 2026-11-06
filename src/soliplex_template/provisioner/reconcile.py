@@ -64,8 +64,8 @@ class Reconciled:
 def provisioned_rooms(clone: pathlib.Path) -> list[str]:
     """The ids of the provisioned rooms in ``clone``, sorted.
 
-    That is, its directories named like ``<owner>:<slug>`` that hold a
-    ``room_config.yaml``.
+    That is, its directories whose names parse as provisioned room ids
+    and that hold a ``room_config.yaml``.
     """
     rooms = []
     for path in clone.iterdir():

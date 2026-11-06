@@ -51,8 +51,8 @@ _USERS = {
     "alice": {"sub": "alice", "preferred_username": "alice"},
     "bob": {"sub": "bob", "preferred_username": "bob"},
 }
-_ROOM_ID = "alice:q3-plans"
-_SERVICE_ROOM_ID = "alice:service-plans"
+_ROOM_ID = "alice--q3-plans"
+_SERVICE_ROOM_ID = "alice--service-plans"
 _SERVICE_TIMEOUT = 180
 # Admits alice alone to request rooms through the service.
 _ADMISSION_POLICY = {
@@ -198,7 +198,7 @@ def test_provision_room_refused_until_admitted(unadmitted):
     assert f"'{_PROVISIONER_ENTRY}'" in result.stderr
     assert "stack-init" in result.stderr
     clone = out / "src" / "rooms-provisioned"
-    assert not (clone / "alice:refused-before-admission").exists()
+    assert not (clone / "alice--refused-before-admission").exists()
 
 
 @pytest.mark.needs_docker
@@ -274,7 +274,7 @@ def test_service_refuses_a_requester_not_admitted(service):
     )
 
     assert status == 403, body
-    assert not (out / "src" / "rooms-provisioned" / "bob:bob-plans").exists()
+    assert not (out / "src" / "rooms-provisioned" / "bob--bob-plans").exists()
 
 
 @pytest.mark.needs_docker

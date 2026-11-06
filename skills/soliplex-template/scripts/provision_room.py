@@ -8,12 +8,12 @@
 Runs the stack's room provisioner (``soliplex-provision-room``, from the
 ``soliplex-template`` package) in a one-off ``soliplex-dev`` container::
 
-    # a room for 'alice', its id derived from the name ('alice:q3-plans')
+    # a room for 'alice', its id derived from the name ('alice--q3-plans')
     uv run provision_room.py --project-dir /path/to/stack \\
         --username alice --email alice@example.com \\
         --display-name "Alice Example" --name "Q3 Plans"
 
-    # the requester's claims as JSON, an explicit slug ('alice:plans')
+    # the requester's claims as JSON, an explicit slug ('alice--plans')
     uv run provision_room.py --claims '{"preferred_username": "alice"}' \\
         --name "Q3 Plans" --slug plans
 
