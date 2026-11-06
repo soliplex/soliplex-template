@@ -3558,7 +3558,7 @@ wheels = [
 
 [[package]]
 name = "soliplex-template"
-version = "0.22.dev0"
+version = "0.22"
 source = { editable = "." }
 
 [package.optional-dependencies]
