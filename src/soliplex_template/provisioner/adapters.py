@@ -562,7 +562,13 @@ class SoliplexBackend:
 # ---------------------------------------------------------------------------
 @dataclasses.dataclass(frozen=True)
 class ConciergeGiteaTracker:
-    """Tracking issues on Gitea, through the concierge's Gitea calls."""
+    """Tracking issues on Gitea, through the concierge's Gitea calls.
+
+    Tags the issue with the provision status: ``'provision-start'`` filed;
+    ``'provision-failed'`` when the provision failed before the commit;
+    ``'provision-complete'``, or ``'provision-incomplete'`` when steps
+    after the commit left work, on resolving.
+    """
 
     settings: GiteaSettings
     identity_claim: str
@@ -578,7 +584,7 @@ class ConciergeGiteaTracker:
     ) -> concierge_gitea.CreatedGiteaIssue:
         host, token, owner, repo = self._repo()
         try:
-            return concierge_gitea.create_gitea_issue_sync(
+            issue = concierge_gitea.create_gitea_issue_sync(
                 host=host,
                 token=token,
                 owner=owner,
@@ -593,22 +599,33 @@ class ConciergeGiteaTracker:
                 ),
                 request_type=REQUEST_TYPE,
             )
+            gitea_admin.label_issue(
+                host, token, owner, repo, issue.number, [gitea.PROVISION_START]
+            )
         except Exception as error:
             raise IssueFilingFailed(error) from error
+        return issue
 
     def report_failure(self, issue, error: Exception) -> None:
         gitea_admin.comment_issue(*self._repo(), issue.number, str(error))
+        gitea_admin.label_issue(
+            *self._repo(), issue.number, [gitea.PROVISION_FAILED]
+        )
 
     def resolve(self, issue, provisioned: interfaces.Provisioned) -> list[str]:
+        label = (
+            gitea.PROVISION_INCOMPLETE
+            if provisioned.unfinished
+            else gitea.PROVISION_COMPLETE
+        )
+        comment = rendering.provisioned_comment(provisioned)
+        target = self._repo()
         try:
-            gitea_admin.comment_issue(
-                *self._repo(),
-                issue.number,
-                rendering.provisioned_comment(provisioned),
-            )
-            gitea_admin.close_issue(*self._repo(), issue.number)
+            gitea_admin.label_issue(*target, issue.number, [label])
+            gitea_admin.comment_issue(*target, issue.number, comment)
+            gitea_admin.close_issue(*target, issue.number)
         except Exception as error:
-            return [f"comment on and close {issue.url} ({error})"]
+            return [f"label, comment on and close {issue.url} ({error})"]
         return []
 
 

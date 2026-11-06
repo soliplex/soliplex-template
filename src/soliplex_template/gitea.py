@@ -8,10 +8,11 @@ opt-in gitea service and delegates here. It ships in the published
 
 Run it AFTER ``docker compose up -d`` (postgres, gitea and nginx up). It waits
 for Gitea, ensures an admin user (via ``docker compose exec``), mints a scoped
-access token, a tracking repository and the private provisioned-rooms
-repository (over the REST API), and writes ``GITEA_HOST`` /
-``GITEA_ACCESS_TOKEN`` into ``.env`` for downstream consumers. Idempotent:
-re-running resets the admin password and reuses the existing repos.
+access token, a tracking repository (with its provision-status labels) and
+the private provisioned-rooms repository (over the REST API), and writes
+``GITEA_HOST`` / ``GITEA_ACCESS_TOKEN`` into ``.env`` for downstream
+consumers. Idempotent: re-running resets the admin password and reuses the
+existing repos.
 
 It reaches Gitea's REST API from the host (see :func:`find_endpoints`):
 
@@ -56,6 +57,33 @@ ADMIN_EMAIL = "admin@soliplex.localhost"
 REPO_NAME = "soliplex-requests"
 # The provisioned-rooms clone's origin (see soliplex_template.provisioner).
 ROOMS_REPO_NAME = "rooms-provisioned"
+
+# The provision statuses the template's tracker adapter (see
+# soliplex_template.provisioner.adapters) tags tracking issues with, created
+# on the tracking repository by provision_gitea.
+PROVISION_START = "provision-start"
+PROVISION_COMPLETE = "provision-complete"
+PROVISION_INCOMPLETE = "provision-incomplete"
+PROVISION_FAILED = "provision-failed"
+
+PROVISION_STATUS_LABELS: dict[str, dict[str, str]] = {
+    PROVISION_START: {
+        "color": "#1d76db",
+        "description": "Room provision started",
+    },
+    PROVISION_COMPLETE: {
+        "color": "#0e8a16",
+        "description": "Room provision complete",
+    },
+    PROVISION_INCOMPLETE: {
+        "color": "#fbca04",
+        "description": "Room provision needs operator follow-up",
+    },
+    PROVISION_FAILED: {
+        "color": "#d73a4a",
+        "description": "Room provision failed",
+    },
+}
 
 # Gitea's built-in SSH server: the login user is 'git'; the host port is the
 # one 'gitea_ssh_port' publishes.
@@ -143,6 +171,20 @@ class RepoCreationFailed(GiteaError):
     def __init__(self, code):
         self.code = code
         super().__init__(f"repo creation failed (HTTP {code})")
+
+
+class LabelListingFailed(GiteaError):
+    def __init__(self, code):
+        self.code = code
+        super().__init__(
+            f"listing the tracking repository's labels failed (HTTP {code})"
+        )
+
+
+class LabelCreationFailed(GiteaError):
+    def __init__(self, name, code):
+        self.name, self.code = name, code
+        super().__init__(f"creating the {name!r} label failed (HTTP {code})")
 
 
 class NotAGitRepo(GiteaError):
@@ -418,6 +460,67 @@ def create_repo(
     return code
 
 
+# Label listing poll: pages of PAGE_SIZE, at most MAX pages deep.
+LABEL_PAGE_SIZE = 50
+MAX_LABEL_PAGES = 10
+
+
+def ensure_labels(
+    password: str,
+    *,
+    endpoints: Endpoints,
+    labels: dict[str, dict[str, str]],
+    repo: str = REPO_NAME,
+) -> dict[str, str]:
+    """Create the repository's missing provision-status labels.
+
+    Walks the repository's (paginated) label listing, then creates each of
+    ``labels`` not defined there. Idempotent: reports each name as
+    ``'created'`` or ``'exists'``.
+    """
+    base = f"{endpoints.http}/api/v1/repos/{ADMIN_USER}/{repo}/labels"
+    defined: set[str] = set()
+    for page in range(1, MAX_LABEL_PAGES + 1):
+        url = f"{base}?limit={LABEL_PAGE_SIZE}&page={page}"
+        try:
+            with _request(
+                "GET",
+                url,
+                user=ADMIN_USER,
+                password=password,
+                context=endpoints.context,
+            ) as resp:
+                batch = json.loads(resp.read())
+        except urllib.error.HTTPError as exc:
+            raise LabelListingFailed(exc.code) from exc
+        if not batch:
+            break
+        defined.update(label["name"] for label in batch)
+    report = {}
+    for name, spec in labels.items():
+        if name in defined:
+            report[name] = "exists"
+            continue
+        try:
+            with _request(
+                "POST",
+                base,
+                user=ADMIN_USER,
+                password=password,
+                data={
+                    "name": name,
+                    "color": spec["color"],
+                    "description": spec.get("description", ""),
+                },
+                context=endpoints.context,
+            ) as resp:
+                resp.getcode()
+        except urllib.error.HTTPError as exc:
+            raise LabelCreationFailed(name, exc.code) from exc
+        report[name] = "created"
+    return report
+
+
 def stack_ssh_url(repo_name: str, *, port: int) -> str:
     """The SSH clone URL for a repo owned by the admin service account.
 
@@ -680,6 +783,10 @@ def provision_gitea(
 
     print(f"Ensuring repository '{ADMIN_USER}/{REPO_NAME}' ...")
     create_repo(password, endpoints=endpoints)
+    print("Ensuring its provision-status labels ...")
+    ensure_labels(
+        password, endpoints=endpoints, labels=PROVISION_STATUS_LABELS
+    )
 
     print(f"Ensuring repository '{ADMIN_USER}/{ROOMS_REPO_NAME}' ...")
     create_repo(

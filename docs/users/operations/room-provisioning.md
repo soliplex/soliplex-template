@@ -47,8 +47,8 @@ provisioner:
 
 1. refuses a room id that anything already uses (see
    [Before anything changes](#before-anything-changes))
-2. files a `new-room` tracking issue, when a Gitea is configured and the
-   concierge extension is installed
+2. files a `new-room` tracking issue tagged `provision-start`, when a
+   Gitea is configured and the concierge extension is installed
 3. writes `room_config.yaml`, `REQUEST.md` (who asked for what, and
    what is set up) and `provision.yaml` (the same, as data) into
    `src/rooms-provisioned/<room-id>/`
@@ -66,10 +66,13 @@ provisioner:
    fragment in `src/rooms-provisioned` (the requester as author), and
    pushes it when a Gitea is configured
 9. has the backend reload its room configs, which makes the room live
-10. comments on and closes the tracking issue
+10. tags the tracking issue `provision-complete`, or
+    `provision-incomplete` when the steps after the commit left work for an
+    operator (listed in the comment), then comments on and closes it
 
 A failure before the commit undoes what the run itself created, and only
-that (and comments on the tracking issue, leaving it open). After the commit, the room is valid as
+that (and tags the issue `provision-failed`, comments on it, and leaves it
+open). After the commit, the room is valid as
 committed: a step that fails there is reported, with how to finish it.
 
 Two steps have time limits:

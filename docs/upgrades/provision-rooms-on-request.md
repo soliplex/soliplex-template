@@ -303,7 +303,8 @@ compare against a stack the rung's release generates.
 11. **In stacks with Gitea, provision its rooms repository.** Run the
     stack's Gitea setup again: it is idempotent, and it now also creates
     the private `soliplex-admin/rooms-provisioned` repository the
-    provisioner pushes to. It rotates the service account's token, so
+    provisioner pushes to, and the tracking repository's provision-status
+    labels. It rotates the service account's token, so
     recreate the services that read `.env` afterwards:
 
     ```bash

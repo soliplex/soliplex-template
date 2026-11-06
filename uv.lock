@@ -3511,7 +3511,7 @@ wheels = [
 
 [[package]]
 name = "soliplex-concierge"
-version = "0.14.1"
+version = "0.15"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx2" },
@@ -3521,9 +3521,9 @@ dependencies = [
     { name = "soliplex-plumber" },
     { name = "soliplex-skills" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/5b/e2/d4d5e052e4e6ad12d932c08c7f98d803aaa8bc06412e320ad146d103de34/soliplex_concierge-0.14.1.tar.gz", hash = "sha256:f6d249b1b4ac007f0c2c3c882f4f121c23563ea213a5dec2d5ebdb556d2669a6", size = 59088, upload-time = "2026-11-05T16:37:22.982Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ac/d6/b44e4b52068ea0d20f1527878c63609bccf4adb61f26b3b6626e1bb1276e/soliplex_concierge-0.15.tar.gz", hash = "sha256:fc158173a07bce75d0a0f0dd57911f34029d3e57a2a4dcd71bf038b2f808cd62", size = 59112, upload-time = "2026-11-06T00:36:48.172Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/43/24/0166007d938dbb980dbb4bef09586c2b7ebd6423fd4decd0cbc69e19d05e/soliplex_concierge-0.14.1-py3-none-any.whl", hash = "sha256:ec702c313b8ae4bce3efbc1941d6f51303223ea2b08eba7edc68b46b213af7a2", size = 65912, upload-time = "2026-11-05T16:37:21.944Z" },
+    { url = "https://files.pythonhosted.org/packages/f7/11/70a8d0f5fc5963d7281cdebf604394a6c25a5f4ba75ea63e512654f93ece/soliplex_concierge-0.15-py3-none-any.whl", hash = "sha256:b605a979e14dd173e56f5ec4467c516900b8ff90cec4c2aeccce149743a7aa39", size = 65919, upload-time = "2026-11-06T00:36:46.934Z" },
 ]
 
 [package.optional-dependencies]
@@ -3583,7 +3583,7 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "soliplex-concierge", extras = ["provisioner"], marker = "extra == 'provisioner'", specifier = ">=0.14.1" }]
+requires-dist = [{ name = "soliplex-concierge", extras = ["provisioner"], marker = "extra == 'provisioner'", specifier = ">=0.15" }]
 provides-extras = ["provisioner"]
 
 [package.metadata.requires-dev]
