@@ -27,6 +27,12 @@ tmp/
 rag/db/*
 !rag/db/README.md
 
+# Authelia runtime files. configuration.yml and identifiers.yml are
+# committed; users.yml and the filesystem notifier output are generated at
+# runtime and must stay private.
+authelia/users.yml
+authelia/notification.txt
+
 # Zensical docs build output (`zensical build`)
 /site/
 
