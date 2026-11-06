@@ -97,7 +97,7 @@ Any project directory under `src/` works, not just a `soliplex` checkout.
 ## soliplex-provisioner
 
 The room provisioner's HTTP service (see
-[Room provisioning](../operations/room-provisioning.md#the-provisioner-service)):
+[Room provisioning](../operations/room-provisioning/service.md)):
 it creates rooms on a requester's behalf, for callers holding the stack's
 `url_safe_token_secret`. It runs with `docker compose up`, listening on the
 compose network only, at `http://soliplex-provisioner:8090`.

@@ -285,10 +285,10 @@ services:
 
   # The room provisioner's HTTP service: provisions rooms on a user's behalf
   # for callers holding the stack's 'url_safe_token_secret' (see
-  # docs/operations/room-provisioning.md). Reachable on the compose network
-  # only, at 'http://soliplex-provisioner:8090'. The very image, secrets,
-  # environment and mounts of 'soliplex-dev' (YAML aliases), so the two
-  # provision alike.
+  # docs/operations/room-provisioning/service.md). Reachable on the compose
+  # network only, at 'http://soliplex-provisioner:8090'. The very image,
+  # secrets, environment and mounts of 'soliplex-dev' (YAML aliases), so the
+  # two provision alike.
   soliplex-provisioner:
 
     build: *soliplex_dev_build

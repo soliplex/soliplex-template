@@ -26,10 +26,10 @@ depends on (`soliplex-concierge[provisioner] >= 0.14`). What changes:
 - each room provisioned from now on records its request and its policy in
   the provisioned-rooms clone (`provision.yaml`, `authz.yaml`), and
   `soliplex-provision-room --reconcile` replays them (see
-  [Room provisioning](../users/operations/room-provisioning.md))
+  [Room provisioning](../users/operations/room-provisioning/index.md))
 - in a stack with the concierge, reinstallint the about room enables
   the new provisioning features (see
-  [Rooms for someone else](../users/operations/room-provisioning.md#rooms-for-someone-else))
+  [Rooms for someone else](../users/operations/room-provisioning/service.md#rooms-for-someone-else))
 
 The old factory (`soliplex_template.provision_service:create_app`) and
 `stack-init`'s old import still work in `soliplex-template` 0.21, so a stack
