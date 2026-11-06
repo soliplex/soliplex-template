@@ -21,7 +21,7 @@ dependencies = []
 # provisioner framework, whose own extra brings fastapi + uvicorn (the
 # service), PyYAML and soliplex-plumber.
 provisioner = [
-    "soliplex-concierge[provisioner] >= 0.14",
+    "soliplex-concierge[provisioner] >= 0.14.1",
 ]
 
 [project.scripts]

@@ -280,7 +280,7 @@ An admin may request a room owned by someone other than themselves, with an
      "owner": {"owner": "foremen", "predicate": "is_foreman"}}
     ```
 
-`owner.owner` is the room id's owner part (`foremen:quarry-notes`). The
+`owner.owner` is the room id's owner part (`foremen--quarry-notes`). The
 provisioner builds the room's access rule from the form; no caller writes a
 JSONPath, and it refuses a predicate the installation does not register.
 The requester is still recorded as the one who asked, and may see the
@@ -301,6 +301,8 @@ The provisioner reads these from the stack's `.env`:
 | `PROVISIONER_SERVICE_SUBJECT` | The subject (`sub` claim) of the provisioner's service tokens (default `soliplex-provisioner`); the `admin_users` entry above must match it, as `stack-init` makes it do. |
 | `PROVISIONER_OWNER_CLAIM` | The claim a room's owner comes from (default `preferred_username`). |
 | `PROVISIONER_FLATTEN_OWNER` | `true` to turn `@` into `_` in the owner, for email-shaped claims. |
+| `PROVISIONER_LOWERCASE_OWNER` | `false` to keep the owner part's case from the claim (default `true`: lowercased). |
+| `PROVISIONER_ROOM_ID_SEPARATOR` | What joins the owner part and the slug in a room id (default `--`, the concierge's; `:` keeps the legacy form). |
 | `GITEA_HOST` / `GITEA_ACCESS_TOKEN` | The Gitea for tracking issues and the provisioned-rooms repository; unset means none. `scripts/init_gitea.py` sets both for the stack's own Gitea. |
 | `GITEA_OWNER` / `GITEA_REPO` | The tracking-issue repository (default `soliplex-admin/soliplex-requests`, the concierge's). |
 | `GITEA_ROOMS_REPO` | The provisioned-rooms repository, under `GITEA_OWNER` (default `rooms-provisioned`). |

@@ -44,7 +44,9 @@ CLAIMS = {
     "name": "Alice Example",
     "email": "alice@example.com",
 }
-ROOM = "alice:q3-plans"
+ALICE_Q3_PLANS_ROOM = str(
+    room_ids.RoomId("alice", "q3-plans")
+)  # "alice--q3-plans"
 SECRET = "test" * 8
 ISSUE = concierge_gitea.CreatedGiteaIssue(
     number=7,
@@ -190,7 +192,7 @@ class _Reloads:
 
 @pytest.fixture
 def reloads(monkeypatch):
-    fake = _Reloads(_applied(ROOM))
+    fake = _Reloads(_applied(ALICE_Q3_PLANS_ROOM))
     monkeypatch.setattr(adapters.ingester, "reload", fake)
     return fake
 
@@ -278,7 +280,7 @@ def test_store_prepare(stack, gitea_settings, with_gitea):
 @pytest.mark.parametrize("exists", [True, False])
 def test_store_has_room(stack, exists):
     if exists:
-        (stack["clone"] / ROOM).mkdir()
+        (stack["clone"] / ALICE_Q3_PLANS_ROOM).mkdir()
 
     result = _store(stack).has_room(_request())
 
@@ -298,16 +300,16 @@ def test_store_add_room(stack, issue):
 
     undo = store.add_room(_request(), issue)
 
-    room_dir = stack["clone"] / ROOM
+    room_dir = stack["clone"] / ALICE_Q3_PLANS_ROOM
     config = yaml.safe_load((room_dir / "room_config.yaml").read_text())
-    assert config["id"] == ROOM
+    assert config["id"] == ALICE_Q3_PLANS_ROOM
     record = (room_dir / rendering.RECORD_FILE).read_text()
     assert "- **Requested by:** Alice Example (`alice`)\n" in record
     assert ("Tracking issue" in record) is (issue is not None)
     provisioned = yaml.safe_load(
         (room_dir / rendering.PROVISION_FILE).read_text()
     )
-    assert provisioned["room_id"] == ROOM
+    assert provisioned["room_id"] == ALICE_Q3_PLANS_ROOM
     assert provisioned["requester"]["value"] == "alice"
     assert provisioned["tracking_issue"] == (
         issue.url if issue is not None else None
@@ -322,14 +324,18 @@ def test_store_add_room_undo(stack):
 
     undo.run()
 
-    assert not (stack["clone"] / ROOM).exists()
+    assert not (stack["clone"] / ALICE_Q3_PLANS_ROOM).exists()
 
 
 def test_store_commit(stack, gitea_settings):
     store = _store(stack, gitea_settings)
     store.prepare()
     store.add_room(_request(), ISSUE)
-    fragment = stack["clone"] / rendering.FRAGMENTS_DIR / f"{ROOM}.yaml"
+    fragment = (
+        stack["clone"]
+        / rendering.FRAGMENTS_DIR
+        / f"{ALICE_Q3_PLANS_ROOM}.yaml"
+    )
     fragment.parent.mkdir()
     fragment.write_text("ingester: {}\n")
 
@@ -337,7 +343,10 @@ def test_store_commit(stack, gitea_settings):
 
     assert result == _git(stack["clone"], "rev-parse", "HEAD")
     files = _git(stack["clone"], "show", "--name-only", "--format=", "HEAD")
-    assert f"{rendering.FRAGMENTS_DIR}/{ROOM}.yaml" in files.splitlines()
+    assert (
+        f"{rendering.FRAGMENTS_DIR}/{ALICE_Q3_PLANS_ROOM}.yaml"
+        in files.splitlines()
+    )
     log = _git(stack["clone"], "log", "-1", "--format=%an <%ae>%n%B")
     assert log.startswith("Alice Example <alice@example.com>\n")
     assert "Tracking issue: ops/requests#7" in log
@@ -351,7 +360,10 @@ def test_store_commit_without_a_fragment_or_gitea(stack):
     result = store.commit(_request(), None)
 
     files = _git(stack["clone"], "show", "--name-only", "--format=", result)
-    assert all(name.startswith(f"{ROOM}/") for name in files.splitlines())
+    assert all(
+        name.startswith(f"{ALICE_Q3_PLANS_ROOM}/")
+        for name in files.splitlines()
+    )
     assert "Tracking issue" not in _git(stack["clone"], "log", "-1")
 
 
@@ -394,7 +406,7 @@ def test_store_publish_fails(stack, gitea_settings, monkeypatch):
 # ---- HaikuRagRegistrar ----
 
 
-def _fragment(stack, room=ROOM):
+def _fragment(stack, room=ALICE_Q3_PLANS_ROOM):
     return stack["clone"] / rendering.FRAGMENTS_DIR / f"{room}.yaml"
 
 
@@ -405,7 +417,7 @@ def test_registrar_no_clashes(stack):
 
 
 def _db_dir_exists(stack):
-    (stack["db_dir"] / f"{ROOM}.lancedb").mkdir()
+    (stack["db_dir"] / f"{ALICE_Q3_PLANS_ROOM}.lancedb").mkdir()
     return "database directory"
 
 
@@ -419,8 +431,10 @@ def _in_a_fragment(stack):
     other = _fragment(stack, "other")
     other.parent.mkdir(parents=True)
     other.write_text(
-        f'ingester:\n  databases:\n    "{ROOM}": {{sources: []}}\n'
-        f'lancedb:\n  databases:\n    "{ROOM}": "/data/{ROOM}.lancedb"\n'
+        f"ingester:\n  databases:\n    "
+        f'"{ALICE_Q3_PLANS_ROOM}": {{sources: []}}\n'
+        f"lancedb:\n  databases:\n    "
+        f'"{ALICE_Q3_PLANS_ROOM}": "/data/{ALICE_Q3_PLANS_ROOM}.lancedb"\n'
     )
     return "ingester config entry 'ingester.databases."
 
@@ -429,7 +443,8 @@ def _placed_in_a_fragment(stack):
     other = _fragment(stack, "other")
     other.parent.mkdir(parents=True)
     other.write_text(
-        f'lancedb:\n  databases:\n    "{ROOM}": "/data/{ROOM}.lancedb"\n'
+        f"lancedb:\n  databases:\n    "
+        f'"{ALICE_Q3_PLANS_ROOM}": "/data/{ALICE_Q3_PLANS_ROOM}.lancedb"\n'
     )
     return "ingester config entry 'lancedb.databases."
 
@@ -439,7 +454,7 @@ def _another_name_at_its_location(stack):
     other.parent.mkdir(parents=True)
     other.write_text(
         "lancedb:\n  databases:\n"
-        f'    "squatter": "/data/./{ROOM}.lancedb"\n'
+        f'    "squatter": "/data/./{ALICE_Q3_PLANS_ROOM}.lancedb"\n'
         '    "elsewhere": "/data/elsewhere.lancedb"\n'
         '    "unplaced": {"uri": "s3://x"}\n'
     )
@@ -477,7 +492,7 @@ def test_registrar_register(stack, reloads):
     undo = registrar.register(_request())
 
     tree = yaml.safe_load(_fragment(stack).read_text())
-    assert ROOM in tree["ingester"]["databases"]
+    assert ALICE_Q3_PLANS_ROOM in tree["ingester"]["databases"]
     assert reloads.calls == [("http://haiku-ingester:8765", "bearer")]
     assert undo.description == "remove the room's ingester fragment"
 
@@ -486,7 +501,7 @@ def test_registrar_register(stack, reloads):
     "predates", [False, True], ids=["db-created", "db-predates"]
 )
 def test_registrar_undo(stack, reloads, predates):
-    database = stack["db_dir"] / f"{ROOM}.lancedb"
+    database = stack["db_dir"] / f"{ALICE_Q3_PLANS_ROOM}.lancedb"
     if predates:
         database.mkdir()
     undo = _registrar(stack).register(_request())
@@ -548,7 +563,7 @@ def test_registrar_register_fails_to_undo(stack, monkeypatch):
     ids=["missing", "empty", "non-empty"],
 )
 def test_uploads_clashes(stack, files, expected):
-    uploads = stack["uploads"] / ROOM
+    uploads = stack["uploads"] / ALICE_Q3_PLANS_ROOM
     if files is not None:
         uploads.mkdir(parents=True)
         for name in files:
@@ -562,12 +577,12 @@ def test_uploads_clashes(stack, files, expected):
 def test_uploads_create(stack):
     result = adapters.LocalUploads(stack["uploads"]).create(_request())
 
-    assert (stack["uploads"] / ROOM).is_dir()
+    assert (stack["uploads"] / ALICE_Q3_PLANS_ROOM).is_dir()
     assert result.description == "remove the uploads directory"
 
 
 def test_uploads_create_existing(stack):
-    (stack["uploads"] / ROOM).mkdir(parents=True)
+    (stack["uploads"] / ALICE_Q3_PLANS_ROOM).mkdir(parents=True)
 
     result = adapters.LocalUploads(stack["uploads"]).create(_request())
 
@@ -578,11 +593,11 @@ def test_uploads_create_existing(stack):
 def test_uploads_undo(stack, uploaded):
     undo = adapters.LocalUploads(stack["uploads"]).create(_request())
     if uploaded:
-        (stack["uploads"] / ROOM / "a.pdf").write_text("x")
+        (stack["uploads"] / ALICE_Q3_PLANS_ROOM / "a.pdf").write_text("x")
 
     undo.run()
 
-    assert (stack["uploads"] / ROOM).exists() is uploaded
+    assert (stack["uploads"] / ALICE_Q3_PLANS_ROOM).exists() is uploaded
 
 
 # ---- SoliplexCliAuthz ----
@@ -621,13 +636,19 @@ def _authz(stack):
     )
 
 
-def _authz_record(stack, room=ROOM):
+def _authz_record(stack, room=ALICE_Q3_PLANS_ROOM):
     return stack["clone"] / room / rendering.AUTHZ_FILE
 
 
 @pytest.mark.parametrize(
     "stale, expected",
-    [((), []), ({ROOM}, [f"an authz policy for {ROOM!r}"])],
+    [
+        ((), []),
+        (
+            {ALICE_Q3_PLANS_ROOM},
+            [f"an authz policy for {ALICE_Q3_PLANS_ROOM!r}"],
+        ),
+    ],
     ids=["none", "stale"],
 )
 def test_authz_clashes(stack, monkeypatch, stale, expected):
@@ -644,10 +665,10 @@ def test_authz_grant_owner(stack, monkeypatch):
     foremen = room_ids.named_owner(
         "foremen", access_rules.predicate_rule("is_foreman")
     )
-    request = _request(
-        owner=foremen, room_id=room_ids.RoomId("foremen", "q3-plans")
-    )
-    (stack["clone"] / "foremen:q3-plans").mkdir()
+    foremen_room_id = room_ids.RoomId("foremen", "q3-plans")
+    foremen_room_id_str = str(foremen_room_id)  # "foremen--q3-plans"
+    request = _request(owner=foremen, room_id=foremen_room_id)
+    (stack["clone"] / foremen_room_id_str).mkdir()
 
     undo = _authz(stack).grant_owner(request)
 
@@ -656,19 +677,19 @@ def test_authz_grant_owner(stack, monkeypatch):
         "set_policy",
         "soliplex-cli",
         "/environment",
-        "foremen:q3-plans",
+        foremen_room_id_str,
     )
     assert json.loads(policy) == json.loads(
-        soliplex_cli.owner_policy("foremen:q3-plans", "$[?is_foreman($)]")
+        soliplex_cli.owner_policy(foremen_room_id_str, "$[?is_foreman($)]")
     )
-    record = _authz_record(stack, "foremen:q3-plans").read_text()
+    record = _authz_record(stack, foremen_room_id_str).read_text()
     assert yaml.safe_load(record) == json.loads(policy)
     assert undo.description == "remove the room's authz policy"
 
 
 def test_authz_grant_owner_undo(stack, monkeypatch):
     cli = _Cli(monkeypatch)
-    (stack["clone"] / ROOM).mkdir()
+    (stack["clone"] / ALICE_Q3_PLANS_ROOM).mkdir()
     undo = _authz(stack).grant_owner(_request())
 
     undo.run()
@@ -677,7 +698,7 @@ def test_authz_grant_owner_undo(stack, monkeypatch):
         "remove_policy",
         "soliplex-cli",
         "/environment",
-        ROOM,
+        ALICE_Q3_PLANS_ROOM,
     )
     assert not _authz_record(stack).exists()
 
@@ -687,7 +708,7 @@ def test_authz_grant_owner_fails(stack, monkeypatch):
         raise soliplex_cli.CliFailed("soliplex-cli", ("room-authz",), "no")
 
     monkeypatch.setattr(adapters.soliplex_cli, "set_policy", set_policy)
-    (stack["clone"] / ROOM).mkdir()
+    (stack["clone"] / ALICE_Q3_PLANS_ROOM).mkdir()
 
     with pytest.raises(soliplex_cli.CliFailed):
         _authz(stack).grant_owner(_request())
@@ -743,7 +764,9 @@ class _Api:
 
     def __init__(self, monkeypatch, *, delta=None, errors=None):
         self.calls = []
-        self.delta = delta if delta is not None else {"added": [ROOM]}
+        self.delta = (
+            delta if delta is not None else {"added": [ALICE_Q3_PLANS_ROOM]}
+        )
         self.errors = errors or {}
         monkeypatch.setattr(adapters.soliplex_api, "check_access", self._check)
         monkeypatch.setattr(
@@ -854,8 +877,8 @@ def test_backend_reload_rooms_delta_denied(stack, secret_file, monkeypatch):
 @pytest.mark.parametrize(
     "delta, errors, expected",
     [
-        ({"added": [ROOM]}, None, []),
-        ({"changed": [ROOM]}, None, []),
+        ({"added": [ALICE_Q3_PLANS_ROOM]}, None, []),
+        ({"changed": [ALICE_Q3_PLANS_ROOM]}, None, []),
         ({"added": ["x:y"]}, None, ["make the backend load room"]),
         (
             {},
@@ -949,7 +972,7 @@ def test_tracker_file(gitea_settings, monkeypatch):
     assert (kwargs["owner"], kwargs["repo"]) == ("ops", "requests")
     assert kwargs["user"] == CLAIMS
     assert kwargs["title"] == "New room request: Q3 Plans"
-    assert "- **Room id:** `alice:q3-plans`" in kwargs["body"]
+    assert "- **Room id:** `alice--q3-plans`" in kwargs["body"]
     assert kwargs["request_type"] == "new-room"
 
 
@@ -988,7 +1011,7 @@ def test_tracker_resolve(gitea_settings, monkeypatch):
 
     assert result == []
     assert [call[0] for call in calls] == ["comment", "close"]
-    assert calls[0][-1] == "Provisioned room `alice:q3-plans`."
+    assert calls[0][-1] == "Provisioned room `alice--q3-plans`."
 
 
 def test_tracker_resolve_fails(gitea_settings, monkeypatch):

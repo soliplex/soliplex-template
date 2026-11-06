@@ -33,25 +33,27 @@ REQUESTED_AT = datetime.datetime(
     123456,
     tzinfo=datetime.timezone(datetime.timedelta(hours=-4)),
 )
-CLAIMS = {"email": "bharney@sitename.example", "name": "Bharney Rubble"}
+BR_EMAIL = "bharney@sitename.example"
+BR_NAME = "Bharney Rubble"
+CLAIMS = {"email": BR_EMAIL, "name": BR_NAME}
 OWNER = room_ids.owner_from_claims(CLAIMS, claim="email", flatten_value=True)
+ROOM_NAME = "Q3 Plans"
+ROOM_DESC = "Plans and briefs\nfor the Q3 campaign."
+SLUG = "q3-plans"
 REQUEST = interfaces.RoomRequest(
     requester_claims=CLAIMS,
     owner=OWNER,
-    room_id=room_ids.RoomId(owner=OWNER.owner, slug="q3-plans"),
-    name="Q3 Plans",
-    description="Plans and briefs\nfor the Q3 campaign.",
+    room_id=room_ids.RoomId(owner=OWNER.owner, slug=SLUG),
+    name=ROOM_NAME,
+    description=ROOM_DESC,
     requested_at=REQUESTED_AT,
 )
+ROOM_ID = room_ids.RoomId(OWNER.owner, SLUG)
+ROOM_ID_STR = str(ROOM_ID)
 FOREMEN = room_ids.named_owner(
     "foremen", access_rules.predicate_rule("is_foreman")
 )
 ISSUE_URL = "https://gitea.example.com/ops/requests/issues/7"
-
-
-def _record(request=REQUEST, **kwargs):
-    kwargs.setdefault("identity_claim", "email")
-    return rendering.record(request, **kwargs)
 
 
 # ---- room_config ----
@@ -64,15 +66,15 @@ def test_room_config():
         "# Created by the soliplex-template provisioner.\n"
     )
     config = yaml.safe_load(result)
-    assert config["id"] == "bharney_sitename.example:q3-plans"
-    assert config["name"] == "Q3 Plans"
-    assert config["description"] == "Plans and briefs\nfor the Q3 campaign."
+    assert config["id"] == ROOM_ID_STR
+    assert config["name"] == ROOM_NAME
+    assert config["description"] == ROOM_DESC
     assert config["agent"] == {"template_id": rendering.AGENT_TEMPLATE}
     [rag, *_others] = config["skills"]["skill_configs"]
     assert rag["rag_databases"] == [
         {
-            "name": "bharney_sitename.example:q3-plans",
-            "rag_lancedb_stem": "bharney_sitename.example:q3-plans",
+            "name": ROOM_ID_STR,
+            "rag_lancedb_stem": ROOM_ID_STR,
         }
     ]
     assert config["allow_mcp"] is False
@@ -89,7 +91,7 @@ def test_room_config_quotes_requester_text(name):
     result = rendering.room_config(request)
 
     config = yaml.safe_load(result)
-    assert config["id"] == "bharney_sitename.example:q3-plans"
+    assert config["id"] == ROOM_ID_STR
     assert config["name"] == name
     assert config["description"] == name
 
@@ -100,8 +102,8 @@ def test_room_config_quotes_requester_text(name):
 @pytest.mark.parametrize(
     "name, expected",
     [
-        ("Q3 Plans", "New room request: Q3 Plans"),
-        ("  Q3\n\tPlans  ", "New room request: Q3 Plans"),
+        (ROOM_NAME, f"New room request: {ROOM_NAME}"),
+        ("  Q3\n\tPlans  ", f"New room request: {ROOM_NAME}"),
     ],
 )
 def test_issue_title(name, expected):
@@ -116,34 +118,37 @@ def test_issue_title(name, expected):
 
 
 def test_record():
-    result = _record(
-        data_dir="/data", uploads_root="/uploads/rooms", issue_url=ISSUE_URL
+    result = rendering.record(
+        request=REQUEST,
+        identity_claim="email",
+        data_dir="/data",
+        uploads_root="/uploads/rooms",
+        issue_url=ISSUE_URL,
     )
 
     assert result == (
-        "# Q3 Plans\n"
+        f"# {ROOM_NAME}\n"
         "\n"
-        "- **Room id:** `bharney_sitename.example:q3-plans`\n"
-        "- **Requested by:** Bharney Rubble (`bharney@sitename.example`)\n"
+        f"- **Room id:** `{ROOM_ID_STR}`\n"
+        f"- **Requested by:** {BR_NAME} (`{BR_EMAIL}`)\n"
         "- **Requested at:** 2026-10-28T14:15:30Z\n"
         f"- **Tracking issue:** {ISSUE_URL}\n"
         "\n"
         "## Description\n"
         "\n"
-        "Plans and briefs\n"
-        "for the Q3 campaign.\n"
+        f"{ROOM_DESC}\n"
         "\n"
         "## Provisioned\n"
         "\n"
         "- **Room config:** "
-        "`bharney_sitename.example:q3-plans/room_config.yaml` in the "
+        f"`{ROOM_ID_STR}/room_config.yaml` in the "
         "provisioned-rooms clone\n"
-        "- **RAG database:** `bharney_sitename.example:q3-plans` at "
-        "`/data/bharney_sitename.example:q3-plans.lancedb`, ingested from "
+        f"- **RAG database:** `{ROOM_ID_STR}` at "
+        f"`/data/{ROOM_ID_STR}.lancedb`, ingested from "
         "the room's uploads under "
-        "`/uploads/rooms/bharney_sitename.example:q3-plans/`\n"
+        f"`/uploads/rooms/{ROOM_ID_STR}/`\n"
         "- **Access:** private; READ and WRITE granted where claim `email` "
-        "is `bharney@sitename.example`\n"
+        f"is `{BR_EMAIL}`\n"
     )
 
 
@@ -154,12 +159,10 @@ def test_record_for_a_named_owner():
         room_id=room_ids.RoomId(owner="foremen", slug="q3-plans"),
     )
 
-    result = _record(request)
+    result = rendering.record(request=request, identity_claim="email")
 
-    assert "- **Room id:** `foremen:q3-plans`\n" in result
-    assert (
-        "- **Requested by:** Bharney Rubble (`bharney@sitename.example`)\n"
-    ) in result
+    assert "- **Room id:** `foremen--q3-plans`\n" in result
+    assert (f"- **Requested by:** {BR_NAME} (`{BR_EMAIL}`)\n") in result
     assert (
         "- **Access:** private; READ and WRITE granted to users the "
         "predicate `is_foreman` passes\n"
@@ -169,12 +172,12 @@ def test_record_for_a_named_owner():
 @pytest.mark.parametrize(
     "claims, expected",
     [
-        ({"email": "bharney@sitename.example"}, "`bharney@sitename.example`"),
+        ({"email": BR_EMAIL}, f"`{BR_EMAIL}`"),
         (
-            {"email": "bharney@sitename.example", "name": "  "},
-            "`bharney@sitename.example`",
+            {"email": BR_EMAIL, "name": "  "},
+            f"`{BR_EMAIL}`",
         ),
-        ({"name": "Bharney Rubble"}, "Bharney Rubble (*(unidentified)*)"),
+        ({"name": BR_NAME}, f"{BR_NAME} (*(unidentified)*)"),
         ({"email": ["not", "a", "string"]}, "*(unidentified)*"),
     ],
     ids=["no-name", "blank-name", "no-identity", "identity-not-a-string"],
@@ -182,7 +185,7 @@ def test_record_for_a_named_owner():
 def test_record_requested_by(claims, expected):
     request = dataclasses.replace(REQUEST, requester_claims=claims)
 
-    result = _record(request)
+    result = rendering.record(request=request, identity_claim="email")
 
     assert f"- **Requested by:** {expected}\n" in result
     assert "Tracking issue" not in result
@@ -192,7 +195,7 @@ def test_record_requested_by(claims, expected):
 def test_record_blank_description(description):
     request = dataclasses.replace(REQUEST, description=description)
 
-    result = _record(request)
+    result = rendering.record(request=request, identity_claim="email")
 
     assert "## Description\n\n*(none given)*\n" in result
 
@@ -209,7 +212,7 @@ def test_record_code_spans_hold_backticks(identity, expected):
     claims = {"email": identity}
     request = dataclasses.replace(REQUEST, requester_claims=claims)
 
-    result = _record(request)
+    result = rendering.record(request=request, identity_claim="email")
 
     assert f"- **Requested by:** {expected}\n" in result
 
@@ -286,21 +289,21 @@ def test_provision_record():
     )
 
     assert yaml.safe_load(result) == {
-        "room_id": "bharney_sitename.example:q3-plans",
-        "name": "Q3 Plans",
-        "description": "Plans and briefs\nfor the Q3 campaign.",
+        "room_id": ROOM_ID_STR,
+        "name": ROOM_NAME,
+        "description": ROOM_DESC,
         "requested_at": "2026-10-28T14:15:30Z",
         "tracking_issue": ISSUE_URL,
         "requester": {
             "claim": "email",
-            "value": "bharney@sitename.example",
-            "name": "Bharney Rubble",
+            "value": BR_EMAIL,
+            "name": BR_NAME,
         },
         "owner": {
-            "owner": "bharney_sitename.example",
+            "owner": OWNER.owner,
             "claim": "email",
-            "value": "bharney@sitename.example",
-            "json_path": '$[?$.email == "bharney@sitename.example"]',
+            "value": BR_EMAIL,
+            "json_path": f'$[?$.email == "{BR_EMAIL}"]',
         },
         "versions": _versions(),
     }
@@ -336,7 +339,7 @@ def test_provision_record_for_a_named_owner():
         "predicate": "is_foreman",
         "json_path": "$[?is_foreman($)]",
     }
-    assert record["requester"]["value"] == "bharney@sitename.example"
+    assert record["requester"]["value"] == BR_EMAIL
     assert record["tracking_issue"] is None
 
 
@@ -394,13 +397,13 @@ def test_provision_record_names_an_absent_package(monkeypatch):
 
 def test_authz_document():
     policy = soliplex_cli.owner_policy(
-        "foremen:q3-plans", access_rules.predicate_rule("is_foreman")
+        "foremen--q3-plans", access_rules.predicate_rule("is_foreman")
     )
 
     result = rendering.authz_document(policy)
 
     assert yaml.safe_load(result) == json.loads(policy)
-    assert result.startswith("room_id: foremen:q3-plans\n")
+    assert result.startswith("room_id: foremen--q3-plans\n")
 
 
 # ---- fragment ----
@@ -410,23 +413,24 @@ def test_fragment():
     result = rendering.fragment(REQUEST)
 
     assert result.startswith("# Written by the soliplex-template provisioner.")
-    room = "bharney_sitename.example:q3-plans"
     assert yaml.safe_load(result) == {
         "ingester": {
             "databases": {
-                room: {
+                ROOM_ID_STR: {
                     "sources": [
                         {
                             "type": "fs",
-                            "id": room,
-                            "root": f"/uploads/rooms/{room}",
+                            "id": ROOM_ID_STR,
+                            "root": f"/uploads/rooms/{ROOM_ID_STR}",
                             "delete_orphans": True,
                         }
                     ]
                 }
             }
         },
-        "lancedb": {"databases": {room: f"/data/{room}.lancedb"}},
+        "lancedb": {
+            "databases": {ROOM_ID_STR: f"/data/{ROOM_ID_STR}.lancedb"},
+        },
     }
 
 
@@ -436,16 +440,17 @@ def test_fragment_honors_data_dir_and_uploads_root():
     )
 
     tree = yaml.safe_load(result)
-    room = "bharney_sitename.example:q3-plans"
-    [source] = tree["ingester"]["databases"][room]["sources"]
-    assert source["root"] == f"/up/{room}"
-    assert tree["lancedb"]["databases"] == {room: f"/srv/db/{room}.lancedb"}
+    [source] = tree["ingester"]["databases"][ROOM_ID_STR]["sources"]
+    assert source["root"] == f"/up/{ROOM_ID_STR}"
+    assert tree["lancedb"]["databases"] == {
+        ROOM_ID_STR: f"/srv/db/{ROOM_ID_STR}.lancedb",
+    }
 
 
 def test_fragment_name():
-    result = rendering.fragment_name("alice:q3.notes")
+    result = rendering.fragment_name("alice--q3.notes")
 
-    assert result == "alice:q3.notes.yaml"
+    assert result == "alice--q3.notes.yaml"
 
 
 # ---- commit_message / provisioned_comment ----
@@ -456,11 +461,11 @@ def test_fragment_name():
     [
         (
             None,
-            "Provision room bharney_sitename.example:q3-plans\n\nQ3 Plans\n",
+            f"Provision room {ROOM_ID_STR}\n\n{ROOM_NAME}\n",
         ),
         (
             "ops/requests#7",
-            "Provision room bharney_sitename.example:q3-plans\n\nQ3 Plans\n"
+            f"Provision room {ROOM_ID_STR}\n\n{ROOM_NAME}\n"
             "\nTracking issue: ops/requests#7\n",
         ),
     ],
@@ -477,4 +482,4 @@ def test_provisioned_comment():
 
     result = rendering.provisioned_comment(provisioned)
 
-    assert result == "Provisioned room `bharney_sitename.example:q3-plans`."
+    assert result == f"Provisioned room `{ROOM_ID_STR}`."

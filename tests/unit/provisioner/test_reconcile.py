@@ -25,8 +25,8 @@ from soliplex_template.provisioner import reconcile
 from soliplex_template.provisioner import rendering
 from soliplex_template.provisioner import wiring
 
-ROOM = "alice:q3-plans"
-OTHER = "bob:notes"
+ROOM = "alice--q3-plans"
+OTHER = "bob--notes"
 
 
 def _policy(room, rule):
@@ -156,7 +156,7 @@ def test_provisioned_rooms(settings):
     (settings.clone / "about_soliplex").mkdir()
     (settings.clone / "about_soliplex" / "room_config.yaml").write_text("")
     (settings.clone / "__provision__").mkdir()
-    (settings.clone / "carol:unconfigured").mkdir()
+    (settings.clone / "carol--unconfigured").mkdir()
     (settings.clone / rendering.FRAGMENTS_DIR).mkdir()
     (settings.clone / "dave:file").write_text("")
 

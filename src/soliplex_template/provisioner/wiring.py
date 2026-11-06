@@ -83,7 +83,9 @@ class Settings:
     The ``ingester_*`` paths are as the ingester sees them, except
     ``ingester_config`` (the file both services mount); the others as the
     provisioner does. ``owner_claim`` names the requester's claim a room's
-    owner part (and their identity in its records) comes from.
+    owner part (and their identity in its records) comes from;
+    ``lowercase_owner`` lowercases that part; ``room_id_separator`` joins it
+    and the slug in the room id.
     """
 
     ingester_token: str = dataclasses.field(repr=False)
@@ -103,6 +105,8 @@ class Settings:
     service_subject: str = adapters.DEFAULT_SERVICE_SUBJECT
     owner_claim: str = room_ids.DEFAULT_OWNER_CLAIM
     flatten_owner: bool = False
+    lowercase_owner: bool = True
+    room_id_separator: str = room_ids.DEFAULT_SEPARATOR
     soliplex_cli: str = "/app/.venv/bin/soliplex-cli"
     service_token_secret_file: pathlib.Path = pathlib.Path(
         SERVICE_TOKEN_SECRET_FILE
@@ -111,6 +115,7 @@ class Settings:
 
     def __post_init__(self):
         access_rules.check_claim(self.owner_claim)
+        room_ids.validate_separator(self.room_id_separator)
 
     @classmethod
     def from_env(cls, environ: collections.abc.Mapping[str, str]) -> Settings:
@@ -123,6 +128,11 @@ class Settings:
           tokens the provisioner mints for itself
         - ``PROVISIONER_OWNER_CLAIM`` / ``PROVISIONER_FLATTEN_OWNER``: the
           claim a room's owner comes from, and whether to flatten it
+        - ``PROVISIONER_LOWERCASE_OWNER``: whether a room id's owner part
+          is lowercased (default: yes)
+        - ``PROVISIONER_ROOM_ID_SEPARATOR``: what joins the owner part and
+          the slug (default: the concierge's, ``'--'``; ``':'`` keeps the
+          legacy form)
         - ``GITEA_HOST`` / ``GITEA_ACCESS_TOKEN`` / ``GITEA_OWNER`` /
           ``GITEA_REPO`` / ``GITEA_ROOMS_REPO``: the Gitea for tracking issues
           and the provisioned-rooms clone's ``origin``; unset host means none
@@ -155,6 +165,10 @@ class Settings:
         if flatten not in _TRUE | _FALSE:
             raise BadFlag("PROVISIONER_FLATTEN_OWNER", flatten)
 
+        lowercase = setting("PROVISIONER_LOWERCASE_OWNER", "").lower()
+        if lowercase not in _TRUE | _FALSE:
+            raise BadFlag("PROVISIONER_LOWERCASE_OWNER", lowercase)
+
         return cls(
             ingester_token=ingester_token,
             service_subject=setting(
@@ -164,6 +178,10 @@ class Settings:
                 "PROVISIONER_OWNER_CLAIM", room_ids.DEFAULT_OWNER_CLAIM
             ),
             flatten_owner=flatten in _TRUE,
+            lowercase_owner=(lowercase in _TRUE) if lowercase else True,
+            room_id_separator=setting(
+                "PROVISIONER_ROOM_ID_SEPARATOR", room_ids.DEFAULT_SEPARATOR
+            ),
             gitea=gitea_settings,
         )
 
@@ -216,6 +234,8 @@ def build_provisioner(settings: Settings) -> provision.Provisioner:
         tracker=tracker,
         owner_claim=settings.owner_claim,
         flatten_owner=settings.flatten_owner,
+        lowercase_owner=settings.lowercase_owner,
+        room_id_separator=settings.room_id_separator,
     )
 
 
