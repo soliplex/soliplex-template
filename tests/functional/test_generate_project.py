@@ -740,7 +740,7 @@ def test_runtime_data_stays_gitignored(generated_project):
         "rag/db/haiku.rag.lancedb/chunks.lance",
         "uploads/rooms/secret.pdf",
         "backend/sandbox/workdirs/run1/scratch.py",
-        "src/rooms-provisioned/alice:notes/room_config.yaml",
+        "src/rooms-provisioned/alice--notes/room_config.yaml",
     ]
 
     ignored = subprocess.run(
