@@ -11,6 +11,7 @@ act exactly once (cases that would repeat it are parametrized or split).
 
 from __future__ import annotations
 
+import dataclasses
 import fcntl
 import json
 
@@ -165,6 +166,15 @@ def test_provisioned_rooms(settings):
     assert result == [ROOM, OTHER]
 
 
+def test_provisioned_rooms_with_the_configured_separator(settings):
+    _room(settings, "alice:q3-plans")
+    _room(settings, OTHER)
+
+    result = reconcile.provisioned_rooms(settings.clone, ":")
+
+    assert result == ["alice:q3-plans"]
+
+
 # ---- normalized_policy ----
 
 
@@ -294,6 +304,23 @@ def test_reconcile_leaves_a_room_without_records(settings, stack):
     assert note.startswith(f"room {ROOM!r} has no authz.yaml")
     assert stack.policies[ROOM] == {"room_id": ROOM, "acl_entries": []}
     assert ("as-yaml", ROOM) not in stack.calls
+
+
+def test_reconcile_reads_the_clone_with_the_configured_separator(
+    settings, stack
+):
+    settings = dataclasses.replace(settings, room_id_separator=":")
+    room = "alice:q3-plans"
+    _room(settings, room, uploads=False)
+
+    result = reconcile.reconcile(settings)
+
+    assert result.changes == (
+        f"room {room!r}: applied its authz.yaml",
+        f"room {room!r}: created {settings.uploads_dir / room}",
+    )
+    assert stack.policies[room] == _policy(room, ALICE_RULE)
+    assert (settings.uploads_dir / room).is_dir()
 
 
 def test_reconcile_reports_the_reloads(settings, stack):

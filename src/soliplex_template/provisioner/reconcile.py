@@ -61,16 +61,18 @@ class Reconciled:
     notes: tuple[str, ...] = ()
 
 
-def provisioned_rooms(clone: pathlib.Path) -> list[str]:
+def provisioned_rooms(
+    clone: pathlib.Path, separator: str = room_ids.DEFAULT_SEPARATOR
+) -> list[str]:
     """The ids of the provisioned rooms in ``clone``, sorted.
 
     That is, its directories whose names parse as provisioned room ids
-    and that hold a ``room_config.yaml``.
+    under ``separator``, and that hold a ``room_config.yaml``.
     """
     rooms = []
     for path in clone.iterdir():
         try:
-            room_ids.parse_room_id(path.name)
+            room_ids.parse_room_id(path.name, separator)
         except room_ids.RoomIdError:
             continue
         if (path / "room_config.yaml").is_file():
@@ -136,7 +138,7 @@ def reconcile(settings) -> Reconciled:
     changes, notes = [], []
 
     with landing_clone.locked(settings.clone):
-        rooms = provisioned_rooms(settings.clone)
+        rooms = provisioned_rooms(settings.clone, settings.room_id_separator)
 
         for room in rooms:
             record = settings.clone / room / rendering.AUTHZ_FILE
