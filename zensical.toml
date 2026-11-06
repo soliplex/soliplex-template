@@ -71,6 +71,7 @@ nav = [
         "upgrades/provision-rooms-on-request.md",
         "upgrades/oidc-providers-and-stack-init.md",
         "upgrades/provisioner-on-concierge.md",
+        "upgrades/room-id-forms-and-tracker-labels.md",
     ] },
     { "Contributing" = [
         "contributing/index.md",
