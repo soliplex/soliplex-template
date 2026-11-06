@@ -34,6 +34,7 @@ from soliplex_concierge.provisioner import soliplex_api
 from soliplex_concierge.provisioner import soliplex_cli
 from soliplex_concierge.tools import gitea as concierge_gitea
 
+from soliplex_template import gitea
 from soliplex_template.provisioner import adapters
 from soliplex_template.provisioner import rendering
 
@@ -922,7 +923,7 @@ def test_backend_reload_rooms_refused_gives_the_stack_init_advice(
 
 
 class _Gitea:
-    """Records the concierge's Gitea calls."""
+    """Records the concierge's Gitea calls and the tracker's label calls."""
 
     def __init__(self, monkeypatch, *, errors=None):
         self.calls = []
@@ -932,6 +933,9 @@ class _Gitea:
         )
         monkeypatch.setattr(
             adapters.gitea_admin, "comment_issue", self._recorder("comment")
+        )
+        monkeypatch.setattr(
+            adapters.gitea_admin, "label_issue", self._recorder("label")
         )
         monkeypatch.setattr(
             adapters.gitea_admin, "close_issue", self._recorder("close")
@@ -966,14 +970,22 @@ def test_tracker_file(gitea_settings, monkeypatch):
     result = _tracker(gitea_settings).file(_request())
 
     assert result is ISSUE
-    [(name, kwargs)] = calls
-    assert name == "create"
+    assert [call[0] for call in calls] == ["create", "label"]
+    kwargs = calls[0][1]
     assert kwargs["host"] == gitea_settings.host
     assert (kwargs["owner"], kwargs["repo"]) == ("ops", "requests")
     assert kwargs["user"] == CLAIMS
     assert kwargs["title"] == "New room request: Q3 Plans"
     assert "- **Room id:** `alice--q3-plans`" in kwargs["body"]
     assert kwargs["request_type"] == "new-room"
+    label_call = calls[1]
+    assert label_call[1:5] == (
+        gitea_settings.host,
+        "gitea-token",
+        "ops",
+        "requests",
+    )
+    assert label_call[5:] == (7, ["provision-start"])
 
 
 def test_tracker_file_fails(gitea_settings, monkeypatch):
@@ -983,6 +995,15 @@ def test_tracker_file_fails(gitea_settings, monkeypatch):
         _tracker(gitea_settings).file(_request())
 
     assert "Gitea is down" in str(caught.value)
+
+
+def test_tracker_file_label_fails(gitea_settings, monkeypatch):
+    _Gitea(monkeypatch, errors={"label": RuntimeError("labels missing")})
+
+    with pytest.raises(adapters.IssueFilingFailed) as caught:
+        _tracker(gitea_settings).file(_request())
+
+    assert "labels missing" in str(caught.value)
 
 
 def test_tracker_report_failure(gitea_settings, monkeypatch):
@@ -999,19 +1020,45 @@ def test_tracker_report_failure(gitea_settings, monkeypatch):
             "requests",
             7,
             "no db",
-        )
+        ),
+        (
+            "label",
+            gitea_settings.host,
+            "gitea-token",
+            "ops",
+            "requests",
+            7,
+            ["provision-failed"],
+        ),
     ]
 
 
-def test_tracker_resolve(gitea_settings, monkeypatch):
+@pytest.mark.parametrize(
+    "unfinished, expected_label",
+    [
+        ((), "provision-complete"),
+        (
+            ("push the provisioned-rooms clone (denied)",),
+            "provision-incomplete",
+        ),
+    ],
+    ids=["complete", "incomplete"],
+)
+def test_tracker_resolve(
+    gitea_settings, monkeypatch, unfinished, expected_label
+):
     calls = _Gitea(monkeypatch).calls
-    provisioned = interfaces.Provisioned(request=_request(), commit="c0ffee")
+    provisioned = interfaces.Provisioned(
+        request=_request(), commit="c0ffee", unfinished=unfinished
+    )
 
     result = _tracker(gitea_settings).resolve(ISSUE, provisioned)
 
     assert result == []
-    assert [call[0] for call in calls] == ["comment", "close"]
-    assert calls[0][-1] == "Provisioned room `alice--q3-plans`."
+    assert [call[0] for call in calls] == ["label", "comment", "close"]
+    assert calls[0][6] == [expected_label]
+    assert calls[0][6][0] in gitea.PROVISION_STATUS_LABELS
+    assert calls[1][6] == rendering.provisioned_comment(provisioned)
 
 
 def test_tracker_resolve_fails(gitea_settings, monkeypatch):
@@ -1021,7 +1068,7 @@ def test_tracker_resolve_fails(gitea_settings, monkeypatch):
     result = _tracker(gitea_settings).resolve(ISSUE, provisioned)
 
     [step] = result
-    assert step.startswith(f"comment on and close {ISSUE.url} (")
+    assert step.startswith(f"label, comment on and close {ISSUE.url} (")
 
 
 # ---- TemplateAdmission ----

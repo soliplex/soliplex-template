@@ -483,3 +483,20 @@ def test_provisioned_comment():
     result = rendering.provisioned_comment(provisioned)
 
     assert result == f"Provisioned room `{ROOM_ID_STR}`."
+
+
+def test_provisioned_comment_lists_unfinished():
+    provisioned = interfaces.Provisioned(
+        request=REQUEST,
+        commit="c0ffee",
+        unfinished=("push the provisioned-rooms clone (denied)",),
+    )
+
+    result = rendering.provisioned_comment(provisioned)
+
+    assert result == (
+        f"Provisioned room `{ROOM_ID_STR}`.\n"
+        "\n"
+        "To finish:\n"
+        "- push the provisioned-rooms clone (denied)"
+    )

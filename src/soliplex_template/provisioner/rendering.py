@@ -345,5 +345,14 @@ def commit_message(
 
 
 def provisioned_comment(provisioned: interfaces.Provisioned) -> str:
-    """The comment resolving a provisioned room's tracking issue."""
-    return f"Provisioned room `{provisioned.request.room}`."
+    """The comment resolving a provisioned room's tracking issue.
+
+    Lists ``provisioned.unfinished``, the steps after the commit that an
+    operator must finish.
+    """
+    lines = [f"Provisioned room `{provisioned.request.room}`."]
+    if provisioned.unfinished:
+        lines.append("")
+        lines.append("To finish:")
+        lines.extend(f"- {step}" for step in provisioned.unfinished)
+    return "\n".join(lines)

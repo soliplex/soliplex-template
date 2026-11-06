@@ -435,6 +435,102 @@ def test_create_repo_failure_raises(monkeypatch):
 
 
 # --------------------------------------------------------------------------
+# ensure_labels
+# --------------------------------------------------------------------------
+def test_ensure_labels_creates_missing(monkeypatch):
+    page = [{"name": st_gitea.PROVISION_COMPLETE, "id": 3}]
+    urlopen = mock.Mock(
+        side_effect=[
+            _urlopen_returning(read=json.dumps(page).encode()),
+            _urlopen_returning(read=b"[]"),
+            *[_urlopen_returning(getcode=201) for _ in range(3)],
+        ]
+    )
+    monkeypatch.setattr(st_gitea.urllib.request, "urlopen", urlopen)
+
+    result = st_gitea.ensure_labels(
+        "pw", endpoints=EP, labels=st_gitea.PROVISION_STATUS_LABELS
+    )
+
+    assert result == {
+        st_gitea.PROVISION_START: "created",
+        st_gitea.PROVISION_COMPLETE: "exists",
+        st_gitea.PROVISION_INCOMPLETE: "created",
+        st_gitea.PROVISION_FAILED: "created",
+    }
+    base = (
+        f"{EP.http}/api/v1/repos/{st_gitea.ADMIN_USER}/"
+        f"{st_gitea.REPO_NAME}/labels"
+    )
+    requests_ = [call.args[0] for call in urlopen.call_args_list]
+    assert [req.full_url for req in requests_][:2] == [
+        f"{base}?limit=50&page=1",
+        f"{base}?limit=50&page=2",
+    ]
+    created = {json.loads(req.data)["name"] for req in requests_[2:]}
+    assert created == {
+        st_gitea.PROVISION_START,
+        st_gitea.PROVISION_INCOMPLETE,
+        st_gitea.PROVISION_FAILED,
+    }
+    assert json.loads(requests_[2].data) == {
+        "name": st_gitea.PROVISION_START,
+        "color": "#1d76db",
+        "description": "Room provision started",
+    }
+
+
+def test_ensure_labels_creation_fails(monkeypatch):
+    urlopen = mock.Mock(
+        side_effect=[
+            _urlopen_returning(read=b"[]"),
+            _http_error(422),
+        ]
+    )
+    monkeypatch.setattr(st_gitea.urllib.request, "urlopen", urlopen)
+
+    with pytest.raises(st_gitea.LabelCreationFailed) as caught:
+        st_gitea.ensure_labels(
+            "pw",
+            endpoints=EP,
+            labels={"provision-start": {"color": "#1d76db"}},
+        )
+
+    assert "provision-start" in str(caught.value)
+    assert "422" in str(caught.value)
+
+
+def test_ensure_labels_listing_fails(monkeypatch):
+    monkeypatch.setattr(
+        st_gitea.urllib.request,
+        "urlopen",
+        mock.Mock(side_effect=_http_error(500)),
+    )
+
+    with pytest.raises(st_gitea.LabelListingFailed) as caught:
+        st_gitea.ensure_labels("pw", endpoints=EP, labels={})
+
+    assert "500" in str(caught.value)
+
+
+def test_ensure_labels_walks_every_page(monkeypatch):
+    urlopen = mock.Mock(
+        side_effect=[
+            _urlopen_returning(read=b'[{"name": "x", "id": 1}]')
+            for _ in range(st_gitea.MAX_LABEL_PAGES)
+        ]
+    )
+    monkeypatch.setattr(st_gitea.urllib.request, "urlopen", urlopen)
+
+    result = st_gitea.ensure_labels(
+        "pw", endpoints=EP, labels={"x": {"color": "#000000"}}
+    )
+
+    assert result == {"x": "exists"}
+    assert len(urlopen.call_args_list) == st_gitea.MAX_LABEL_PAGES
+
+
+# --------------------------------------------------------------------------
 # set_env_var
 # --------------------------------------------------------------------------
 def test_set_env_var_replaces_existing(tmp_path):
@@ -485,6 +581,8 @@ def test_provision_gitea_writes_env(tmp_path, monkeypatch):
     monkeypatch.setattr(st_gitea, "mint_token", mint)
     create = mock.Mock()
     monkeypatch.setattr(st_gitea, "create_repo", create)
+    labels = mock.Mock()
+    monkeypatch.setattr(st_gitea, "ensure_labels", labels)
 
     result = st_gitea.provision_gitea(tmp_path)
 
@@ -499,6 +597,14 @@ def test_provision_gitea_writes_env(tmp_path, monkeypatch):
             auto_init=False,
             private=True,
         ),
+    ]
+    # the tracking repo's provision-status labels, right after creating it.
+    assert labels.call_args_list == [
+        mock.call(
+            mock.ANY,
+            endpoints=EP,
+            labels=st_gitea.PROVISION_STATUS_LABELS,
+        )
     ]
     env_text = (tmp_path / ".env").read_text()
     assert f"GITEA_HOST={st_gitea.GITEA_INTERNAL_URL}" in env_text
@@ -533,6 +639,7 @@ def test_provision_gitea_summary(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(st_gitea, "ensure_admin_user", mock.Mock())
     monkeypatch.setattr(st_gitea, "mint_token", mock.Mock(return_value="t"))
     monkeypatch.setattr(st_gitea, "create_repo", mock.Mock())
+    monkeypatch.setattr(st_gitea, "ensure_labels", mock.Mock())
     monkeypatch.setattr(st_gitea, "push_stack_to_gitea", mock.Mock())
 
     st_gitea.provision_gitea(tmp_path, push_to_gitea=True, stack_repo="s")
@@ -551,6 +658,7 @@ def test_provision_gitea_creates_distinct_webui_admin(tmp_path, monkeypatch):
     monkeypatch.setattr(st_gitea, "ensure_admin_user", ensure)
     monkeypatch.setattr(st_gitea, "mint_token", mock.Mock(return_value="t"))
     monkeypatch.setattr(st_gitea, "create_repo", mock.Mock())
+    monkeypatch.setattr(st_gitea, "ensure_labels", mock.Mock())
 
     st_gitea.provision_gitea(tmp_path, webui_user="alice", webui_password="pw")
 
@@ -576,6 +684,7 @@ def test_provision_gitea_push_to_gitea_uses_dir_name(tmp_path, monkeypatch):
     monkeypatch.setattr(st_gitea, "mint_token", mock.Mock(return_value="t"))
     monkeypatch.setattr(st_gitea, "create_repo", mock.Mock())
     monkeypatch.setattr(st_gitea, "push_stack_to_gitea", push)
+    monkeypatch.setattr(st_gitea, "ensure_labels", mock.Mock())
 
     st_gitea.provision_gitea(tmp_path, push_to_gitea=True)
 
@@ -593,6 +702,7 @@ def test_provision_gitea_push_to_gitea_honors_overrides(tmp_path, monkeypatch):
     monkeypatch.setattr(st_gitea, "mint_token", mock.Mock(return_value="t"))
     monkeypatch.setattr(st_gitea, "create_repo", mock.Mock())
     monkeypatch.setattr(st_gitea, "push_stack_to_gitea", push)
+    monkeypatch.setattr(st_gitea, "ensure_labels", mock.Mock())
 
     st_gitea.provision_gitea(
         tmp_path, push_to_gitea=True, stack_repo="custom", ssh_key="/k.pub"
