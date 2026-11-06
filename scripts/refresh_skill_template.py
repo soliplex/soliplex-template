@@ -114,7 +114,9 @@ def t_user_doc(text):
       0. drop ``<!-- site-only -->`` / ``<!-- endsite-only -->`` blocks --
          content that belongs only on this repo's docs site (e.g. a banner
          noting these pages describe a *generated* project), removed from the
-         docs that ship into a generated project;
+         docs that ship into a generated project (inside a Mermaid diagram,
+         ``%% site-only`` / ``%% endsite-only``, e.g. styling that marks a
+         generation option as optional);
       1. escape literal ``${...}`` that is *not* a generator parameter (e.g.
          the socat ``${OLLAMA_RELAY_BIND:-172.17.0.1}`` expansion shown to
          the reader) so Mako passes it through; ``${param}`` spellings on the
@@ -126,13 +128,19 @@ def t_user_doc(text):
          an ``ifp:X`` fence conditions on a bare parameter instead
          (``<!-- ifp:ingester_port -->`` → ``% if ingester_port:``), for
          opt-in port params whose presence means the service is published.
+         Inside a Mermaid diagram, where an HTML comment would break the
+         parse, the same fences are spelled as Mermaid comments
+         (``%% if:gitea`` / ``%% ifp:X`` / ``%% endif``): the repo site
+         draws every optional node, and the shipped page draws only those
+         the project was generated with.
     """
-    text = re.sub(
-        r"(?ms)^[ \t]*<!-- site-only -->[ \t]*\n"
-        r".*?^[ \t]*<!-- endsite-only -->[ \t]*\n\n?",
-        "",
-        text,
-    )
+    for opener, closer in FENCE_SPELLINGS:
+        text = re.sub(
+            rf"(?ms)^[ \t]*{opener}site-only{closer}[ \t]*\n"
+            rf".*?^[ \t]*{opener}endsite-only{closer}[ \t]*\n\n?",
+            "",
+            text,
+        )
     known = frozenset(PROBE)
     text = re.sub(
         r"\$\{([^}]*)\}",
@@ -144,12 +152,21 @@ def t_user_doc(text):
         text,
     )
     text = re.sub(r"(?m)^(#{2,} .*)$", r"<%text>\1</%text>", text)
-    text = re.sub(
-        r"(?m)^[ \t]*<!-- if:(\w+) -->[ \t]*$", r"% if include_\1:", text
-    )
-    text = re.sub(r"(?m)^[ \t]*<!-- ifp:(\w+) -->[ \t]*$", r"% if \1:", text)
-    text = re.sub(r"(?m)^[ \t]*<!-- endif -->[ \t]*$", r"% endif", text)
+    for opener, closer in FENCE_SPELLINGS:
+
+        def fence(body, opener=opener, closer=closer):
+            return rf"(?m)^[ \t]*{opener}{body}{closer}[ \t]*$"
+
+        text = re.sub(fence(r"if:(\w+)"), r"% if include_\1:", text)
+        text = re.sub(fence(r"ifp:(\w+)"), r"% if \1:", text)
+        text = re.sub(fence(r"endif"), r"% endif", text)
     return text
+
+
+# Whole-line fences (conditional and site-only) in a user doc, as (opener,
+# closer) regex pieces: an HTML comment in Markdown, a Mermaid comment inside
+# a diagram.
+FENCE_SPELLINGS = (("<!-- ", " -->"), ("%% ", ""))
 
 
 # --------------------------------------------------------------------------
@@ -207,9 +224,12 @@ docker compose down -v       # stop AND wipe the postgres volume
 
 The stack starts with no OIDC provider, and so **without authentication**:
 anyone who reaches nginx uses it as Soliplex's no-auth user. To require
-sign-in, add a provider with the `soliplex-template` skill's
-`scripts/oidc_providers.py` (ideally before the first `up`), then give your
-own account admin rights as it tells you.
+sign-in, either install the in-stack Authelia provider with the
+`soliplex-template` skill's `scripts/install_authelia.py`, or add an
+external provider with its `scripts/oidc_providers.py` (ideally before the
+first `up`), then give your own account admin rights as the script tells
+you. Both ways are described on the site under
+[Sign-in: choosing and running an identity provider](docs/authentication.md).
 
 <%text>## Ports</%text>
 
@@ -444,6 +464,7 @@ nav = [
     { "Home" = "index.md" },
     { "Getting started" = [
         "installation.md",
+        "authentication.md",
     ] },
     { "Architecture" = [
         "architecture/services.md",

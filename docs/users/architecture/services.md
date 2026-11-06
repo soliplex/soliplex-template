@@ -10,18 +10,74 @@ icon: lucide/network
     project ships its own copy of this page without this note.
 <!-- endsite-only -->
 
-The stack is defined in `docker-compose.yml`. Several services cooperate; two
-of them share the RAG vector store through a bind mount.
+The stack is defined in `docker-compose.yml`. Browsers reach every service
+through nginx, which routes each path prefix to the service behind it.
+In the diagrams, dashed outlines mark what is not always a stack service:
+Authelia exists only once installed, and Ollama runs outside the stack.
+
+<!-- site-only -->
+The TUI and Gitea are dashed too: a project includes each only when
+generated with it.
+<!-- endsite-only -->
 
 ```mermaid
-graph LR
-  browser([Browser]) -->|${nginx_http}/${nginx_https}| nginx
-  nginx -->|/api/ /mcp/| backend
-  backend -->|reads LanceDB| ragdb[(rag/db)]
-  ingester[haiku-ingester] -->|writes LanceDB| ragdb
-  ingester -->|convert/chunk| docling[docling-serve]
-  ingester -->|job queue| postgres[(postgres)]
-  backend -->|threads + authz| postgres
+flowchart LR
+  browser([Browser]) -->|"${nginx_http} / ${nginx_https}"| nginx
+  nginx -->|"/api/ /mcp/"| backend
+  nginx -->|"/ingester/"| ingester[haiku-ingester]
+  nginx -.->|"/authelia/"| authelia["authelia<br/>(if installed)"]
+  %% if:tui
+  nginx -->|"/tui/"| tui
+  tui -->|API| backend
+  %% endif
+  %% if:gitea
+  nginx -->|"/gitea/"| gitea
+  %% endif
+  classDef optional stroke-dasharray: 5 5
+  class authelia optional
+  %% site-only
+  class tui,gitea optional
+  %% endsite-only
+```
+
+Behind nginx, the services share Postgres (each with its own database) and
+two stores on disk: the backend reads the RAG vector store the ingester
+writes, and the ingester reads the room fragments the provisioner commits.
+Both the backend and the ingester reach Ollama at `OLLAMA_BASE_URL`.
+
+```mermaid
+flowchart TB
+  authelia["authelia<br/>(if installed)"]
+  backend
+  ingester[haiku-ingester]
+  provisioner[soliplex-provisioner]
+
+  backend -.->|OIDC| authelia
+  backend -->|LLM + embed| ollama{{"Ollama<br/>(external)"}}
+  ingester -->|embed| ollama
+  backend -->|reads| ragdb[("rag/db<br/>(LanceDB)")]
+  ingester -->|writes| ragdb
+  ingester --> docling[docling-serve]
+  ingester --> rooms[("provisioned rooms<br/>(src/ clone)")]
+  provisioner -->|commits| rooms
+  %% if:gitea
+  provisioner --> gitea
+  backend --> gitea
+  %% endif
+
+  authelia -.-> postgres[(postgres)]
+  backend --> postgres
+  ingester --> postgres
+  provisioner --> postgres
+  %% if:gitea
+  gitea --> postgres
+  %% endif
+
+  classDef optional stroke-dasharray: 5 5
+  class authelia,ollama optional
+  %% site-only
+  class gitea optional
+  %% endsite-only
 ```
 
 ## nginx
@@ -32,6 +88,10 @@ graph LR
 
 - Reverse-proxies `/ingester/` to `haiku-ingester:8765`
   (see [Ingester control plane](../operations/ingester.md)).
+
+- An installed Authelia provider is reverse-proxied at `/authelia/`
+  (see [Sign-in: choosing and running an identity
+  provider](../authentication.md)).
 
 - The web client is copied in `nginx/Dockerfile` from the published
   `ghcr.io/soliplex/frontend-web` image, whose tag picks the release
@@ -122,6 +182,21 @@ It shares `soliplex-dev`'s image, secrets and environment. `stack-init/run.sh`
 brings the Soliplex databases to their current schema
 (`soliplex-cli database upgrade`), then runs every step in
 `stack-init/init.d/`, in name order. Each step is safe to re-run.
+
+## authelia
+
+The in-stack OIDC provider, installed after generation with
+`scripts/install_authelia.py` and absent from stacks that never installed it
+(see [Sign-in: choosing and running an identity
+provider](../authentication.md)). The pinned Authelia image serves its own
+TLS on the HTTPS port at `/authelia/`, with a network alias so the backend
+reaches the issuer URL directly; nginx reverse-proxies the same path for
+browsers. Its state lives in the `soliplex_authelia` Postgres database; its
+configuration is bind-mounted from `authelia/` (`configuration.yml`, the
+gitignored `users.yml` and `notification.txt`, and the committed
+`identifiers.yml`). The service and its secrets live in a separate
+fragment, `compose.authelia.yaml`, pulled in by a top-level `include:` in
+`docker-compose.yml`.
 
 ## haiku-ingester
 

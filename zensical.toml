@@ -49,6 +49,7 @@ nav = [
     ] },
     { "Using a generated stack" = [
         "users/installation.md",
+        "users/authentication.md",
         "users/architecture/services.md",
         "users/architecture/configuration.md",
         "users/architecture/backend.md",
