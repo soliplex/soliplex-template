@@ -196,19 +196,19 @@ unknown at generation time).
   `models` shortcut group but are **not** model names — `rag_embed_dim` must
   match the embedding model's vector dimension. The skill's interview probes
   each chosen model for responsiveness against `ollama_base_url` *before*
-  generating (see `SKILL.md`); after the stack is up, `soliplex-cli audit
+  generating (see `references/GENERATION.md`); after the stack is up, `soliplex-cli audit
   ollama` / `soliplex-cli ollama pull` verify and repair the models the install
   references.
 - The set of rooms is **fixed at generation time** (the template's `room_paths`
   list is not parameterized). To add a room to a *generated* stack afterwards,
   use `scripts/add_room.py` — it renders a bundled room template into
-  `backend/environment/rooms/<id>/` and splices the `room_paths` entry; see the
-  *Adding a room to an existing stack* section of `SKILL.md`.
+  `backend/environment/rooms/<id>/` and splices the `room_paths` entry; see
+  `references/ROOMS.md` (*Adding a room to an existing stack*).
 - The backend `soliplex` release is the tag of the published images
   (`soliplex_image_tag`). Choose it from the tags on GHCR
   (`ghcr.io/soliplex/soliplex-postgres`) rather than guessing — follow a
   series (e.g. `0.85`) or pin one release (e.g. `0.85.3`); the skill's
-  interview step (see `SKILL.md`) lists them for you. Extra PyPI packages for
+  interview step (see `references/GENERATION.md`) lists them for you. Extra PyPI packages for
   the backend go in the generated `backend/requirements.txt`, not a
   parameter.
 - `soliplex_backend_constraint` and `soliplex_tui_constraint` are gone: a
