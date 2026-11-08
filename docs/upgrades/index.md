@@ -25,6 +25,28 @@ the section your stack is at, and work forward from there.
 | soliplex 0.89, with `stack-init` | `docker-compose.yml`'s `soliplex-provisioner` runs `soliplex_template.provision_service:create_app` | `v0.21` | [8](provisioner-on-concierge.md) |
 | soliplex 0.89, with the provisioner on concierge | `docker-compose.yml`'s `soliplex-provisioner` runs `soliplex_template.provisioner.wiring:create_app` | `v0.22` | [9](room-id-forms-and-tracker-labels.md) |
 
+!!! note "Releases without rungs"
+
+    The `v0.23` template introduces no rung: nothing in the generated
+    skeleton changed, so a stack through rung 9 is current — no migration
+    to apply. What it adds to an existing stack:
+
+    - the opt-in in-stack Authelia provider. Install it with
+      `skills/soliplex-template/scripts/install_authelia.py`: the script
+      splices its `compose.authelia.yaml` `include:` into
+      `docker-compose.yml` and writes the
+      `nginx/conf.d/authelia.conf` fragment itself. It relies on the
+      `conf.d` fragment directory and a `stack-init` service, both in
+      place after rung 7. Manage the users it creates with
+      `skills/soliplex-template/scripts/authelia_users.py`.
+    - refreshed doc pointers: the generated `AGENTS.md` and
+      `docker-compose.yml` comments name the room-provisioning docs as
+      a directory (`docs/operations/room-provisioning/service.md`),
+      where older stacks still carry the single
+      `room-provisioning.md` page. Cosmetic — refresh the stack's own
+      agent-facing docs with the next upgrade
+      ([Afterwards](#afterwards)), or by hand.
+
 The `[tool.soliplex-template]` manifest at the end of the stack's
 `pyproject.toml` records the skill commit (`skill_source_commit`) and date
 (`skill_generated`) that generated it, and the parameters it was generated
