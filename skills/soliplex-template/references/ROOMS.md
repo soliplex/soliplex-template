@@ -17,6 +17,12 @@ preserved). The `--reload=config` backend restarts on edits to existing
 config files, but does **not** reload a newly created room: fire the
 rooms-reload endpoint (soliplex#1475) after `add`, below.
 
+A room added this way stores its web-client uploads in
+`uploads/rooms/<room-id>/`, but no ingester source reads them, so they never
+reach a RAG database. When users will upload documents for the room to
+search, provision a room instead (*Provisioning a room for a requester*,
+below): it gets its own database, fed from its uploads.
+
 1. **Show the bundled templates** and let the user choose one:
 
    ```bash

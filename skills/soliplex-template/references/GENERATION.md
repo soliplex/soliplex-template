@@ -163,6 +163,12 @@ from the user and invoke it.
    `models` shortcut group but are **not** model names — `rag_embed_dim` must
    match the embedding model's vector dimension.)
 
+   For a hosted OpenAI-compatible provider instead (DigitalOcean serverless
+   inference, vLLM, OpenRouter), the model ids are that provider's, the
+   probes go to its endpoint with its key, and the provider wiring is a
+   post-generation edit: follow `INFERENCE_PROVIDERS.md` instead of the
+   Ollama probes below.
+
    **Offer real choices** instead of asking the user to recall a tag: list the
    models the server actually has and present them (defaults pre-selected),
    keeping the chat models and the embedding model in separate questions so an
@@ -233,6 +239,17 @@ from the user and invoke it.
    the image tag to use (`0.114.0-101`). Images exist only from 0.110 on.
    Fall back to the default if GHCR is unreachable.
 
+   Independent does not mean every pairing works: frontend 0.117 hangs on
+   its connect screen against a soliplex 0.89 backend with no OIDC
+   provider. It stops after `GET /api/v1/installation/identity` returns
+   its (expected) 404, and never requests `/api/v1/rooms`; 0.114 works.
+   When the user picks a frontend newer than this release's default, say
+   that the pairing is untried. If a stack's connect screen stalls, check
+   nginx's log for a missing `/api/v1/rooms` request, then step the
+   frontend back: edit the `FROM` in `nginx/Dockerfile`, run
+   `docker compose build --pull nginx` and `docker compose up -d nginx`,
+   and have the user hard-refresh the browser.
+
    For the backend `soliplex` release (`soliplex_image_tag`: the tag of
    `ghcr.io/soliplex/soliplex-postgres`, which `backend/Dockerfile` builds
    `FROM`, and of `ghcr.io/soliplex/soliplex-tui` for the TUI), **offer the
@@ -294,6 +311,17 @@ from the user and invoke it.
    from the published `ghcr.io/soliplex/frontend-web` image, so there is
    no Flutter build in the stack; a separate `build` step still keeps its
    output legible instead of hiding it inside `up`.
+
+   **On Docker 29, the build can fail** in `soliplex-provisioner` /
+   `soliplex-dev`, at `apt-get update`, with `Unable to mkstemp
+   /tmp/apt.sig… (13: Permission denied)`. The `COPY --link … /tmp/…`
+   lines in `backend/Dockerfile` and `soliplex-dev/Dockerfile` re-create
+   `/tmp` as `0755` instead of `1777`
+   ([#345](https://github.com/soliplex/soliplex-template/issues/345)).
+   Until the template is fixed, add `RUN chmod 1777 /tmp` after each of
+   those lines and rebuild. Check the fix with
+   `docker run --rm --entrypoint stat <project>-backend -c %a /tmp`, which
+   should print `1777`.
 
    Once the backend reports healthy, **verify the Ollama models the install
    actually references** with the backend's own audit, and pull any that are
