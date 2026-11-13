@@ -66,7 +66,7 @@ _PARAMS = {
     "docs_dir": "rag/inbox",
     # Pin a (fictional) frontend release tag to prove version selection lands
     # in nginx/Dockerfile as a /releases/tags/<tag> API URL.
-    "frontend_version": "0.114.0-101",
+    "frontend_version": "0.117.0-106",
     # Non-default embeddings and chunk size propagate.
     "rag_embed_model": "not-qwen3-embedding:0.6b",
     "rag_embed_dim": 1023,
@@ -644,24 +644,24 @@ def test_default_stack_image_versions(generated_project):
     services = yaml.safe_load(_read(out, "docker-compose.yml"))["services"]
 
     assert services["haiku-ingester"]["image"] == (
-        "ghcr.io/ggozad/haiku.rag-slim:0.104.0"
+        "ghcr.io/ggozad/haiku.rag-slim:0.112.0"
     )
     assert (
         services["haiku-rag"]["image"] == services["haiku-ingester"]["image"]
     )
-    assert "soliplex-postgres:0.89\n" in _read(out, "backend/Dockerfile")
+    assert "soliplex-postgres:0.93\n" in _read(out, "backend/Dockerfile")
     project = tomllib.loads(_read(out, "pyproject.toml"))
     package = tomllib.loads(_read(out, "src/soliplex_functest/pyproject.toml"))
     assert project["project"]["dependencies"] == [
-        "soliplex[postgres-binary] >= 0.89, < 0.90"
+        "soliplex[postgres-binary] >= 0.93, < 0.94"
     ]
-    assert package["project"]["dependencies"] == ["soliplex >= 0.89, < 0.90"]
+    assert package["project"]["dependencies"] == ["soliplex >= 0.93, < 0.94"]
 
 
 def test_docling_image_matches_haiku_rag(generated_project):
     out, _params = generated_project
     services = yaml.safe_load(_read(out, "docker-compose.yml"))["services"]
-    image = "quay.io/docling-project/docling-serve-cpu:v1.38.0"
+    image = "quay.io/docling-project/docling-serve-cpu:v1.38.2"
 
     assert services["docling-serve"]["image"] == image
 
@@ -930,7 +930,7 @@ def test_docling_image_baked_at_generation(generated_project):
 
     compose = _read(out, "docker-compose.yml")
     assert (
-        "image: quay.io/docling-project/docling-serve-cpu:v1.38.0" in compose
+        "image: quay.io/docling-project/docling-serve-cpu:v1.38.2" in compose
     )
     # No runtime knob, no interpolation:  the bake is a file like
     # everything else, and the local-build recipe travels as the

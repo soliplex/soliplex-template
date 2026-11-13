@@ -105,15 +105,15 @@ DEFAULTS: dict[str, object] = {
     # (ghcr.io/soliplex/soliplex-tui) build on: "latest", a moving
     # "<major>.<minor>" (follows patch releases on 'docker compose build
     # --pull'), or an exact "<major>.<minor>.<patch>".
-    "soliplex_image_tag": "0.89",
+    "soliplex_image_tag": "0.93",
     # The 'soliplex' requirement in the stack's host-side pyproject.toml files
     # (dev mode, and src/<package>/). Must admit the image tag's release.
-    "soliplex_dev_constraint": ">= 0.89, < 0.90",
+    "soliplex_dev_constraint": ">= 0.93, < 0.94",
     # haiku-ingester image tag (ghcr.io/ggozad/haiku.rag-slim). Not a free
     # choice: the soliplex release constrains 'haiku.rag-slim' as a
     # dependency, and the ingester writes the LanceDB the backend reads, so
     # this has to satisfy the range the 'soliplex_image_tag' release implies.
-    "haiku_rag_version": "0.104.0",
+    "haiku_rag_version": "0.112.0",
     # The docling-serve image the converter service runs: the variant the
     # host can use (the 'cpu' variant converts on any host; 'base' and
     # the 'cuNNN' variants want a GPU) and the docling-serve version,
@@ -123,12 +123,12 @@ DEFAULTS: dict[str, object] = {
     # initial commit);  upstream tags no moving tag on the CUDA
     # variants ('latest' is only valid for 'cpu' / 'base').
     "docling_serve_variant": "cpu",
-    "docling_serve_version": "v1.38.0",
+    "docling_serve_version": "v1.38.2",
     # Tag of the published web-client image (ghcr.io/soliplex/frontend-web)
     # nginx serves: a moving "<major>.<minor>" (follows patch releases on
     # 'docker compose build --pull'), an exact "<major>.<minor>.<patch>" or
     # "<major>.<minor>.<patch>-<build>", or "latest".
-    "frontend_version": "0.114",
+    "frontend_version": "0.117",
     # Deprecated, and ignored when "no-auth": a generated stack starts with
     # no OIDC provider, and so without authentication. Providers are added
     # afterwards, before the first 'docker compose up', with the skill's
@@ -187,7 +187,7 @@ RESERVED_PACKAGE_NAMES = frozenset({"soliplex"})
 # "<major>.<minor>", or an exact "<major>.<minor>.<patch>" with an optional
 # "-<build>" (the release tag's "+<build>", which a Docker tag cannot carry).
 FRONTEND_VERSION_RE = re.compile(r"^(latest|\d+\.\d+(\.\d+(-\d+)?)?)$")
-# A soliplex/frontend *release* tag ("v0.114.0+101"), as the parameter took
+# A soliplex/frontend *release* tag ("v0.117.0+106"), as the parameter took
 # before nginx built from the image: rejected, with the image tag to use.
 _FRONTEND_RELEASE_TAG_RE = re.compile(r"^v(\d+\.\d+\.\d+)(?:\+(\d+))?$")
 # Tags the soliplex image workflow publishes: "latest", a moving
