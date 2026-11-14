@@ -194,7 +194,7 @@ http {
         # Versioned assets in the release's hash directory - cache aggressively
         # (1 year, immutable).
         # The directory is named for the frontend release tag,
-        # build metadata included (e.g., /v0.114.0+101/...), so each release's
+        # build metadata included (e.g., /v0.117.0+106/...), so each release's
         # assets live at new URLs and browsers fetch them afresh.
         location ~ "^/v[0-9]+\.[0-9]+(\.[0-9]+)?(\+[0-9A-Za-z.-]+)?/(.*)" {
             expires 1y;
@@ -446,7 +446,7 @@ http {
 
         # Versioned assets in the release's hash directory - cache aggressively
         # (1 year, immutable). The directory is named for the frontend release tag,
-        # build metadata included (e.g., /v0.114.0+101/...), so each release's assets
+        # build metadata included (e.g., /v0.117.0+106/...), so each release's assets
         # live at new URLs and browsers fetch them afresh.
         location ~ "^/v[0-9]+\.[0-9]+(\.[0-9]+)?(\+[0-9A-Za-z.-]+)?/(.*)" {
             expires 1y;

@@ -321,7 +321,7 @@ def test_coerce_composes_docling_image():
     params = _valid_params()
 
     assert params["docling_serve_image"] == (
-        "quay.io/docling-project/docling-serve-cpu:v1.38.0"
+        "quay.io/docling-project/docling-serve-cpu:v1.38.2"
     )
 
 
@@ -385,11 +385,11 @@ def test_validate_docling_cuda_moving_tag_refused():
 def test_validate_docling_cuda_explicit_version_accepted():
     params = _valid_params()
     params["docling_serve_variant"] = "cu130"
-    params["docling_serve_version"] = "v1.38.0"
+    params["docling_serve_version"] = "v1.38.2"
     params = gen.coerce_and_derive(params)
 
     assert params["docling_serve_image"].endswith(
-        "docling-serve-cu130:v1.38.0"
+        "docling-serve-cu130:v1.38.2"
     )
     assert gen.validate(params) is None
 
@@ -542,7 +542,7 @@ def test_validate_accepts_default_project_name():
 
 @pytest.mark.parametrize(
     "frontend_version",
-    ["", "v 1", 'has"quote', "0", "0.114.0+101", "0.114-101", "latest-ish"],
+    ["", "v 1", 'has"quote', "0", "0.117.0+106", "0.117-106", "latest-ish"],
 )
 def test_validate_bad_frontend_version(frontend_version):
     params = _valid_params()
@@ -556,7 +556,7 @@ def test_validate_bad_frontend_version(frontend_version):
 # built from the published image -- is refused, naming the image tag to use.
 @pytest.mark.parametrize(
     "frontend_version, image_tag",
-    [("v0.114.0+101", "'0.114.0-101'"), ("v0.114.0", "'0.114.0'")],
+    [("v0.117.0+106", "'0.117.0-106'"), ("v0.117.0", "'0.117.0'")],
 )
 def test_validate_release_tag_names_the_image_tag(frontend_version, image_tag):
     params = _valid_params()
@@ -571,7 +571,7 @@ def test_validate_release_tag_names_the_image_tag(frontend_version, image_tag):
 
 
 @pytest.mark.parametrize(
-    "frontend_version", ["latest", "0.114", "0.114.0", "0.114.0-101"]
+    "frontend_version", ["latest", "0.117", "0.117.0", "0.117.0-106"]
 )
 def test_validate_accepts_frontend_version(frontend_version):
     params = _valid_params()
@@ -583,7 +583,7 @@ def test_validate_accepts_frontend_version(frontend_version):
 def test_default_frontend_version_is_a_moving_minor_tag():
     result = gen.DEFAULTS["frontend_version"]
 
-    assert result == "0.114"
+    assert result == "0.117"
 
 
 def test_validate_dbs_must_differ():
@@ -669,7 +669,7 @@ def test_validate_bad_image_tag(tag):
         gen.validate(params)
 
 
-@pytest.mark.parametrize("tag", ["0.90", "0.88.2", "0.85.5"])
+@pytest.mark.parametrize("tag", ["0.94", "0.92.2", "0.85.5"])
 def test_validate_image_tag_outside_constraint(tag):
     params = _valid_params()
     params["soliplex_image_tag"] = tag
@@ -681,7 +681,7 @@ def test_validate_image_tag_outside_constraint(tag):
     assert exc_info.value.constraint == params["soliplex_dev_constraint"]
 
 
-@pytest.mark.parametrize("tag", ["latest", "0.89", "0.89.11"])
+@pytest.mark.parametrize("tag", ["latest", "0.93", "0.93.11"])
 def test_validate_accepts_image_tag(tag):
     params = _valid_params()
     params["soliplex_image_tag"] = tag

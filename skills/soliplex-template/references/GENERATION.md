@@ -225,12 +225,12 @@ from the user and invoke it.
    curl -s -H "Authorization: Bearer $TOKEN" "$TAGS" | jq -r '.tags[]' | sort -V
    ```
 
-   Explain the kinds: a `<major>.<minor>` tag (e.g. `0.114`, the default)
+   Explain the kinds: a `<major>.<minor>` tag (e.g. `0.117`, the default)
    moves, picking up patch releases on `docker compose build --pull nginx`;
    an exact `<major>.<minor>.<patch>` or `<major>.<minor>.<patch>-<build>`
    pins one; `latest` is also accepted. A `soliplex/frontend` *release* tag
-   (`v0.114.0+101`) is not an image tag, and the generator refuses it, naming
-   the image tag to use (`0.114.0-101`). Images exist only from 0.110 on.
+   (`v0.117.0+106`) is not an image tag, and the generator refuses it, naming
+   the image tag to use (`0.117.0-106`). Images exist only from 0.110 on.
    Fall back to the default if GHCR is unreachable.
 
    For the backend `soliplex` release (`soliplex_image_tag`: the tag of
@@ -253,7 +253,7 @@ from the user and invoke it.
    Then set `soliplex_dev_constraint` (the `soliplex` requirement in the
    stack's host-side `pyproject.toml` files) to a range that admits the
    release, e.g. `>= 0.88, < 0.89` for `0.88` or `0.88.1`; the default
-   `>= 0.89, < 0.90` admits the default `0.89` tag. The generator refuses a
+   `>= 0.93, < 0.94` admits the default `0.93` tag. The generator refuses a
    tag outside the constraint.
 
 2. **Write the answers to a JSON file** (omit keys to accept defaults), e.g.
