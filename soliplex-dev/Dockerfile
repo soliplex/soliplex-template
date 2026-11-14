@@ -41,10 +41,12 @@ RUN --mount=from=uv,source=/uv,target=/usr/local/bin/uv \
       --constraints /tmp/base-constraints.txt \
       "$SOLIPLEX_TEMPLATE"
 
-COPY --link requirements-dev.txt /tmp/requirements-dev.txt
-
+# The file is bind-mounted for this one step, not copied: a 'COPY --link'
+# into /tmp re-creates /tmp as 0755 under Docker 29's BuildKit, masking the
+# base image's 1777 (apt, and the runtime user, then cannot write there).
 RUN --mount=from=uv,source=/uv,target=/usr/local/bin/uv \
     --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=bind,source=requirements-dev.txt,target=/tmp/requirements-dev.txt \
     if grep -qv '^[[:space:]]*\(#\|$\)' /tmp/requirements-dev.txt; then \
       uv pip list --format freeze --python /app/.venv/bin/python \
         > /tmp/base-constraints.txt && \
