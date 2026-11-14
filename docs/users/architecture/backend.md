@@ -129,6 +129,22 @@ other extra.
   builds on. A `--pull` that fetches a newer image re-runs it, against that
   release's versions, so an extra that fit the old release can fail on the
   new one.
+- `requirements.txt` should be bind-mounted into the install step, not copied
+  into the image. Older stacks `COPY --link` it into `/tmp`, which can
+  fail the build under newer Docier.
+
+  Check a built image with:
+
+    ```bash
+    docker compose run --rm --no-deps --entrypoint stat backend -c %a /tmp
+    ```
+
+  `1777` is fine.
+
+  Otherwise, replace the `COPY --link` lines in `backend/Dockerfile` and
+  `soliplex-dev/Dockerfile` with a `--mount=type=bind,...` on the `RUN` that
+  reads the file, then rebuild both `backend` and `soliplex-dev`.
+
 - Sandbox environments under `backend/sandbox/environments/<name>/` are
   **separate** `uv` projects, with their own locked dependencies; a package
   the sandboxed code needs belongs there, not in `requirements.txt`.
