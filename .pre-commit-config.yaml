@@ -72,6 +72,12 @@ repos:
       - id: pymarkdown
         args:
           - "scan"
+        # docs/ is built by Zensical (Python-Markdown), whose fixed 4-space
+        # nesting conflicts with PyMarkdown's CommonMark rules (e.g. MD007
+        # on bullets nested in a list of fewer than ten items); docs-lint's
+        # 'zensical build --strict' checks it instead. The other Markdown
+        # (SKILL.md, references/, READMEs) is read as CommonMark/GFM.
+        exclude: ^docs/
 
   - repo: https://github.com/rhysd/actionlint
     rev: v1.7.7
