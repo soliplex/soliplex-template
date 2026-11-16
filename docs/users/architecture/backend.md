@@ -131,7 +131,7 @@ other extra.
   new one.
 - `requirements.txt` should be bind-mounted into the install step, not copied
   into the image. Older stacks `COPY --link` it into `/tmp`, which can
-  fail the build under newer Docier.
+  fail the build under newer Docker.
 
   Check a built image with:
 
