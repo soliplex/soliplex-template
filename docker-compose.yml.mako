@@ -149,6 +149,7 @@ services:
     secrets:
       - agui_db_password
       - authz_db_password
+      - session_middleware_token
       - url_safe_token_secret
 
     environment: &backend_environment
@@ -259,6 +260,7 @@ services:
     secrets: &soliplex_dev_secrets
       - agui_db_password
       - authz_db_password
+      - session_middleware_token
       - url_safe_token_secret
       # The room provisioner's credential for the ingester's '/reload'.
       - ingester_bearer
@@ -696,6 +698,8 @@ secrets:
       file: ./.secrets/ingester_bearer.gen
     postgres_password:
       file: ./.secrets/postgres_password.gen
+    session_middleware_token:
+      file: ./.secrets/session_middleware_token.gen
     url_safe_token_secret:
       file: ./.secrets/url_safe_token_secret.gen
 #
@@ -710,5 +714,7 @@ secrets:
 #     environment: "SOLIPLEX_AUTHZ_DB_PASSWORD"
 #   postgres_password:
 #     environment: "SOLIPLEX_POSTGRES_PASSWORD"
+#   session_middleware_token:
+#     environment: "SOLIPLEX_SESSION_MIDDLEWARE_TOKEN"
 #   url_safe_token_secret:
 #     environment: "SOLIPLEX_URL_SAFE_TOKEN_SECRET"
