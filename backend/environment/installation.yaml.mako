@@ -203,8 +203,10 @@ secrets:
   # ----------------------------------------------------------------------
   # Session middleware token
   #
-  # If not set in the environment, we generate a random value at startup,
-  # which will invalidate any existing sessions.
+  # Signs the session and authn cookies. Read from the generated
+  # 'session_middleware_token' Docker secret, so sessions survive a backend
+  # restart. Failing that, a random value is generated at startup, which
+  # invalidates every existing session.
   #
   # To generate:
   #
@@ -212,6 +214,8 @@ secrets:
   # ----------------------------------------------------------------------
   - secret_name: "SESSION_MIDDLEWARE_TOKEN"
     sources:
+      - kind: "file_path"
+        file_path: /run/secrets/session_middleware_token
       - kind: "env_var"
         env_var_name: "SOLIPLEX_SESSION_MIDDLEWARE_TOKEN"
       - kind: "random_chars"

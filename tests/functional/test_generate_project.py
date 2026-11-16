@@ -857,24 +857,46 @@ def test_provisioned_rooms_agent_config(generated_project):
     assert agent["system_prompt"].strip()
 
 
-def test_url_safe_token_secret_read_from_its_docker_secret(generated_project):
-    # MCP room tokens and service tokens verify in every process only when
-    # all of them read the one generated secret.
+# MCP room tokens and service tokens verify in every process, and sessions
+# survive a backend restart (#354), only when every process reads the one
+# generated secret.
+@pytest.mark.parametrize(
+    "secret_name, docker_secret",
+    [
+        ("URL_SAFE_TOKEN_SECRET", "url_safe_token_secret"),
+        ("SESSION_MIDDLEWARE_TOKEN", "session_middleware_token"),
+    ],
+)
+def test_signing_secret_read_from_its_docker_secret(
+    generated_project, secret_name, docker_secret
+):
     out, _params = generated_project
     installation = yaml.safe_load(
         _read(out, "backend/environment/installation.yaml")
     )
 
     [secret] = [
-        s
-        for s in installation["secrets"]
-        if s["secret_name"] == "URL_SAFE_TOKEN_SECRET"
+        s for s in installation["secrets"] if s["secret_name"] == secret_name
     ]
 
     assert secret["sources"][0] == {
         "kind": "file_path",
-        "file_path": "/run/secrets/url_safe_token_secret",
+        "file_path": f"/run/secrets/{docker_secret}",
     }
+
+
+@pytest.mark.parametrize(
+    "service",
+    ["backend", "soliplex-dev", "soliplex-provisioner", "stack-init"],
+)
+def test_session_middleware_token_mounted(generated_project, service):
+    # Every process resolving the installation's secrets reads the same
+    # session key as the backend (#354).
+    out, _params = generated_project
+
+    services = yaml.safe_load(_read(out, "docker-compose.yml"))["services"]
+
+    assert "session_middleware_token" in services[service]["secrets"]
 
 
 def test_soliplex_dev_wired_for_the_room_provisioner(generated_project):
@@ -1278,6 +1300,7 @@ def test_secrets_generated_by_default(generated_project):
         "ingester_bearer.gen",
         "ingester_db_password.gen",
         "postgres_password.gen",
+        "session_middleware_token.gen",
         "url_safe_token_secret.gen",
     ]
     for name in gen_files:
