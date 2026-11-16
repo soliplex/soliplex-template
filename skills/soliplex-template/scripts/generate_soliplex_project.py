@@ -633,12 +633,14 @@ def coerce_and_derive(params: dict[str, object]) -> dict[str, object]:
     # secret files this run writes are owned by, and the bind mounts are
     # writable by, the in-container service users. An explicit value is coerced
     # to int here and range-checked in validate(). os.getuid()/os.getgid() are
-    # POSIX-only; generation already requires bash/openssl/docker, so a POSIX
-    # host is assumed.
-    for key, detect in (("puid", os.getuid), ("pgid", os.getgid)):
+    # POSIX-only, so they are looked up by name: on Windows, where Docker
+    # Desktop ignores bind-mount ownership, an unset value falls back to the
+    # conventional service uid/gid of 1000.
+    for key, detect_name in (("puid", "getuid"), ("pgid", "getgid")):
         value = params.get(key)
         if value is None:
-            detected = detect()
+            detect = getattr(os, detect_name, None)
+            detected = 1000 if detect is None else detect()
             if detected == 0:
                 # Don't silently configure the stack to run as root; fall back
                 # to the conventional service uid the images historically used.
