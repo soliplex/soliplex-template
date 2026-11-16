@@ -98,7 +98,7 @@ starts with the previous one unfinished.
    run the skill's scripts (`src_projects.py`), and its generator
    renders the reference stack the rung compares against. The
    release this page describes is the right one for the newest rung
-   (9);  earlier rungs walk with the release that generated the
+   (10);  earlier rungs walk with the release that generated the
    shape the rung *lands on* — the stack's own manifest
    (`skill_source_commit` in `[tool.soliplex-template]`) names the
    release that generated it, the one the rung moving *from* it
@@ -327,15 +327,23 @@ release's generator would scaffold it:
 cd <stack>
 
 # Build a params file from the manifest. The generator recomputes derived
-# values, so they are not accepted as input -- drop them. (If it rejects
-# others, its error message names them; add those to the list.)
+# values, so they are not accepted as input -- drop them. Manifests from
+# before rung 7 also record 'auth_mode = "auth"', which the generator now
+# refuses (providers are added after generation), so drop that too. (If it
+# rejects others, its error message names them; add those to the list.)
 python3 - <<'EOF' > /tmp/ref-params.json
 import json, pathlib, tomllib
 
 manifest = tomllib.loads(pathlib.Path("pyproject.toml").read_text())
 params = manifest["tool"]["soliplex-template"]["params"]
-for derived in ("package_name", "frontend_release_path", "backend_auth_flag"):
-    params.pop(derived, None)
+for dropped in (
+    "package_name",
+    "frontend_release_path",
+    "backend_auth_flag",
+    "docling_serve_image",
+    "auth_mode",
+):
+    params.pop(dropped, None)
 print(json.dumps(params, indent=2))
 EOF
 

@@ -58,7 +58,8 @@ compare against a stack the rung's release generates.
       the `v1.38.2` tag in `docling_serve_image`, and
       `frontend_version = "0.117"`
     - the `soliplex` requirement in the root and package `pyproject.toml`
-      files: `>= 0.93, < 0.94`; then run `uv lock` in each project
+      files: `>= 0.93, < 0.94`; then run `uv lock` in each project that
+      has a `uv.lock` (usually the root only)
 
     The two `/v0.114.0+101/` examples in `nginx/nginx.conf`'s comments
     become `/v0.117.0+106/`; nothing else in that file changes.
