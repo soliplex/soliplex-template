@@ -479,13 +479,17 @@ def load_params(args: argparse.Namespace) -> dict[str, object]:
 
     if args.params:
         path = pathlib.Path(args.params)
+        # Read bytes and let 'json.loads' detect the encoding (UTF-8, -16 or
+        # -32, with or without a BOM): Windows PowerShell 5.1's '>' writes
+        # UTF-16 with a BOM, so 'generate_soliplex_project.py
+        # --print-defaults > params.json' would otherwise be unreadable.
         try:
-            raw = path.read_text(encoding="utf-8")
+            raw = path.read_bytes()
         except OSError as exc:
             raise ParamsUnreadable(path, exc) from exc
         try:
             supplied = json.loads(raw)
-        except json.JSONDecodeError as exc:
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             raise ParamsNotJSON(exc) from exc
         if not isinstance(supplied, dict):
             raise ParamsNotObject()
@@ -1116,6 +1120,11 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":  # pragma: no cover
+    # Piped output (an agent running this script) otherwise takes the locale
+    # encoding -- cp1252 on Windows -- which can't print generate_secrets's
+    # check marks.
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
     try:
         sys.exit(main(sys.argv[1:]))
     except GenError as exc:
