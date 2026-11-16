@@ -80,6 +80,7 @@ nav = [
         "upgrades/oidc-providers-and-stack-init.md",
         "upgrades/provisioner-on-concierge.md",
         "upgrades/room-id-forms-and-tracker-labels.md",
+        "upgrades/move-to-soliplex-0.93.md",
     ] },
     { "Contributing" = [
         "contributing/index.md",

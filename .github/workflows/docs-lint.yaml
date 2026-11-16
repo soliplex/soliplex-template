@@ -5,7 +5,8 @@ name: Docs checks
 #
 # - pymarkdown: the very same hook as pre-commit (revision pinned in
 #   .pre-commit-config.yaml, rules in pyproject.toml [tool.pymarkdown]), so a
-#   local `pre-commit run pymarkdown` and this job stay in lock-step.
+#   local `pre-commit run pymarkdown` and this job stay in lock-step. It
+#   skips docs/, which `build` checks (see the hook's comment for why).
 # - build: `zensical build --strict` as a smoke test -- it aborts on warnings
 #   (e.g. unresolved links / footnotes) that the linter does not catch. The
 #   built site is thrown away; publishing is docs.yaml's job (on push to main).

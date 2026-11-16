@@ -24,6 +24,7 @@ the section your stack is at, and work forward from there.
 | soliplex 0.89, provisioning rooms | `docker-compose.yml` has a `soliplex-provisioner` service but no `stack-init` one; `nginx/nginx.conf` includes nothing from `conf.d/` | `v0.21b1` | [7](oidc-providers-and-stack-init.md) |
 | soliplex 0.89, with `stack-init` | `docker-compose.yml`'s `soliplex-provisioner` runs `soliplex_template.provision_service:create_app` | `v0.21` | [8](provisioner-on-concierge.md) |
 | soliplex 0.89, with the provisioner on concierge | `docker-compose.yml`'s `soliplex-provisioner` runs `soliplex_template.provisioner.wiring:create_app` | `v0.22` | [9](room-id-forms-and-tracker-labels.md) |
+| soliplex 0.89, through rung 9 | `backend/Dockerfile` builds `FROM ghcr.io/soliplex/soliplex-postgres:0.89` | `v0.24` | [10](move-to-soliplex-0.93.md) |
 
 !!! note "Releases without rungs"
 
@@ -97,7 +98,7 @@ starts with the previous one unfinished.
    run the skill's scripts (`src_projects.py`), and its generator
    renders the reference stack the rung compares against. The
    release this page describes is the right one for the newest rung
-   (9);  earlier rungs walk with the release that generated the
+   (10);  earlier rungs walk with the release that generated the
    shape the rung *lands on* — the stack's own manifest
    (`skill_source_commit` in `[tool.soliplex-template]`) names the
    release that generated it, the one the rung moving *from* it
@@ -326,15 +327,23 @@ release's generator would scaffold it:
 cd <stack>
 
 # Build a params file from the manifest. The generator recomputes derived
-# values, so they are not accepted as input -- drop them. (If it rejects
-# others, its error message names them; add those to the list.)
+# values, so they are not accepted as input -- drop them. Manifests from
+# before rung 7 also record 'auth_mode = "auth"', which the generator now
+# refuses (providers are added after generation), so drop that too. (If it
+# rejects others, its error message names them; add those to the list.)
 python3 - <<'EOF' > /tmp/ref-params.json
 import json, pathlib, tomllib
 
 manifest = tomllib.loads(pathlib.Path("pyproject.toml").read_text())
 params = manifest["tool"]["soliplex-template"]["params"]
-for derived in ("package_name", "frontend_release_path", "backend_auth_flag"):
-    params.pop(derived, None)
+for dropped in (
+    "package_name",
+    "frontend_release_path",
+    "backend_auth_flag",
+    "docling_serve_image",
+    "auth_mode",
+):
+    params.pop(dropped, None)
 print(json.dumps(params, indent=2))
 EOF
 
@@ -391,6 +400,7 @@ One page per rung:
 - [7: OIDC providers and stack-init](oidc-providers-and-stack-init.md)
 - [8: The provisioner on soliplex-concierge](provisioner-on-concierge.md)
 - [9: Room id forms and tracker labels](room-id-forms-and-tracker-labels.md)
+- [10: Move to soliplex 0.93](move-to-soliplex-0.93.md)
 
 ??? note "Appendix: the generated `soliplex` ↔ `haiku.rag-slim` pairing table"
 

@@ -199,8 +199,8 @@ has only ever run one release has nothing to migrate.
 
 `scripts/migrate_rag_dbs.py` puts the question to the *pinned* image's
 `haiku-rag` CLI for every `*.lancedb` under `rag/db/`. So bump the tag first —
-in **both** `docker-compose.yml` and `haiku.rag/Dockerfile`, which have to
-agree — and then ask what it would demand:
+the `&haiku_rag_image` anchor in `docker-compose.yml` — and then ask what it
+would demand:
 
 ```bash
 uv run scripts/migrate_rag_dbs.py --check

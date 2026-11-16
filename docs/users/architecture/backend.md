@@ -74,9 +74,9 @@ Moving to a new series (say `0.85` to `0.86`) is an upgrade, not a rebuild:
 - raise the `soliplex` requirement in `pyproject.toml` and
   `src/<package>/pyproject.toml` to match, so host-side work runs the same
   release the backend does;
-- check the `haiku.rag-slim` tag in `haiku.rag/Dockerfile` and
-  `docker-compose.yml` against the `haiku.rag-slim` range the new release
-  requires: the ingester writes the LanceDB the backend reads.
+- check the `haiku.rag-slim` tag in `docker-compose.yml` (the
+  `&haiku_rag_image` anchor) against the `haiku.rag-slim` range the new
+  release requires: the ingester writes the LanceDB the backend reads.
 
 <!-- if:tui -->
 The TUI's `tui/Dockerfile` builds on `ghcr.io/soliplex/soliplex-tui` at the
@@ -131,7 +131,7 @@ other extra.
   new one.
 - `requirements.txt` should be bind-mounted into the install step, not copied
   into the image. Older stacks `COPY --link` it into `/tmp`, which can
-  fail the build under newer Docier.
+  fail the build under newer Docker.
 
   Check a built image with:
 
