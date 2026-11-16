@@ -60,8 +60,11 @@ the ingester crash-loops at startup and reads fail, the backend's included, so
 rooms lose RAG search. Stacks that have only ever run the pinned image have
 nothing to migrate. Do not guess which case a bump is — ask, as below.
 
-Raising the tag means both `docker-compose.yml` and `haiku.rag/Dockerfile`,
-which must agree.
+Raise the tag in `docker-compose.yml`, on the `&haiku_rag_image` anchor that
+the `haiku-ingester` and one-shot `haiku-rag` services share, and in the
+`haiku_rag_version` key of the stack's `[tool.soliplex-template]` manifest.
+(Stacks from before upgrade rung 3 also carry a `haiku.rag/Dockerfile`
+whose `FROM` line must agree.)
 
 The pairing is not a free choice: the `haiku.rag-slim` release must stay
 inside the range the target `soliplex` release declares (the ingester
