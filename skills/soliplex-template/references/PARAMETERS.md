@@ -190,7 +190,8 @@ unknown at generation time).
 - `agui_db` / `authz_db` are used as both the Postgres role name and the
   database name (the template uses identical names for each).
 - The model parameters all resolve via `ollama_base_url` (the default Ollama
-  provider — the template pins no other): `chat_model`, `chat_model_alt`,
+  provider — the template pins no other; a hosted OpenAI-compatible provider
+  is a post-generation edit, see `references/INFERENCE_PROVIDERS.md`): `chat_model`, `chat_model_alt`,
   `title_model`, `rag_qa_model` (chat-style) and
   `rag_embed_model` (embedding). `rag_embed_dim` and `chunk_size` are in the
   `models` shortcut group but are **not** model names — `rag_embed_dim` must
