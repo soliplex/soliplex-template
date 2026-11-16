@@ -119,7 +119,9 @@ def available_templates() -> dict[str, str]:
     """Map each bundled template name to its one-line summary, sorted."""
     found = {}
     for mako in sorted(TEMPLATES_DIR.glob(f"*/{TEMPLATE_FILE}")):
-        found[mako.parent.name] = _template_summary(mako.read_text())
+        found[mako.parent.name] = _template_summary(
+            mako.read_text(encoding="utf-8")
+        )
     return found
 
 
@@ -168,14 +170,14 @@ def resolve_package_name(project: pathlib.Path, override: str | None) -> str:
 
 def template_needs_sandbox(path: pathlib.Path) -> bool:
     """Whether the template at ``path`` configures the sandbox skill."""
-    return bool(_SANDBOX_SKILL_RE.search(path.read_text()))
+    return bool(_SANDBOX_SKILL_RE.search(path.read_text(encoding="utf-8")))
 
 
 def stack_allows_sandbox(project: pathlib.Path) -> bool:
     """Whether ``project``'s backend may run ``bwrap``."""
     compose = project / "docker-compose.yml"
     return compose.is_file() and bool(
-        _SANDBOX_ENABLED_RE.search(compose.read_text())
+        _SANDBOX_ENABLED_RE.search(compose.read_text(encoding="utf-8"))
     )
 
 
@@ -301,7 +303,7 @@ def do_add(args: argparse.Namespace) -> int:
         prompt_src = pathlib.Path(args.prompt_file)
         if not prompt_src.is_file():
             raise _prompt_file_missing_error(prompt_src)
-        prompt_text = prompt_src.read_text()
+        prompt_text = prompt_src.read_text(encoding="utf-8")
 
     package_name = resolve_package_name(project, args.package_name)
     ctx = build_context(args, args.template, package_name)

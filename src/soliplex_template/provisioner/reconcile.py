@@ -124,7 +124,7 @@ def stored_policy(cli: str, environment: str, room: str) -> dict | None:
 
 def _recorded_policy(record: pathlib.Path) -> dict:
     try:
-        return yaml.safe_load(record.read_text())
+        return yaml.safe_load(record.read_text(encoding="utf-8"))
     except (OSError, yaml.YAMLError) as error:
         raise BadRecord(record, error) from error
 

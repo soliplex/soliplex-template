@@ -323,7 +323,7 @@ def test_tracked_files_splits_and_filters(repo, check_output):
             *rst.EXCLUDE_PATHSPECS,
         ],
         cwd=root,
-        text=True,
+        encoding="utf-8",
     )
 
 

@@ -200,7 +200,7 @@ def read_manifest(project: pathlib.Path) -> dict:
     if not pyproject.is_file():
         return {}
     try:
-        data = tomllib.loads(pyproject.read_text())
+        data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError:
         return {}
     return data.get("tool", {}).get("soliplex-template", {}).get("params", {})
@@ -405,11 +405,15 @@ def migrate(
     root_path = project / "pyproject.toml"
     gitignore_path = project / ".gitignore"
 
-    root_text = plan_root_pyproject(root_path.read_text(), package)
+    root_text = plan_root_pyproject(
+        root_path.read_text(encoding="utf-8"), package
+    )
     project_text = plan_project_pyproject(project, package)
-    compose_text = plan_compose(compose_path.read_text(), package)
+    compose_text = plan_compose(
+        compose_path.read_text(encoding="utf-8"), package
+    )
     gitignore_text = (
-        plan_gitignore(gitignore_path.read_text(), package)
+        plan_gitignore(gitignore_path.read_text(encoding="utf-8"), package)
         if gitignore_path.is_file()
         else None
     )
@@ -427,11 +431,13 @@ def migrate(
         return actions
 
     move_tree(project, package, use_git=use_git)
-    root_path.write_text(root_text)
-    (project / "src" / package / "pyproject.toml").write_text(project_text)
-    compose_path.write_text(compose_text)
+    root_path.write_text(root_text, encoding="utf-8")
+    (project / "src" / package / "pyproject.toml").write_text(
+        project_text, encoding="utf-8"
+    )
+    compose_path.write_text(compose_text, encoding="utf-8")
     if gitignore_text is not None:
-        gitignore_path.write_text(gitignore_text)
+        gitignore_path.write_text(gitignore_text, encoding="utf-8")
     return actions
 
 

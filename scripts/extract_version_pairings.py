@@ -257,7 +257,7 @@ def main(argv: list[str] | None = None) -> int:
         (args.toml, _render_toml(rows, extracted)),
     ):
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content)
+        path.write_text(content, encoding="utf-8")
 
     print(f"extracted {len(rows)} pairings as of {extracted}")
     if skipped:

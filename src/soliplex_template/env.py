@@ -80,7 +80,7 @@ def read_env_params(project: pathlib.Path) -> dict[str, str]:
     if not pyproject.is_file():
         raise PyProjectNotFound(pyproject)
     try:
-        data = tomllib.loads(pyproject.read_text())
+        data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as exc:
         raise ManifestBroken(pyproject, exc) from exc
     manifest = (
@@ -124,6 +124,6 @@ def generate_env(project_dir) -> None:
         print(f"nothing to do: {env} exists")
         return
     assignments = read_env_params(project)
-    env.write_text(_render_recovered(assignments))
+    env.write_text(_render_recovered(assignments), encoding="utf-8")
     env.chmod(0o600)
     print(f"wrote {env}: values commented out, uncomment what applies")

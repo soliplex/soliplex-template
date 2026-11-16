@@ -480,7 +480,7 @@ def load_params(args: argparse.Namespace) -> dict[str, object]:
     if args.params:
         path = pathlib.Path(args.params)
         try:
-            raw = path.read_text()
+            raw = path.read_text(encoding="utf-8")
         except OSError as exc:
             raise ParamsUnreadable(path, exc) from exc
         try:
@@ -890,7 +890,7 @@ def render_tree(
             except Exception as exc:
                 detail = mako_exceptions.text_error_template().render()
                 raise RenderFailed(rel, detail) from exc
-            dest.write_text(text)
+            dest.write_text(text, encoding="utf-8")
             # Rendered shell scripts need the executable bit.
             mode = 0o755 if dest.suffix == ".sh" else 0o644
             dest.chmod(mode)
@@ -930,7 +930,7 @@ def write_env(out: pathlib.Path, params: dict[str, object]) -> None:
     # an OLLAMA_BASE_URL that embeds credentials (or API keys), so read it
     # only from the owning account. The ingester control plane's bearer is
     # NOT here -- it lives in .secrets/ingester_bearer.gen (#244).
-    (out / ".env").write_text("\n".join(lines))
+    (out / ".env").write_text("\n".join(lines), encoding="utf-8")
     (out / ".env").chmod(0o600)
 
 
