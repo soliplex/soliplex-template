@@ -24,6 +24,7 @@ the section your stack is at, and work forward from there.
 | soliplex 0.89, provisioning rooms | `docker-compose.yml` has a `soliplex-provisioner` service but no `stack-init` one; `nginx/nginx.conf` includes nothing from `conf.d/` | `v0.21b1` | [7](oidc-providers-and-stack-init.md) |
 | soliplex 0.89, with `stack-init` | `docker-compose.yml`'s `soliplex-provisioner` runs `soliplex_template.provision_service:create_app` | `v0.21` | [8](provisioner-on-concierge.md) |
 | soliplex 0.89, with the provisioner on concierge | `docker-compose.yml`'s `soliplex-provisioner` runs `soliplex_template.provisioner.wiring:create_app` | `v0.22` | [9](room-id-forms-and-tracker-labels.md) |
+| soliplex 0.89, through rung 9 | `backend/Dockerfile` builds `FROM ghcr.io/soliplex/soliplex-postgres:0.89` | `v0.24` | [10](move-to-soliplex-0.93.md) |
 
 !!! note "Releases without rungs"
 
@@ -391,6 +392,7 @@ One page per rung:
 - [7: OIDC providers and stack-init](oidc-providers-and-stack-init.md)
 - [8: The provisioner on soliplex-concierge](provisioner-on-concierge.md)
 - [9: Room id forms and tracker labels](room-id-forms-and-tracker-labels.md)
+- [10: Move to soliplex 0.93](move-to-soliplex-0.93.md)
 
 ??? note "Appendix: the generated `soliplex` ↔ `haiku.rag-slim` pairing table"
 
