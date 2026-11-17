@@ -223,6 +223,16 @@ def test_resolve_source_remote(tmp_path, source):
     assert (mounts, container) == ([], source)
 
 
+# Known Windows bug (#359): a drive-letter path parses as a URI scheme.
+# Strict, so the mark must come off once the fix lands.
+XFAIL_WINDOWS_DRIVE_LETTER = pytest.mark.xfail(
+    sys.platform == "win32",
+    reason="Windows: a drive-letter path parses as a URI scheme (#359)",
+    strict=True,
+)
+
+
+@XFAIL_WINDOWS_DRIVE_LETTER
 def test_resolve_source_under_docs(tmp_path):
     project = _make_project(tmp_path)
     src = project / "rag" / "docs" / "sub" / "file.md"
@@ -234,6 +244,7 @@ def test_resolve_source_under_docs(tmp_path):
     assert (mounts, container) == ([], "/docs/sub/file.md")
 
 
+@XFAIL_WINDOWS_DRIVE_LETTER
 def test_resolve_source_docs_root(tmp_path):
     project = _make_project(tmp_path)
     docs_root = project / "rag" / "docs"
@@ -243,6 +254,7 @@ def test_resolve_source_docs_root(tmp_path):
     assert (mounts, container) == ([], "/docs")
 
 
+@XFAIL_WINDOWS_DRIVE_LETTER
 def test_resolve_source_automount_dir(tmp_path):
     project = _make_project(tmp_path)
     external = tmp_path / "external"
@@ -256,6 +268,7 @@ def test_resolve_source_automount_dir(tmp_path):
     )
 
 
+@XFAIL_WINDOWS_DRIVE_LETTER
 def test_resolve_source_automount_file(tmp_path):
     project = _make_project(tmp_path)
     external = tmp_path / "report.pdf"
@@ -269,6 +282,7 @@ def test_resolve_source_automount_file(tmp_path):
     )
 
 
+@XFAIL_WINDOWS_DRIVE_LETTER
 def test_resolve_source_missing(tmp_path):
     project = _make_project(tmp_path)
 
@@ -310,6 +324,7 @@ def test_compose_run_builds_argv(tmp_path, run):
 # --------------------------------------------------------------------------
 # create
 # --------------------------------------------------------------------------
+@XFAIL_WINDOWS_DRIVE_LETTER
 def test_create_happy(tmp_path, which, run, capsys):
     project = _make_project(tmp_path)
     src = project / "rag" / "docs" / "handbook"
@@ -463,6 +478,7 @@ def test_update_db_missing(tmp_path, which, run):
     assert run.call_args_list == []
 
 
+@XFAIL_WINDOWS_DRIVE_LETTER
 def test_update_add_src(tmp_path, which, run, capsys):
     project = _make_project(tmp_path)
     _make_db(project)
@@ -558,6 +574,7 @@ def test_update_delete(tmp_path, which, run):
     ]
 
 
+@XFAIL_WINDOWS_DRIVE_LETTER
 def test_update_all_ops_in_order(tmp_path, which, run, capsys):
     project = _make_project(tmp_path)
     _make_db(project)

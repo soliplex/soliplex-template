@@ -110,7 +110,7 @@ def test_resolve_params_rejects_missing_puid(tmp_path):
 # --------------------------------------------------------------------------
 # ensure_authelia_secrets
 # --------------------------------------------------------------------------
-def test_ensure_authelia_secrets_generates_missing(tmp_path):
+def test_ensure_authelia_secrets_generates_missing(tmp_path, expected_mode):
     stack = _stack(tmp_path)
 
     paths = install_authelia.ensure_authelia_secrets(stack)
@@ -119,7 +119,7 @@ def test_ensure_authelia_secrets_generates_missing(tmp_path):
         path = paths[name]
         assert path.is_file()
         assert len(path.read_text()) == 64
-        assert path.stat().st_mode & 0o777 == 0o600
+        assert path.stat().st_mode & 0o777 == expected_mode(0o600)
 
 
 def test_ensure_authelia_secrets_preserves_existing(tmp_path):
@@ -300,7 +300,7 @@ def test_add_include_to_compose_rejects_missing_name(tmp_path):
 # --------------------------------------------------------------------------
 # generate_issuer_key
 # --------------------------------------------------------------------------
-def test_generate_issuer_key_writes_secret_and_cert(tmp_path):
+def test_generate_issuer_key_writes_secret_and_cert(tmp_path, expected_mode):
     stack = _stack(tmp_path)
 
     private, public, cert = install_authelia.generate_issuer_key(stack)
@@ -309,8 +309,8 @@ def test_generate_issuer_key_writes_secret_and_cert(tmp_path):
     cert_path = stack / ".secrets" / "authelia_oidc_issuer_certificate.pem"
     assert key_path.is_file()
     assert cert_path.is_file()
-    assert key_path.stat().st_mode & 0o777 == 0o600
-    assert cert_path.stat().st_mode & 0o777 == 0o600
+    assert key_path.stat().st_mode & 0o777 == expected_mode(0o600)
+    assert cert_path.stat().st_mode & 0o777 == expected_mode(0o600)
     assert private == key_path.read_text()
     assert cert == cert_path.read_text()
     assert "BEGIN PUBLIC KEY" in public
@@ -336,7 +336,7 @@ def test_generate_issuer_key_preserves_existing_pair(tmp_path):
 # --------------------------------------------------------------------------
 # generate_tls_key
 # --------------------------------------------------------------------------
-def test_generate_tls_key_writes_pair(tmp_path):
+def test_generate_tls_key_writes_pair(tmp_path, expected_mode):
     stack = _stack(tmp_path)
 
     key_path = install_authelia.generate_tls_key(stack, "test-stack.localhost")
@@ -346,8 +346,8 @@ def test_generate_tls_key_writes_pair(tmp_path):
     assert key_path == str(key_file)
     assert key_file.is_file()
     assert cert_file.is_file()
-    assert key_file.stat().st_mode & 0o777 == 0o600
-    assert cert_file.stat().st_mode & 0o777 == 0o600
+    assert key_file.stat().st_mode & 0o777 == expected_mode(0o600)
+    assert cert_file.stat().st_mode & 0o777 == expected_mode(0o600)
     # The pair is self-signed for the stack's server name, so the backend
     # verifying the issuer URL hostname succeeds with it in cacert.pem.
     cert_text = cert_file.read_text()

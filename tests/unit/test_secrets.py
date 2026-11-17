@@ -116,8 +116,8 @@ def test_read_puid_pgid_blank_values_keep_defaults(tmp_path):
 def test_maybe_reown_noop_when_uid_matches(tmp_path, monkeypatch):
     run = mock.Mock()
     monkeypatch.setattr(st_secrets.subprocess, "run", run)
-    monkeypatch.setattr(st_secrets.os, "getuid", lambda: 1000)
-    monkeypatch.setattr(st_secrets.os, "getgid", lambda: 1000)
+    monkeypatch.setattr(st_secrets.os, "getuid", lambda: 1000, raising=False)
+    monkeypatch.setattr(st_secrets.os, "getgid", lambda: 1000, raising=False)
 
     st_secrets._maybe_reown(tmp_path / ".secrets", tmp_path / ".env")
 
@@ -139,8 +139,8 @@ def test_maybe_reown_noop_without_posix_ids(tmp_path, monkeypatch, capsys):
 def test_maybe_reown_warns_when_docker_missing(tmp_path, monkeypatch, capsys):
     run = mock.Mock()
     monkeypatch.setattr(st_secrets.subprocess, "run", run)
-    monkeypatch.setattr(st_secrets.os, "getuid", lambda: 4321)
-    monkeypatch.setattr(st_secrets.os, "getgid", lambda: 4321)
+    monkeypatch.setattr(st_secrets.os, "getuid", lambda: 4321, raising=False)
+    monkeypatch.setattr(st_secrets.os, "getgid", lambda: 4321, raising=False)
     monkeypatch.setattr(st_secrets.shutil, "which", lambda name: None)
 
     st_secrets._maybe_reown(tmp_path / ".secrets", tmp_path / ".env")
@@ -153,8 +153,8 @@ def test_maybe_reown_chowns_via_docker(tmp_path, monkeypatch):
     run = mock.Mock()
     secrets_dir = tmp_path / ".secrets"
     monkeypatch.setattr(st_secrets.subprocess, "run", run)
-    monkeypatch.setattr(st_secrets.os, "getuid", lambda: 4321)
-    monkeypatch.setattr(st_secrets.os, "getgid", lambda: 4321)
+    monkeypatch.setattr(st_secrets.os, "getuid", lambda: 4321, raising=False)
+    monkeypatch.setattr(st_secrets.os, "getgid", lambda: 4321, raising=False)
     monkeypatch.setattr(st_secrets.shutil, "which", lambda name: "/bin/docker")
 
     st_secrets._maybe_reown(secrets_dir, tmp_path / ".env")
@@ -196,10 +196,12 @@ def test_generate_secrets_warns_when_none_found(tmp_path, capsys):
     assert "no *.gen files found" in capsys.readouterr().out
 
 
-def test_generate_secrets_writes_files_0600(tmp_path, monkeypatch):
+def test_generate_secrets_writes_files_0600(
+    tmp_path, monkeypatch, expected_mode
+):
     project = _make_stack(tmp_path)
-    monkeypatch.setattr(st_secrets.os, "getuid", lambda: 1000)
-    monkeypatch.setattr(st_secrets.os, "getgid", lambda: 1000)
+    monkeypatch.setattr(st_secrets.os, "getuid", lambda: 1000, raising=False)
+    monkeypatch.setattr(st_secrets.os, "getgid", lambda: 1000, raising=False)
     monkeypatch.setattr(st_secrets, "generate_password", lambda: "s3kr3t")
 
     st_secrets.generate_secrets(project)
@@ -209,7 +211,7 @@ def test_generate_secrets_writes_files_0600(tmp_path, monkeypatch):
     assert written == ["agui_db_password.gen", "other_token.gen"]
     for secret in secrets_dir.glob("*.gen"):
         assert secret.read_text() == "s3kr3t"
-        assert stat.S_IMODE(secret.stat().st_mode) == 0o600
+        assert stat.S_IMODE(secret.stat().st_mode) == expected_mode(0o600)
 
 
 # --------------------------------------------------------------------------
@@ -373,14 +375,14 @@ def test_discover_postgres_user_defaults_when_absent():
 # generate_secrets: missing-only default
 # --------------------------------------------------------------------------
 def test_generate_secrets_default_leaves_existing_untouched(
-    tmp_path, monkeypatch, capsys
+    tmp_path, monkeypatch, capsys, expected_mode
 ):
     project = _make_stack(tmp_path, compose_text=_COMPOSE)
     secrets_dir = project / ".secrets"
     secrets_dir.mkdir()
     (secrets_dir / "agui_db_password.gen").write_text("OLD")
-    monkeypatch.setattr(st_secrets.os, "getuid", lambda: 1000)
-    monkeypatch.setattr(st_secrets.os, "getgid", lambda: 1000)
+    monkeypatch.setattr(st_secrets.os, "getuid", lambda: 1000, raising=False)
+    monkeypatch.setattr(st_secrets.os, "getgid", lambda: 1000, raising=False)
     monkeypatch.setattr(st_secrets, "generate_password", lambda: "NEW")
 
     st_secrets.generate_secrets(project)
@@ -392,7 +394,7 @@ def test_generate_secrets_default_leaves_existing_untouched(
     assert "Generated: other_token.gen" in out
     assert "Left 1 existing secret(s) unchanged" in out
     mode = stat.S_IMODE((secrets_dir / "other_token.gen").stat().st_mode)
-    assert mode == 0o600
+    assert mode == expected_mode(0o600)
 
 
 def test_generate_secrets_default_noops_when_all_exist(
@@ -427,8 +429,8 @@ def test_generate_secrets_rotate_names_writes_only_named_in_order(
     tmp_path, monkeypatch
 ):
     project = _make_stack(tmp_path, compose_text=_COMPOSE_ROLES)
-    monkeypatch.setattr(st_secrets.os, "getuid", lambda: 1000)
-    monkeypatch.setattr(st_secrets.os, "getgid", lambda: 1000)
+    monkeypatch.setattr(st_secrets.os, "getuid", lambda: 1000, raising=False)
+    monkeypatch.setattr(st_secrets.os, "getgid", lambda: 1000, raising=False)
     passwords = iter(["p1", "p2"])
     monkeypatch.setattr(
         st_secrets, "generate_password", lambda: next(passwords)
@@ -447,8 +449,8 @@ def test_generate_secrets_rotate_names_writes_only_named_in_order(
 
 def test_generate_secrets_rotate_dedupes_repeated_names(tmp_path, monkeypatch):
     project = _make_stack(tmp_path, compose_text=_COMPOSE)
-    monkeypatch.setattr(st_secrets.os, "getuid", lambda: 1000)
-    monkeypatch.setattr(st_secrets.os, "getgid", lambda: 1000)
+    monkeypatch.setattr(st_secrets.os, "getuid", lambda: 1000, raising=False)
+    monkeypatch.setattr(st_secrets.os, "getgid", lambda: 1000, raising=False)
     passwords = iter(["p1"])
     monkeypatch.setattr(
         st_secrets, "generate_password", lambda: next(passwords)
@@ -481,8 +483,8 @@ def test_generate_secrets_rotate_all_writes_every_declared(
     project = _make_stack(
         tmp_path, compose_text=_COMPOSE_ROLES, init_sh=_INIT_SH
     )
-    monkeypatch.setattr(st_secrets.os, "getuid", lambda: 1000)
-    monkeypatch.setattr(st_secrets.os, "getgid", lambda: 1000)
+    monkeypatch.setattr(st_secrets.os, "getuid", lambda: 1000, raising=False)
+    monkeypatch.setattr(st_secrets.os, "getgid", lambda: 1000, raising=False)
     passwords = iter(["p1", "p2", "p3", "p4", "p5"])
     monkeypatch.setattr(
         st_secrets, "generate_password", lambda: next(passwords)
@@ -504,8 +506,8 @@ def test_generate_secrets_rotate_prints_alter_role_commands(
     project = _make_stack(
         tmp_path, compose_text=_COMPOSE_ROLES, init_sh=_INIT_SH
     )
-    monkeypatch.setattr(st_secrets.os, "getuid", lambda: 1000)
-    monkeypatch.setattr(st_secrets.os, "getgid", lambda: 1000)
+    monkeypatch.setattr(st_secrets.os, "getuid", lambda: 1000, raising=False)
+    monkeypatch.setattr(st_secrets.os, "getgid", lambda: 1000, raising=False)
     passwords = iter(["p1", "p2"])
     monkeypatch.setattr(
         st_secrets, "generate_password", lambda: next(passwords)
@@ -532,8 +534,8 @@ def test_generate_secrets_rotate_unmapped_roles_get_command_hints(
     tmp_path, monkeypatch, capsys
 ):
     project = _make_stack(tmp_path, compose_text=_COMPOSE_ROLES)
-    monkeypatch.setattr(st_secrets.os, "getuid", lambda: 1000)
-    monkeypatch.setattr(st_secrets.os, "getgid", lambda: 1000)
+    monkeypatch.setattr(st_secrets.os, "getuid", lambda: 1000, raising=False)
+    monkeypatch.setattr(st_secrets.os, "getgid", lambda: 1000, raising=False)
     monkeypatch.setattr(st_secrets, "generate_password", lambda: "NEW")
 
     st_secrets.generate_secrets(project, rotate=["agui_db_password"])
@@ -549,8 +551,8 @@ def test_generate_secrets_rotate_without_db_secrets_skips_alter_note(
     tmp_path, monkeypatch, capsys
 ):
     project = _make_stack(tmp_path, compose_text=_COMPOSE)
-    monkeypatch.setattr(st_secrets.os, "getuid", lambda: 1000)
-    monkeypatch.setattr(st_secrets.os, "getgid", lambda: 1000)
+    monkeypatch.setattr(st_secrets.os, "getuid", lambda: 1000, raising=False)
+    monkeypatch.setattr(st_secrets.os, "getgid", lambda: 1000, raising=False)
     monkeypatch.setattr(st_secrets, "generate_password", lambda: "NEW")
 
     st_secrets.generate_secrets(project, rotate=["other_token"])
@@ -564,8 +566,8 @@ def test_generate_secrets_rotate_reowns_written_files(tmp_path, monkeypatch):
     project = _make_stack(tmp_path, compose_text=_COMPOSE)
     run = mock.Mock()
     monkeypatch.setattr(st_secrets.subprocess, "run", run)
-    monkeypatch.setattr(st_secrets.os, "getuid", lambda: 4321)
-    monkeypatch.setattr(st_secrets.os, "getgid", lambda: 4321)
+    monkeypatch.setattr(st_secrets.os, "getuid", lambda: 4321, raising=False)
+    monkeypatch.setattr(st_secrets.os, "getgid", lambda: 4321, raising=False)
     monkeypatch.setattr(st_secrets.shutil, "which", lambda name: "/bin/docker")
 
     st_secrets.generate_secrets(project, rotate=["other_token"])

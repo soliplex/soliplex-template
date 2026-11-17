@@ -291,14 +291,14 @@ def test_add_provider_selects_signin_when_none_set(tmp_path):
     assert oidc_providers.signin_provider(stack) == "authelia"
 
 
-def test_add_provider_keeps_file_mode(tmp_path):
+def test_add_provider_keeps_file_mode(tmp_path, expected_mode):
     stack = _stack(tmp_path)
     (stack / oidc_providers.CONFIG_PATH).chmod(0o640)
 
     oidc_providers.add_provider(stack, _provider())
 
     mode = (stack / oidc_providers.CONFIG_PATH).stat().st_mode
-    assert stat.S_IMODE(mode) == 0o640
+    assert stat.S_IMODE(mode) == expected_mode(0o640)
 
 
 def test_add_provider_exists(tmp_path):
@@ -635,7 +635,9 @@ def test_main_signin(tmp_path, capsys):
                 "--pem-file",
                 "/nonexistent/key.pem",
             ],
-            "/nonexistent/key.pem",
+            # The path renders per-platform (\\nonexistent\\key.pem on
+            # Windows).
+            "key.pem",
         ),
     ],
 )
