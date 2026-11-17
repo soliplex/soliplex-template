@@ -130,7 +130,7 @@ def test_list_users_returns_entries(tmp_path):
 # --------------------------------------------------------------------------
 # add_user
 # --------------------------------------------------------------------------
-def test_add_user_writes_password_file_and_hash(tmp_path):
+def test_add_user_writes_password_file_and_hash(tmp_path, expected_mode):
     stack = _stack(tmp_path)
     calls = []
 
@@ -151,7 +151,7 @@ def test_add_user_writes_password_file_and_hash(tmp_path):
     )
     assert password_path.is_file()
     assert len(password_path.read_text()) == 32
-    assert password_path.stat().st_mode & 0o777 == 0o600
+    assert password_path.stat().st_mode & 0o777 == expected_mode(0o600)
     assert len(sub) == 36  # UUID length
 
 

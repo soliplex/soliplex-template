@@ -282,8 +282,8 @@ def test_coerce_derives_package_name_from_project_name():
 
 
 def test_coerce_derives_uid_gid_from_host(monkeypatch):
-    monkeypatch.setattr(gen.os, "getuid", lambda: 1234)
-    monkeypatch.setattr(gen.os, "getgid", lambda: 5678)
+    monkeypatch.setattr(gen.os, "getuid", lambda: 1234, raising=False)
+    monkeypatch.setattr(gen.os, "getgid", lambda: 5678, raising=False)
     params = dict(gen.DEFAULTS)
     params["ollama_base_url"] = "http://x"
 
@@ -294,8 +294,8 @@ def test_coerce_derives_uid_gid_from_host(monkeypatch):
 
 
 def test_coerce_uid_gid_root_falls_back_to_1000(monkeypatch, capsys):
-    monkeypatch.setattr(gen.os, "getuid", lambda: 0)
-    monkeypatch.setattr(gen.os, "getgid", lambda: 0)
+    monkeypatch.setattr(gen.os, "getuid", lambda: 0, raising=False)
+    monkeypatch.setattr(gen.os, "getgid", lambda: 0, raising=False)
     params = dict(gen.DEFAULTS)
     params["ollama_base_url"] = "http://x"
 
@@ -323,8 +323,8 @@ def test_coerce_uid_gid_default_without_posix_ids(monkeypatch, capsys):
 def test_coerce_keeps_explicit_uid_gid(monkeypatch):
     # Explicit values must win; os.getuid/getgid must not even be consulted.
     _no_call = mock.Mock(side_effect=AssertionError)
-    monkeypatch.setattr(gen.os, "getuid", _no_call)
-    monkeypatch.setattr(gen.os, "getgid", _no_call)
+    monkeypatch.setattr(gen.os, "getuid", _no_call, raising=False)
+    monkeypatch.setattr(gen.os, "getgid", _no_call, raising=False)
     params = dict(gen.DEFAULTS)
     params["ollama_base_url"] = "http://x"
     params["puid"] = "1500"
@@ -337,7 +337,7 @@ def test_coerce_keeps_explicit_uid_gid(monkeypatch):
 
 
 def test_coerce_uid_not_int(monkeypatch):
-    monkeypatch.setattr(gen.os, "getgid", lambda: 1000)
+    monkeypatch.setattr(gen.os, "getgid", lambda: 1000, raising=False)
     params = dict(gen.DEFAULTS)
     params["ollama_base_url"] = "http://x"
     params["puid"] = "not-an-int"
@@ -756,7 +756,17 @@ def test_validate_bad_docs_dir(docs_dir):
 # --------------------------------------------------------------------------
 # render_tree (real Mako)
 # --------------------------------------------------------------------------
-def test_render_tree_renders_copies_and_chmod(tmp_path):
+# Known Windows bug (#360): rendered files get doubled CRLF line endings.
+# Strict, so the mark must come off once the fix lands.
+XFAIL_WINDOWS_CRLF = pytest.mark.xfail(
+    sys.platform == "win32",
+    reason="Windows: rendered files get doubled CRLF line endings (#360)",
+    strict=True,
+)
+
+
+@XFAIL_WINDOWS_CRLF
+def test_render_tree_renders_copies_and_chmod(tmp_path, expected_mode):
     template = tmp_path / "template"
     (template / "sub").mkdir(parents=True)
     (template / "doc.txt.mako").write_text(
@@ -774,8 +784,12 @@ def test_render_tree_renders_copies_and_chmod(tmp_path):
     assert not (out / "doc.txt.mako").exists()
     assert (out / "plain.txt").read_text() == "verbatim\n"
     assert (out / "sub" / "run.sh").read_text() == "#!/bin/sh\necho demo\n"
-    assert stat.S_IMODE((out / "sub" / "run.sh").stat().st_mode) == 0o755
-    assert stat.S_IMODE((out / "doc.txt").stat().st_mode) == 0o644
+    assert stat.S_IMODE(
+        (out / "sub" / "run.sh").stat().st_mode
+    ) == expected_mode(0o755)
+    assert stat.S_IMODE((out / "doc.txt").stat().st_mode) == expected_mode(
+        0o644
+    )
 
 
 def test_render_tree_bad_template_raises(tmp_path):
@@ -790,6 +804,7 @@ def test_render_tree_bad_template_raises(tmp_path):
         gen.render_tree(template, out, {"project_name": "demo"})
 
 
+@XFAIL_WINDOWS_CRLF
 def test_render_tree_substitutes_package_dir(tmp_path):
     template = tmp_path / "template"
     (template / "src" / "__package__").mkdir(parents=True)
@@ -989,7 +1004,7 @@ def test_ensure_runtime_dirs(tmp_path):
 # --------------------------------------------------------------------------
 # write_env
 # --------------------------------------------------------------------------
-def test_write_env(tmp_path):
+def test_write_env(tmp_path, expected_mode):
     params = {
         "ollama_base_url": "http://o:11434",
         "puid": 1234,
@@ -1003,7 +1018,7 @@ def test_write_env(tmp_path):
     assert "PUID=1234" in text
     assert "PGID=5678" in text
     assert "INGESTER_TOKEN" not in text  # (#244): the bearer is a .gen secret
-    assert ((tmp_path / ".env").stat().st_mode & 0o777) == 0o600
+    assert ((tmp_path / ".env").stat().st_mode & 0o777) == expected_mode(0o600)
 
 
 # --------------------------------------------------------------------------

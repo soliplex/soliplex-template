@@ -153,7 +153,8 @@ def test_main_room_options(stack, fake_run):
                 "--name",
                 "x",
             ],
-            "/nonexistent has no docker-compose.yml",
+            # The path renders per-platform (C:\nonexistent on Windows).
+            "has no docker-compose.yml",
         ),
     ],
 )

@@ -871,6 +871,16 @@ def test_clone_fetches_and_wires_it_up(stack, origin, capsys):
     assert "cloned" in capsys.readouterr().out
 
 
+# Known Windows bug (#361): derive_name splits a local path on '/' only.
+# Strict, so the mark must come off once the fix lands.
+XFAIL_WINDOWS_DERIVE_NAME = pytest.mark.xfail(
+    sys.platform == "win32",
+    reason="Windows: derive_name splits a local path on '/' only (#361)",
+    strict=True,
+)
+
+
+@XFAIL_WINDOWS_DERIVE_NAME
 def test_clone_defaults_the_name_to_the_repo(stack, origin, capsys):
     result = src_projects.main(
         ["clone", str(origin), "--project-dir", str(stack), "--no-dep-check"]
@@ -916,6 +926,7 @@ def test_clone_can_skip_the_path_edit(stack, origin, capsys):
     assert "left off the backend's PYTHONPATH" in capsys.readouterr().out
 
 
+@XFAIL_WINDOWS_DERIVE_NAME
 def test_clone_dry_run_writes_nothing(stack, origin, capsys):
     result = src_projects.main(
         ["clone", str(origin), "--project-dir", str(stack), "--dry-run"]

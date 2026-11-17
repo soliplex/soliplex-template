@@ -96,7 +96,7 @@ def test_read_env_params_maps_manifest_keys(tmp_path):
 # ---- generate_env ----
 
 
-def test_generate_env_writes_commented_env(tmp_path, capsys):
+def test_generate_env_writes_commented_env(tmp_path, capsys, expected_mode):
     project = _make_stack(tmp_path)
 
     st_env.generate_env(project)
@@ -113,7 +113,7 @@ def test_generate_env_writes_commented_env(tmp_path, capsys):
         assert f"# {line}" in content
         # nothing live: every assignment ships commented
         assert f"\n{line}" not in content
-    assert stat.S_IMODE(recovery.stat().st_mode) == 0o600
+    assert stat.S_IMODE(recovery.stat().st_mode) == expected_mode(0o600)
     assert "wrote" in capsys.readouterr().out
 
 
