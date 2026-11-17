@@ -301,11 +301,19 @@ docker compose run --rm backend \
     /app/.venv/bin/soliplex-cli ollama pull /environment   # -n to preview
 ```
 
-To test the transport by itself, bypassing the installation config:
+To test the transport by itself, bypassing the installation config, request
+the model list at the container's `OLLAMA_BASE_URL`. The backend image has
+no `curl`, so this uses Python:
 
 ```bash
-docker compose exec backend \
-    curl -s -o /dev/null -w 'HTTP %{http_code}\n' http://172.17.0.1:11434/api/tags
+docker compose exec backend python -c '
+import os, urllib.error, urllib.request
+url = os.environ["OLLAMA_BASE_URL"].rstrip("/") + "/api/tags"
+try:
+    print("HTTP", urllib.request.urlopen(url, timeout=10).status)
+except urllib.error.HTTPError as exc:
+    print("HTTP", exc.code)
+'
 ```
 
 `HTTP 200` means the address and the `Host` header are both acceptable. `403`

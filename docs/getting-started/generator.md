@@ -25,21 +25,51 @@ stack exists, [Using the skill](using-the-skill.md) covers what else it can do.
 
 ## By hand
 
-You can also run the generator directly:
+You can also run the generator directly, either from the installed skill or
+from a clone of this repository.
+
+### From the installed skill
+
+With `<skills>` standing for your agent's skills directory:
 
 ```bash
 # Show every parameter and its default:
-uv run skills/soliplex-template/scripts/generate_soliplex_project.py --print-defaults
+uv run <skills>/soliplex-template/scripts/generate_soliplex_project.py --print-defaults
 
 # Generate into a new directory from a params file:
-uv run skills/soliplex-template/scripts/generate_soliplex_project.py \
+uv run <skills>/soliplex-template/scripts/generate_soliplex_project.py \
     --out ../my-stack --params params.json
 
 # Or create it inside a directory that collects your stacks; the project
 # directory is named for project_name:
-uv run skills/soliplex-template/scripts/generate_soliplex_project.py \
+uv run <skills>/soliplex-template/scripts/generate_soliplex_project.py \
     --parent ~/stacks --params params.json
 ```
+
+### From a clone
+
+A clone does not include the template the generator renders:
+`skills/soliplex-template/assets/template/` is built from the repository's
+own files and is not committed. Build it first, and again after pulling
+changes:
+
+```bash
+uv run scripts/refresh_skill_template.py
+```
+
+Then run the generator with `--with-editable .`. The script declares its
+`soliplex-template` dependency inline, so plain `uv run` installs the
+package's latest release from PyPI. `--with-editable .` uses this clone's
+package instead, so the generator and the helpers it runs (such as secret
+generation) come from the same commit:
+
+```bash
+uv run --with-editable . \
+    skills/soliplex-template/scripts/generate_soliplex_project.py \
+    --out ../my-stack --params params.json
+```
+
+The other flags and forms shown above work the same way.
 
 `ollama_base_url` is the only value with no usable default; everything else
 falls back to a sensible default. `--print-defaults` leaves it out, so add it
