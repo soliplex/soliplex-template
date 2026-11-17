@@ -23,7 +23,7 @@ Prerequisites:
   fixtures, and by every command under a stack directory)
 - Access to an Ollama server or other inference:  at a minimum,
   run Ollama even on a machine without supported GPU, and pull tiny
-  chat and embeddings models (e.g., `qwen3.5:4b`, `qwen3-embedding:0.6b`)
+  chat and embeddings models (e.g., `lfm3:latest`, `granite-embedding:30m`)
   for probing while generating.
 
 Worktrees, following the container convention:

@@ -14,11 +14,16 @@ skill drives), then run and operate that generated project.
 
 ## Prerequisites
 
-- A coding agent that supports filesystem [Agent Skills](https://agentskills.io/)
-  (e.g. Claude Code).
+- A coding agent that supports filesystem [Agent Skills](https://agentskills.io/).
 - On the machine the agent drives: Docker (with the Compose plugin),
   [`uv`](https://docs.astral.sh/uv/), and an Ollama server reachable from the
   containers that serves the models the stack will reference.
+
+An Ollama running on the same machine as Docker isn't reachable at
+`localhost`: inside a container, `localhost` is the container itself. Use
+`http://host.docker.internal:11434` instead, which Docker Desktop provides. On
+Linux, see [Local Ollama](https://soliplex.github.io/soliplex-template/users/operations/ollama/)
+for the options.
 
 ## Install the skills
 
@@ -33,7 +38,7 @@ you can install from directly:
   as you go.
 
 Each release carries the skill as a `.tar.gz` and a `.zip`; unpack it into your
-agent's skills directory (for Claude Code, `~/.claude/skills/`).
+agent's skills directory (see your agent's documentation for where that is).
 
 ## Generate a stack
 
@@ -46,10 +51,11 @@ generates its secrets. To skip its questions, put the answers on the command:
 /soliplex-template in=~/stacks project=acme ollama=http://192.168.1.20:11434 ports=default models=default
 ```
 
-To drive the generator by hand instead, run it from the installed skill:
+To drive the generator by hand instead, run it from the installed skill, with
+`<skills>` standing for your agent's skills directory:
 
 ```bash
-uv run ~/.claude/skills/soliplex-template/scripts/generate_soliplex_project.py \
+uv run <skills>/soliplex-template/scripts/generate_soliplex_project.py \
     --out ../my-stack --interactive
 ```
 

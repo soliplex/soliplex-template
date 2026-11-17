@@ -6,8 +6,8 @@ icon: lucide/wand-sparkles
 
 You don't run this template repository directly — you generate your **own**
 Soliplex stack from it, then run and operate that generated project. A generated
-project gets its own project name, host ports, model choices, auth mode, and an
-installable Python package wired into the backend.
+project gets its own project name, host ports, model choices, and an installable
+Python package wired into the backend.
 
 There are two ways to generate, both driven by the same generator
 (`skills/soliplex-template/scripts/generate_soliplex_project.py`, which renders
@@ -42,7 +42,14 @@ uv run skills/soliplex-template/scripts/generate_soliplex_project.py \
 ```
 
 `ollama_base_url` is the only value with no usable default; everything else
-falls back to a sensible default. Useful flags:
+falls back to a sensible default. `--print-defaults` leaves it out, so add it
+to a params file saved from that output:
+
+```json
+"ollama_base_url": "http://<host>:11434"
+```
+
+Useful flags:
 
 - `--interactive` — prompt for each parameter on stdin.
 - `--no-generate-secrets` — skip generating the stack's Docker secrets
@@ -56,12 +63,19 @@ falls back to a sensible default. Useful flags:
 The script never contacts Ollama: it writes `ollama_base_url` into the stack's
 `.env` as given. The model checks [described below](#what-the-agent-checks-before-generating)
 are done by the agent, so when you run the script by hand, a wrong URL or a
-missing model shows up only once the stack is running. To check first, confirm
-that every model in your params file is listed by:
+missing model shows up only once the stack is running. To check first, list the
+models the server has:
 
 ```bash
 curl <ollama_base_url>/api/tags
 ```
+
+Confirm that every model the stack will use appears there: `chat_model`,
+`chat_model_alt`, `title_model`, `rag_qa_model` and `rag_embed_model`. A params
+file only needs the values you change, so take any it leaves out from
+`--print-defaults`. Ollama lists each name with its tag, so a bare `llama3`
+matches `llama3:latest`. In Windows PowerShell 5.1, `curl` is an alias for
+`Invoke-WebRequest`; run `curl.exe` for the same output as above.
 
 ## What the generated project adds
 
@@ -92,8 +106,8 @@ layout](../upgrades/move-to-src-layout.md), rung 0 of
 ## Working with the skill
 
 Asked for a new stack, the agent interviews you, grouping related settings
-into one question each: location, project name, Ollama URL, host ports, auth
-mode, models, frontend and backend versions, the optional Gitea service, the
+into one question each: location, project name, Ollama URL, host ports,
+models, frontend and backend versions, the optional Gitea service, the
 optional code-execution sandbox, and whether to generate secrets and make an
 initial git commit.
 
