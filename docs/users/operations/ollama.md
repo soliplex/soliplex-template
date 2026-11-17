@@ -36,8 +36,10 @@ ss -ltn | grep 11434
 ```
 
 Binding to `0.0.0.0` does make Ollama reachable, but it also publishes an
-unauthenticated model server to every network the host is attached to. The
-options below keep it off the network while still reaching the containers.
+unauthenticated model server to every network the host is attached to.
+Options 1–3 below keep it off the network while still reaching the
+containers. [Option 4](#option-4-hostdockerinternal-all-interfaces) uses
+`host.docker.internal`, which needs the `0.0.0.0` bind.
 
 ## Address Ollama by IP, never by hostname
 
@@ -66,7 +68,10 @@ curl -o /dev/null -w '%{http_code}\n' -H 'Host: 172.17.0.1:11434' \
 ```
 
 A TCP relay cannot paper over this: it forwards bytes and never sees the HTTP
-header. So `OLLAMA_BASE_URL` must carry a bare IP address.
+header. So `OLLAMA_BASE_URL` must carry a bare IP address. The check applies
+only while Ollama listens on loopback; a server bound to `0.0.0.0` accepts any
+`Host`, which is why a name works in [Option 3](#option-3-run-ollama-inside-the-stack)
+and [Option 4](#option-4-hostdockerinternal-all-interfaces).
 
 !!! note "`OLLAMA_ORIGINS` is a different setting"
     `OLLAMA_ORIGINS` controls CORS — the browser's `Origin` header. It has no
@@ -192,6 +197,63 @@ Two things to plan for:
   in with `journalctl -u ollama | grep -i 'inference compute'` before you
   migrate.
 
+## Option 4 — `host.docker.internal` (all interfaces)
+
+Docker Desktop and podman give containers the name `host.docker.internal` for
+the host. It does **not** reach the host's loopback: it resolves to an address
+on another of the host's interfaces. An Ollama listening only on
+`127.0.0.1` therefore refuses the connection, and the stack can use this name
+only once Ollama listens on all interfaces:
+
+=== "Linux (systemd)"
+
+    ```bash
+    sudo systemctl edit ollama
+    ```
+
+    ```ini
+    [Service]
+    Environment="OLLAMA_HOST=0.0.0.0:11434"
+    ```
+
+    ```bash
+    sudo systemctl restart ollama
+    ```
+
+    Docker Engine on Linux does not define `host.docker.internal` itself:
+    the services also need
+    `extra_hosts: ["host.docker.internal:host-gateway"]`, which the
+    generated `docker-compose.yml` does not have.
+
+=== "Windows"
+
+    In the Ollama app's settings, turn on **Expose Ollama to the network**.
+
+=== "macOS"
+
+    ```bash
+    launchctl setenv OLLAMA_HOST 0.0.0.0:11434
+    ```
+
+    Then quit Ollama and start it again.
+
+Then set `OLLAMA_BASE_URL=http://host.docker.internal:11434` in `.env`. The
+hostname does not trip the `Host` check, because that check is lifted once
+Ollama listens on `0.0.0.0`.
+
+!!! warning "This publishes Ollama to your network"
+    Listening on all interfaces is the exposure described in
+    [Why the default install is unreachable](#why-the-default-install-is-unreachable):
+    anyone who can reach the host on port 11434 can use the model server,
+    with no authentication. Block the port at the host firewall for
+    everything but the container network, or prefer Options 1–3 where they
+    are available.
+
+Verified on Windows: with Ollama bound to `127.0.0.1`, the backend container
+could not reach `http://host.docker.internal:11434`; after turning on
+**Expose Ollama to the network**, `/v1/models` answered from inside the
+backend container.
+
 ## What not to do: `network_mode: host` on the stack's services
 
 It looks like the obvious fix — put `backend` in the host's namespace and let
@@ -249,7 +311,9 @@ docker compose exec backend \
 `HTTP 200` means the address and the `Host` header are both acceptable. `403`
 means the URL uses a hostname — see
 [Address Ollama by IP](#address-ollama-by-ip-never-by-hostname). A connection
-failure means the relay or bind address is wrong.
+failure means the relay or bind address is wrong; with
+`host.docker.internal`, it usually means Ollama is still listening only on
+`127.0.0.1` (see [Option 4](#option-4-hostdockerinternal-all-interfaces)).
 
 !!! note "Restart after editing `.env`"
     `OLLAMA_BASE_URL` is read into the container environment at creation, so

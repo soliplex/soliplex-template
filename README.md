@@ -21,9 +21,12 @@ skill drives), then run and operate that generated project.
 
 An Ollama running on the same machine as Docker isn't reachable at
 `localhost`: inside a container, `localhost` is the container itself. Use
-`http://host.docker.internal:11434` instead, which Docker Desktop provides. On
-Linux, see [Local Ollama](https://soliplex.github.io/soliplex-template/users/operations/ollama/)
-for the options.
+`http://host.docker.internal:11434` instead, which Docker Desktop and podman
+provide. That name reaches Ollama only when Ollama listens on all interfaces
+(`OLLAMA_HOST=0.0.0.0:11434`, or **Expose Ollama to the network** in the
+Ollama app's settings on Windows), which also exposes it to your network. See
+[Local Ollama](https://soliplex.github.io/soliplex-template/users/operations/ollama/)
+for how to set that and for options that keep Ollama private.
 
 ## Install the skills
 
