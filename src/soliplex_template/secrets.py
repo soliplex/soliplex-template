@@ -233,6 +233,10 @@ def read_puid_pgid(env_path: pathlib.Path) -> tuple[str, str]:
 
 
 def _maybe_reown(secrets_dir: pathlib.Path, env_path: pathlib.Path) -> None:
+    if not hasattr(os, "getuid"):
+        # Windows: no POSIX ownership to match, and Docker Desktop's bind
+        # mounts present host files to every container uid.
+        return
     puid, pgid = read_puid_pgid(env_path)
     cur_uid, cur_gid = str(os.getuid()), str(os.getgid())
     if (puid, pgid) == (cur_uid, cur_gid):

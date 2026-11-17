@@ -124,6 +124,18 @@ def test_maybe_reown_noop_when_uid_matches(tmp_path, monkeypatch):
     run.assert_not_called()
 
 
+def test_maybe_reown_noop_without_posix_ids(tmp_path, monkeypatch, capsys):
+    # Windows has no os.getuid/os.getgid, and no ownership to match.
+    run = mock.Mock()
+    monkeypatch.setattr(st_secrets.subprocess, "run", run)
+    monkeypatch.delattr(st_secrets.os, "getuid", raising=False)
+
+    st_secrets._maybe_reown(tmp_path / ".secrets", tmp_path / ".env")
+
+    run.assert_not_called()
+    assert capsys.readouterr().out == ""
+
+
 def test_maybe_reown_warns_when_docker_missing(tmp_path, monkeypatch, capsys):
     run = mock.Mock()
     monkeypatch.setattr(st_secrets.subprocess, "run", run)
