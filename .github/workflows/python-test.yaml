@@ -11,6 +11,9 @@ name: Python tests/coverage
 # hermetic part of tests/functional and skips the docker-gated cases
 # (`-m "not needs_docker"`, the analogue of soliplex's `not needs_llm`); they
 # bring up a real stack and are meant to be run locally / on demand.
+# One extra leg runs the same steps on windows-latest under Python 3.13 only,
+# guarding the Windows fixes from #356 / #357 against drift; a single version
+# is enough there, since the matrix already covers the interpreter spread.
 
 on:
   push:
@@ -67,12 +70,22 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    name: test (${{ matrix.os }}, ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest]
         python-version: ["3.13", "3.14"]
+        include:
+          - os: windows-latest
+            python-version: "3.13"
+    # Git Bash on the Windows runner, so `set -o pipefail`, `tee`, and the
+    # failure summary below work unchanged on every leg.
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v6
 
@@ -109,7 +122,7 @@ jobs:
         if: failure()
         run: |
           {
-            echo "## Python ${{ matrix.python-version }} failed"
+            echo "## ${{ matrix.os }} / Python ${{ matrix.python-version }} failed"
             echo
             for log in unit-tests.log functional-tests.log; do
               [ -f "$log" ] || continue
