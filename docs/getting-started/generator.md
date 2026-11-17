@@ -53,6 +53,16 @@ falls back to a sensible default. Useful flags:
 - `--force` — allow writing into a non-empty target directory (with
   `--parent`, that means the project directory, not the parent).
 
+The script never contacts Ollama: it writes `ollama_base_url` into the stack's
+`.env` as given. The model checks [described below](#what-the-agent-checks-before-generating)
+are done by the agent, so when you run the script by hand, a wrong URL or a
+missing model shows up only once the stack is running. To check first, confirm
+that every model in your params file is listed by:
+
+```bash
+curl <ollama_base_url>/api/tags
+```
+
 ## What the generated project adds
 
 Beyond the stack itself, a generated project ships an **installable Python
@@ -115,7 +125,7 @@ guessing.
     --8<-- "skills/soliplex-template/assets/aliases.json"
     ```
 
-### What it checks before writing anything
+### What the agent checks before generating
 
 - **Models.** The agent lists the models your Ollama server actually has and
   offers those, then sends each chosen model a one-token request, even with
