@@ -123,7 +123,7 @@ How it gets in:
 - `haiku.rag/haiku.rag.yaml` has `ingester.api.auth_token: <%text>${INGESTER_TOKEN}</%text>`. haiku.rag's YAML loader expands `<%text>${VAR}</%text>` / `<%text>${VAR:-default}</%text>` itself (since 0.57), so the ingester reads the bind-mounted config directly — but interpolation reads the **environment**, not files.
 - The `haiku-ingester` command uses `sh -ec` to export `INGESTER_DB_PASSWORD` *and* `INGESTER_TOKEN` from their Docker secrets, run `queue migrate`, and then start `serve --root-path /ingester`. The whole config is expanded on load (the queue `dburi` interpolates too), so both exports must precede it; a missing or empty secret fails loudly at startup instead of leaving the control plane unauthenticated.
 - That export is why one-off CLI calls go through the **`haiku-rag`** service, whose entrypoint does the same two exports. `docker compose run` *replaces* a service's command, so running the CLI on `haiku-ingester` loses the exports and the config fails to load (`MissingEnvVarError`) before the subcommand starts.
-- nginx also mounts `ingester_bearer` and injects the bearer itself for anything it proxies under `/ingester/`: its service command `sed`-renders the `@@INGESTER_BEARER@@` placeholders out of the bind-mounted `nginx.conf` into `/tmp/nginx.conf` at start (nginx cannot env-interpolate its config, nor read secret files inside location blocks), so browser users — and the dashboard's in-page fetches — never type the token. In `auth_mode: auth` stacks the proxy also gates `/ingester/` on the backend's admin check (`auth_request` against `/_authz_check`), so only admins reach the surface at all.
+- nginx also mounts `ingester_bearer` and injects the bearer itself for anything it proxies under `/ingester/`: its service command `sed`-renders the `@@INGESTER_BEARER@@` placeholders out of the bind-mounted `nginx.conf` into `/tmp/nginx.conf` at start (nginx cannot env-interpolate its config, nor read secret files inside location blocks), so browser users — and the dashboard's in-page fetches — never type the token. The same `sed` renders `@@RESOLVER@@` (the `resolver` directive) from the service's `NGINX_RESOLVER` environment entry; see [nginx's resolver](#nginxs-resolver). In `auth_mode: auth` stacks the proxy also gates `/ingester/` on the backend's admin check (`auth_request` against `/_authz_check`), so only admins reach the surface at all.
 
 Two ways in for clients:
 
@@ -134,3 +134,14 @@ Two ways in for clients:
 The dashboard served at `/ingester/` is plain HTML; the control plane's API is reached only with the bearer — the browser gets it because nginx injects it. Keep that in mind when running the dashboard behind any *other* proxy: it must inject the same header, or the dashboard falls back to its paste-token prompt (the in-page JS still asks when a fetch 401s).
 
 The token still cannot carry a literal `$` — compose's `$$` escape and haiku.rag's interpolation make writing one easier than reading it — but generated tokens are simply alphanumeric (`scripts/generate_secrets.py`), like every other `.gen` secret.
+
+### nginx's resolver
+
+Every `proxy_pass` names its upstream through a variable (`set $backend_soliplex "backend";`), so nginx re-resolves the service name on each request and a restarted container's new IP is picked up. That lookup goes through nginx's own `resolver` directive, not the container's `/etc/resolv.conf`, so the resolver's address has to be right for the container engine:
+
+- **Docker** — `127.0.0.11`, Docker Engine's embedded DNS. This is the default (`NGINX_RESOLVER: <%text>${NGINX_RESOLVER:-127.0.0.11}</%text>` on the `nginx` service), so nothing needs setting.
+- **podman** — aardvark-dns, which listens on the network's gateway instead. Read the address from `docker compose exec nginx cat /etc/resolv.conf` (the `nameserver` line, e.g. `10.89.0.1`), put `NGINX_RESOLVER=<address>` in `.env`, and recreate the container with `docker compose up -d nginx` (a plain `restart` keeps the old environment).
+
+The symptom of a wrong resolver: every proxied route returns the `@backend_down` 502/503, and the nginx log shows `backend could not be resolved` — while `curl http://backend:8000` from inside the nginx container works, because `curl` uses `/etc/resolv.conf`.
+
+The `postgres` service's `/var/run/postgresql` tmpfs passes `uid=`/`gid=` options, which podman-compose does not support; its comment in `docker-compose.yml` gives the line to use instead under podman.

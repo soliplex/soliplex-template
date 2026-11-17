@@ -48,6 +48,24 @@ the section your stack is at, and work forward from there.
       agent-facing docs with the next upgrade
       ([Afterwards](#afterwards)), or by hand.
 
+    The `v0.25` template introduces no rung either: a stack on Docker
+    needs no change. It makes nginx's DNS resolver configurable, for
+    stacks run under podman, whose DNS is not at Docker's `127.0.0.11`.
+    To adopt it in an existing stack, make all three changes together:
+
+    - in `nginx/nginx.conf`, replace `resolver 127.0.0.11 valid=10s;`
+      with `resolver @@RESOLVER@@ valid=10s ipv6=off;`;
+    - in `docker-compose.yml`'s `nginx` service, add an `environment:`
+      entry `NGINX_RESOLVER: ${NGINX_RESOLVER:-127.0.0.11}`, and extend
+      the command's `sed` with a second expression,
+      `-e "s|@@RESOLVER@@|$$NGINX_RESOLVER|g"`;
+    - under podman, set `NGINX_RESOLVER` in `.env` to the `nameserver`
+      address in the nginx container's `/etc/resolv.conf`.
+
+    The first two go together: an `nginx.conf` holding `@@RESOLVER@@`
+    with a command that does not render it fails nginx's startup. A
+    fresh stack generated with the release shows the full command.
+
 The `[tool.soliplex-template]` manifest at the end of the stack's
 `pyproject.toml` records the skill commit (`skill_source_commit`) and date
 (`skill_generated`) that generated it, and the parameters it was generated

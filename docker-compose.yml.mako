@@ -56,7 +56,7 @@ services:
       # embedded DNS.  Under podman, change this (e.g. in .env) to the
       # network's aardvark-dns address: the 'nameserver' line in the
       # container's /etc/resolv.conf, e.g. 10.89.0.1.
-      NGINX_RESOLVER: ${NGINX_RESOLVER:-127.0.0.11}
+      NGINX_RESOLVER: <%text>${NGINX_RESOLVER:-127.0.0.11}</%text>
 
     #
     # '$$' is Compose's escape for a literal '$': the container's shell sees
