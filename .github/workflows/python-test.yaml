@@ -11,9 +11,13 @@ name: Python tests/coverage
 # hermetic part of tests/functional and skips the docker-gated cases
 # (`-m "not needs_docker"`, the analogue of soliplex's `not needs_llm`); they
 # bring up a real stack and are meant to be run locally / on demand.
-# One extra leg runs the same steps on windows-latest under Python 3.13 only,
+# One extra leg runs the unit suite on windows-latest under Python 3.13 only,
 # guarding the Windows fixes from #356 / #357 against drift; a single version
 # is enough there, since the matrix already covers the interpreter spread.
+# That leg skips the POSIX-only provisioner tests (they run in the stack's
+# Linux container; see tests/unit/provisioner/conftest.py), so it runs with
+# --no-cov: the 100% gate is enforced by the ubuntu legs. The functional
+# step is ubuntu-only.
 
 on:
   push:
@@ -104,13 +108,23 @@ jobs:
       # --cov=scripts --cov=skill/scripts --cov=tests/unit --cov-branch
       # --cov-fail-under=100, so this fails the build below 100% coverage.
       - name: Run unit tests with coverage
+        if: runner.os != 'Windows'
         run: |
           set -o pipefail
           uv run pytest 2>&1 | tee unit-tests.log
 
+      # The provisioner tests are skipped here, so the coverage gate would
+      # fail; the ubuntu legs enforce it.
+      - name: Run unit tests (Windows, no coverage)
+        if: runner.os == 'Windows'
+        run: |
+          set -o pipefail
+          uv run pytest --no-cov 2>&1 | tee unit-tests.log
+
       # Hermetic functional cases only; the docker-gated ones (needs_docker)
       # bring up a real stack and are excluded from CI.
       - name: Run functional tests (no docker)
+        if: runner.os != 'Windows'
         run: |
           set -o pipefail
           uv run pytest --no-cov -m "not needs_docker" tests/functional/ 2>&1 \
