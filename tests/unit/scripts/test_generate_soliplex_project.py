@@ -306,6 +306,20 @@ def test_coerce_uid_gid_root_falls_back_to_1000(monkeypatch, capsys):
     assert "root" in capsys.readouterr().err
 
 
+def test_coerce_uid_gid_default_without_posix_ids(monkeypatch, capsys):
+    # Windows has no os.getuid/os.getgid; unset values fall back to 1000.
+    monkeypatch.delattr(gen.os, "getuid", raising=False)
+    monkeypatch.delattr(gen.os, "getgid", raising=False)
+    params = dict(gen.DEFAULTS)
+    params["ollama_base_url"] = "http://x"
+
+    result = gen.coerce_and_derive(params)
+
+    assert result["puid"] == 1000
+    assert result["pgid"] == 1000
+    assert "root" not in capsys.readouterr().err
+
+
 def test_coerce_keeps_explicit_uid_gid(monkeypatch):
     # Explicit values must win; os.getuid/getgid must not even be consulted.
     _no_call = mock.Mock(side_effect=AssertionError)
