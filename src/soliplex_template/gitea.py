@@ -278,7 +278,7 @@ def pinned_context(project_dir) -> ssl.SSLContext:
         _compose_checked(
             "cp", f"nginx:{NGINX_CERT}", str(dest), project_dir=project_dir
         )
-        pem = dest.read_text()
+        pem = dest.read_text(encoding="utf-8")
     context = ssl.create_default_context(cadata=pem)
     context.check_hostname = False
     return context
@@ -540,7 +540,7 @@ def discover_ssh_keys(*, ssh_key=None) -> list[str]:
     empty list when nothing is found.
     """
     if ssh_key is not None:
-        return [pathlib.Path(ssh_key).read_text().strip()]
+        return [pathlib.Path(ssh_key).read_text(encoding="utf-8").strip()]
     try:
         agent = subprocess.run(
             ["ssh-add", "-L"], capture_output=True, text=True
@@ -557,7 +557,10 @@ def discover_ssh_keys(*, ssh_key=None) -> list[str]:
     if agent_keys:
         return agent_keys
     ssh_dir = pathlib.Path.home() / ".ssh"
-    return [p.read_text().strip() for p in sorted(ssh_dir.glob("*.pub"))]
+    return [
+        p.read_text(encoding="utf-8").strip()
+        for p in sorted(ssh_dir.glob("*.pub"))
+    ]
 
 
 def _key_title(public_key: str) -> str:
@@ -690,7 +693,11 @@ def push_stack_to_gitea(
 def set_env_var(env_path, key: str, value: str) -> None:
     """Set ``key=value`` in ``.env`` (replace the line, or append it)."""
     env_path = pathlib.Path(env_path)
-    lines = env_path.read_text().splitlines() if env_path.is_file() else []
+    lines = (
+        env_path.read_text(encoding="utf-8").splitlines()
+        if env_path.is_file()
+        else []
+    )
     prefix = f"{key}="
     out, replaced = [], False
     for line in lines:
@@ -701,7 +708,7 @@ def set_env_var(env_path, key: str, value: str) -> None:
             out.append(line)
     if not replaced:
         out.append(f"{key}={value}")
-    env_path.write_text("\n".join(out) + "\n")
+    env_path.write_text("\n".join(out) + "\n", encoding="utf-8")
 
 
 def _print_summary(webui_user=None, stack_origin=None) -> None:

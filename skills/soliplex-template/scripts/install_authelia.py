@@ -155,7 +155,7 @@ def discover_puid_pgid(stack: pathlib.Path) -> tuple[int, int]:
     if not path.is_file():
         raise EnvNotFound(path)
     puid = pgid = None
-    for line in path.read_text().splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         if line.startswith("PUID="):
             puid = int(line[len("PUID=") :].strip())
         elif line.startswith("PGID="):
@@ -221,8 +221,8 @@ def generate_issuer_key(stack: pathlib.Path) -> tuple[str, str, str]:
     key_path.parent.mkdir(parents=True, exist_ok=True)
 
     if key_path.is_file() and cert_path.is_file():
-        private_key = key_path.read_text()
-        cert_pem = cert_path.read_text()
+        private_key = key_path.read_text(encoding="utf-8")
+        cert_pem = cert_path.read_text(encoding="utf-8")
         return private_key, _cert_public_key(stack, cert_path), cert_pem
 
     run_cmd(
@@ -245,8 +245,8 @@ def generate_issuer_key(stack: pathlib.Path) -> tuple[str, str, str]:
         cwd=stack,
     )
 
-    private_key = key_path.read_text()
-    cert_pem = cert_path.read_text()
+    private_key = key_path.read_text(encoding="utf-8")
+    cert_pem = cert_path.read_text(encoding="utf-8")
 
     # Tighten permissions on the generated files before docker secrets
     # sees them.
@@ -317,7 +317,7 @@ def ensure_authelia_secrets(stack: pathlib.Path) -> dict[str, pathlib.Path]:
         path = stack / SECRETS_DIR / f"{name}.gen"
         path.parent.mkdir(parents=True, exist_ok=True)
         if not path.is_file():
-            path.write_text(generate_password(64))
+            path.write_text(generate_password(64), encoding="utf-8")
             path.chmod(0o600)
         secret_paths[name] = path
     return secret_paths
@@ -328,7 +328,7 @@ def append_cert_to_cacert(stack: pathlib.Path, cert_pem: str) -> None:
     path = stack / CACERT_PEM
     if not path.is_file():
         raise MissingCACert(path)
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8")
     marker = "# Authelia server certificate"
     if marker in text:
         # Replace the existing block instead of appending duplicates.
@@ -339,7 +339,7 @@ def append_cert_to_cacert(stack: pathlib.Path, cert_pem: str) -> None:
             flags=re.DOTALL,
         )
     block = f"\n{marker}\n{cert_pem.strip()}\n{marker} end\n"
-    path.write_text(text.rstrip() + "\n" + block)
+    path.write_text(text.rstrip() + "\n" + block, encoding="utf-8")
 
 
 class _Literal(str):
@@ -446,7 +446,8 @@ def write_compose_fragment(stack: pathlib.Path, params: StackParams) -> None:
             _compose_fragment(params),
             sort_keys=False,
             default_flow_style=False,
-        )
+        ),
+        encoding="utf-8",
     )
 
 
@@ -563,7 +564,8 @@ def write_authelia_config(stack: pathlib.Path, params: StackParams) -> None:
     path.write_text(
         _AUTHELIA_CONFIG_TEMPLATE.format(
             jwks_key_expression=_CONFIG_EXPRESSION, **params.__dict__
-        )
+        ),
+        encoding="utf-8",
     )
 
 
@@ -595,12 +597,14 @@ def write_nginx_fragment(stack: pathlib.Path) -> None:
     """Write the nginx route fragment for ``/authelia/``."""
     path = stack / NGINX_FRAGMENT
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(_NGINX_FRAGMENT_TEMPLATE)
+    path.write_text(_NGINX_FRAGMENT_TEMPLATE, encoding="utf-8")
 
 
 def _discover_postgres_user(stack: pathlib.Path) -> str:
     """The compose-declared ``POSTGRES_USER`` ('postgres' default)."""
-    for line in (stack / DOCKER_COMPOSE).read_text().splitlines():
+    for line in (
+        (stack / DOCKER_COMPOSE).read_text(encoding="utf-8").splitlines()
+    ):
         stripped = line.strip()
         if stripped.startswith("POSTGRES_USER:"):
             value = stripped[len("POSTGRES_USER:") :].strip().strip("\"'")
@@ -619,11 +623,13 @@ def create_authelia_database(stack: pathlib.Path) -> None:
     password beats a password prompt that gets EOF under ``-T``.
     """
     postgres_password = (
-        (stack / SECRETS_DIR / "postgres_password.gen").read_text().strip()
+        (stack / SECRETS_DIR / "postgres_password.gen")
+        .read_text(encoding="utf-8")
+        .strip()
     )
     authelia_password = (
         (stack / SECRETS_DIR / "authelia_storage_password.gen")
-        .read_text()
+        .read_text(encoding="utf-8")
         .strip()
     )
 
@@ -677,7 +683,7 @@ _INCLUDE_LINE = "include:\n  - compose.authelia.yaml\n"
 def add_include_to_compose(stack: pathlib.Path) -> None:
     """Add the top-level ``include:`` block to ``docker-compose.yml``."""
     path = stack / DOCKER_COMPOSE
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8")
     if "compose.authelia.yaml" in text:
         return
     # Insert after the leading comment block and ``name:`` line.
@@ -690,7 +696,7 @@ def add_include_to_compose(stack: pathlib.Path) -> None:
     if insert_at == 0:
         raise BadComposeFile(path)
     lines.insert(insert_at, "\n" + _INCLUDE_LINE)
-    path.write_text("".join(lines))
+    path.write_text("".join(lines), encoding="utf-8")
 
 
 def add_provider_entry(
@@ -810,7 +816,7 @@ def main(argv: list[str]) -> int:
     write_nginx_fragment(stack)
     tls_cert = (
         stack / SECRETS_DIR / "authelia_tls_certificate.pem"
-    ).read_text()
+    ).read_text(encoding="utf-8")
     append_cert_to_cacert(stack, tls_cert)
     add_include_to_compose(stack)
 

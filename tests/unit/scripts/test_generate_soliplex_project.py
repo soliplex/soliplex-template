@@ -114,6 +114,28 @@ def test_load_params_invalid_json(tmp_path):
         gen.load_params(_args(params=str(params_file)))
 
 
+@pytest.mark.parametrize(
+    "encoding",
+    # 'utf-16' writes a BOM, as Windows PowerShell 5.1's '>' does.
+    ["utf-8", "utf-8-sig", "utf-16", "utf-16-le", "utf-32"],
+)
+def test_load_params_detects_the_file_encoding(tmp_path, encoding):
+    params_file = tmp_path / "p.json"
+    params_file.write_bytes('{"project_name": "café"}'.encode(encoding))
+
+    params = gen.load_params(_args(params=str(params_file)))
+
+    assert params["project_name"] == "café"
+
+
+def test_load_params_undecodable_bytes(tmp_path):
+    params_file = tmp_path / "p.json"
+    params_file.write_bytes(b"\xff\xfe\x00")
+
+    with pytest.raises(gen.ParamsNotJSON):
+        gen.load_params(_args(params=str(params_file)))
+
+
 def test_load_params_not_an_object(tmp_path):
     params_file = tmp_path / "p.json"
     params_file.write_text("[1, 2]", encoding="utf-8")

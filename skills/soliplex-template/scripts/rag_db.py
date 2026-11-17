@@ -509,10 +509,10 @@ def do_add_to_room(args: argparse.Namespace) -> int:
     for room_id in args.room:
         cfg = rooms[room_id]
         new_text, action = wire_room_stem(
-            cfg.read_text(), args.db_name, room_id
+            cfg.read_text(encoding="utf-8"), args.db_name, room_id
         )
         if action != "unchanged":
-            cfg.write_text(new_text)
+            cfg.write_text(new_text, encoding="utf-8")
         print(f"  {room_id}: {action} ({_STEM_KEY}: {args.db_name!r})")
 
     print(

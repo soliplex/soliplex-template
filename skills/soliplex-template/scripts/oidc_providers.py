@@ -195,7 +195,7 @@ def signin_provider(stack: pathlib.Path) -> str | None:
     path = stack / SIGNIN_FRAGMENT_PATH
     if not path.is_file():
         return None
-    match = _SIGNIN_RE.search(path.read_text())
+    match = _SIGNIN_RE.search(path.read_text(encoding="utf-8"))
     return match["id"] if match else None
 
 
@@ -320,7 +320,7 @@ def _read_config(stack: pathlib.Path) -> tuple[str, dict]:
     path = stack / CONFIG_PATH
     if not path.is_file():
         raise ConfigNotFound(path)
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8")
     try:
         data = yaml.safe_load(text)
     except yaml.YAMLError as exc:
@@ -487,7 +487,9 @@ def do_add(stack: pathlib.Path, args: argparse.Namespace) -> None:
         title=args.title,
         server_url=args.server_url,
         client_id=args.client_id,
-        token_validation_pem=pathlib.Path(args.pem_file).read_text(),
+        token_validation_pem=pathlib.Path(args.pem_file).read_text(
+            encoding="utf-8"
+        ),
         scope=args.scope,
     )
     result = add_provider(stack, provider, use_for_signin=args.signin)

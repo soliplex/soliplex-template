@@ -323,7 +323,7 @@ def test_tracked_files_splits_and_filters(repo, check_output):
             *rst.EXCLUDE_PATHSPECS,
         ],
         cwd=root,
-        text=True,
+        encoding="utf-8",
     )
 
 
@@ -478,3 +478,57 @@ def test_main_build_error_removes_staging(
     assert not staging.exists()
     build_into.assert_called_once_with(staging, ["a"])
     render_check.assert_not_called()
+
+
+# --------------------------------------------------------------------------
+# _rename_with_retry()
+# --------------------------------------------------------------------------
+@pytest.fixture
+def sleep(monkeypatch):
+    sleep = mock.Mock()
+    monkeypatch.setattr(rst.time, "sleep", sleep)
+    return sleep
+
+
+def test_rename_with_retry_retries_a_transient_lock(
+    tmp_path, monkeypatch, sleep
+):
+    src = tmp_path / "template.new"
+    src.mkdir()
+    dst = tmp_path / "template"
+    real_rename = pathlib.Path.rename
+    attempts = []
+
+    def flaky_rename(self, target):
+        attempts.append(target)
+        if len(attempts) == 1:
+            raise PermissionError(13, "locked")
+        return real_rename(self, target)
+
+    monkeypatch.setattr(pathlib.Path, "rename", flaky_rename)
+
+    rst._rename_with_retry(src, dst)
+
+    assert dst.is_dir()
+    assert not src.exists()
+    assert attempts == [dst, dst]
+    sleep.assert_called_once_with(rst.RENAME_INTERVAL)
+
+
+def test_rename_with_retry_gives_up_after_the_timeout(
+    tmp_path, monkeypatch, sleep
+):
+    src = tmp_path / "template.new"
+    dst = tmp_path / "template"
+    monkeypatch.setattr(
+        pathlib.Path,
+        "rename",
+        mock.Mock(side_effect=PermissionError(13, "locked")),
+    )
+    clock = iter([0.0, 1.0, rst.RENAME_TIMEOUT + 1.0])
+    monkeypatch.setattr(rst.time, "monotonic", lambda: next(clock))
+
+    with pytest.raises(PermissionError, match="locked"):
+        rst._rename_with_retry(src, dst)
+
+    sleep.assert_called_once_with(rst.RENAME_INTERVAL)

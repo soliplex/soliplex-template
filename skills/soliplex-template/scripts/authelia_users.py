@@ -139,7 +139,7 @@ def _generate_hash(stack: pathlib.Path, password: str) -> str:
 def _load_yaml(path: pathlib.Path) -> dict:
     if not path.is_file():
         return {}
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8")
     if not text.strip():
         return {}
     return yaml.safe_load(text) or {}
@@ -147,7 +147,10 @@ def _load_yaml(path: pathlib.Path) -> dict:
 
 def _save_yaml(path: pathlib.Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.dump(data, sort_keys=False, default_flow_style=False))
+    path.write_text(
+        yaml.dump(data, sort_keys=False, default_flow_style=False),
+        encoding="utf-8",
+    )
 
 
 def _username(email: str) -> str:
@@ -238,7 +241,7 @@ def add_user(stack: pathlib.Path, email: str, *, admin: bool = False) -> str:
     password = _generate_password()
     password_path = _password_file(stack, email)
     password_path.parent.mkdir(parents=True, exist_ok=True)
-    password_path.write_text(password)
+    password_path.write_text(password, encoding="utf-8")
     password_path.chmod(0o600)
 
     hash_value = _generate_hash(stack, password)
@@ -357,7 +360,7 @@ def reset_password(stack: pathlib.Path, email: str) -> None:
 
     password = _generate_password()
     password_path = _password_file(stack, email)
-    password_path.write_text(password)
+    password_path.write_text(password, encoding="utf-8")
     password_path.chmod(0o600)
 
     hash_value = _generate_hash(stack, password)
@@ -373,7 +376,7 @@ def show_code(stack: pathlib.Path) -> str:
     path = stack / NOTIFICATION_FILE
     if not path.is_file():
         raise NoNotificationFile(path)
-    return path.read_text()
+    return path.read_text(encoding="utf-8")
 
 
 def build_parser() -> argparse.ArgumentParser:
