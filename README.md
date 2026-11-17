@@ -6,72 +6,94 @@ pipeline, and Postgres. This repository is configuration and Dockerfiles, not
 application source: the backend and the frontend are both built on published
 release images.
 
-There are two ways to use it: run this repository directly as a reference stack
-to try Soliplex now, or generate your own tailored stack from it (for a real
-deployment). Both are below.
+You don't run this repository directly. You generate your **own** stack from it
+with the bundled `soliplex-template` Agent Skill (or the generator script the
+skill drives), then run and operate that generated project.
 
 📖 **Full documentation:** <https://soliplex.github.io/soliplex-template/>
 
-## Try it
+## Prerequisites
 
-You need Docker (with the Compose plugin), [`uv`](https://docs.astral.sh/uv/),
-and an Ollama server the containers can reach.
+- A coding agent that supports filesystem [Agent Skills](https://agentskills.io/)
+  (e.g. Claude Code).
+- On the machine the agent drives: Docker (with the Compose plugin),
+  [`uv`](https://docs.astral.sh/uv/), and an Ollama server reachable from the
+  containers that serves the models the stack will reference.
 
-```bash
-git clone https://github.com/soliplex/soliplex-template.git
-cd soliplex-template
-uv run scripts/generate_secrets.py    # writes .secrets/*.gen (gitignored)
-echo 'OLLAMA_BASE_URL=http://your-ollama-host:11434' > .env
-docker compose up                     # first run builds images; takes a few minutes
+## Install the skills
+
+Install two skills into your agent. Both are listed at
+<https://agentskills.io/>; each is also published as a rolling `latest` release
+you can install from directly:
+
+- [`soliplex-template`](https://github.com/soliplex/soliplex-template/releases/tag/template-skill-latest)
+  — generates and configures a stack (this template).
+- [`soliplex-docs`](https://github.com/soliplex/soliplex/releases/tag/docs-latest)
+  — Soliplex's documentation, so the agent can answer setup and usage questions
+  as you go.
+
+Each release carries the skill as a `.tar.gz` and a `.zip`; unpack it into your
+agent's skills directory (for Claude Code, `~/.claude/skills/`).
+
+## Generate a stack
+
+Ask the agent to generate one — e.g. *"generate a new Soliplex stack"*. The
+`soliplex-template` skill asks for what it needs (at minimum your Ollama URL),
+checks that your models load, scaffolds a fresh project directory, and
+generates its secrets. To skip its questions, put the answers on the command:
+
+```text
+/soliplex-template in=~/stacks project=acme ollama=http://192.168.1.20:11434 ports=default models=default
 ```
 
-`OLLAMA_BASE_URL` must point at an Ollama server that serves the models named in
-`backend/environment/installation.yaml`.
-
-Once it is up, open the web frontend at <http://localhost:9000>. The terminal
-client (TUI) is bundled in the backend image, so you can run it against the
-stack without installing anything:
+To drive the generator by hand instead, run it from the installed skill:
 
 ```bash
-docker compose exec backend soliplex-tui --url http://localhost:8000
-```
-
-## Generate your own stack
-
-For a real deployment, scaffold a tailored project — your own project name, host
-ports, model choices, auth mode, and an installable Python package wired into
-the backend — instead of running this repository as-is. Use the bundled
-`soliplex-template` Agent Skill (ask an agent to generate a stack), or run the
-generator script directly:
-
-```bash
-uv run skills/soliplex-template/scripts/generate_soliplex_project.py \
+uv run ~/.claude/skills/soliplex-template/scripts/generate_soliplex_project.py \
     --out ../my-stack --interactive
 ```
 
-See the "Generate a project" guide in the documentation for the full parameter
-list and the skill workflow.
+See [Generate a project](https://soliplex.github.io/soliplex-template/getting-started/generator/)
+for every parameter and what the skill checks before writing anything.
 
-## What's in the stack
+## Bring it up
+
+From the generated project directory, prepare the databases, then start the
+stack:
+
+```bash
+docker compose run --rm --quiet-build stack-init
+docker compose up
+```
+
+The first run builds the images and initializes Postgres, so it takes a few
+minutes. Once it settles, the web frontend is at <http://localhost:9000> (the
+default port). The [First steps](https://soliplex.github.io/soliplex-template/getting-started/tutorials/01-first-steps/)
+tutorial continues from here.
+
+## What's in a generated stack
 
 - nginx — serves the web frontend and reverse-proxies the API.
 - backend — the Soliplex server (`soliplex-cli serve`).
+- soliplex-provisioner — creates rooms on a requester's behalf.
 - haiku-ingester — the document pipeline that feeds the RAG vector store.
 - docling-serve — converts uploaded documents for ingestion.
 - postgres — thread persistence, authorization, and the ingester job queue.
 
-Two more services are optional when you generate a project (and both run in this
-reference stack): a web TUI (the terminal client served as a web app, proxied at
-`/tui/`) and a local Gitea (proxied at `/gitea/`).
+Two more services are optional, off by default and chosen at generation time:
+a web TUI (the terminal client served as a web app, proxied at `/tui/`) and a
+local Gitea (proxied at `/gitea/`). So is a code-execution sandbox for the
+backend's agents.
 
 ## Documentation
 
-Full documentation — prerequisites, exposed ports, architecture, secrets, the
-RAG pipeline, configuration, and generating a customized project — lives at
+Full documentation — tutorials, exposed ports, architecture, secrets, the RAG
+pipeline, configuration, and upgrading an existing stack — lives at
 <https://soliplex.github.io/soliplex-template/> (sources under `docs/`, built
-with [Zensical](https://zensical.org)).
+with [Zensical](https://zensical.org)). Working on this repository itself? See
+[Developing this template](https://soliplex.github.io/soliplex-template/contributing/).
 
-Preview or build it locally:
+Preview or build the docs locally:
 
 ```bash
 uv run zensical serve     # preview at http://localhost:8000
