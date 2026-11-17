@@ -35,6 +35,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 TEMPLATE = REPO / "skills" / "soliplex-template" / "assets" / "template"
@@ -627,7 +628,7 @@ def tracked_files() -> list[str]:
             *EXCLUDE_PATHSPECS,
         ],
         cwd=REPO,
-        text=True,
+        encoding="utf-8",
     )
     return sorted({p for p in out.split("\0") if p and (REPO / p).is_file()})
 
@@ -673,18 +674,18 @@ def _build_into(dest_root: pathlib.Path, files: list[str]) -> tuple[int, int]:
     if docs_src.is_dir():
         for md in sorted(docs_src.rglob("*.md")):
             rel = md.relative_to(docs_src)
-            mako_text = t_user_doc(md.read_text())
+            mako_text = t_user_doc(md.read_text(encoding="utf-8"))
             dest = dest_root / "docs" / rel
             dest = dest.with_name(dest.name + ".mako")
             dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_text(mako_text)
+            dest.write_text(mako_text, encoding="utf-8")
             derived += 1
 
     # authored templates (paths may nest, e.g. src/__package__/tools.py.mako)
     for name, content in AUTHORED.items():
         dest = dest_root / name
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(content)
+        dest.write_text(content, encoding="utf-8")
 
     checked = sum(1 for rel in files if dest_map[rel].name.endswith(".mako"))
     return derived, len(AUTHORED), checked
@@ -697,6 +698,30 @@ def _assemble(staging: pathlib.Path, files: list[str]) -> tuple[int, int, int]:
     if bad:
         raise RenderFailures(bad)
     return derived, authored, checked
+
+
+RENAME_TIMEOUT = 5.0  # seconds
+RENAME_INTERVAL = 0.1  # seconds
+
+
+def _rename_with_retry(src: pathlib.Path, dst: pathlib.Path) -> None:
+    """Rename ``src`` to ``dst``, retrying briefly on ``PermissionError``.
+
+    On Windows a directory cannot be renamed while another process holds a
+    file inside it open, and an editor's file watcher, the search indexer or
+    antivirus typically opens the files just written for a moment. The lock
+    clears within a second or so, so retry for up to ``RENAME_TIMEOUT``
+    seconds before giving up. Elsewhere the first attempt succeeds."""
+    deadline = time.monotonic() + RENAME_TIMEOUT
+    while True:
+        try:
+            src.rename(dst)
+        except PermissionError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(RENAME_INTERVAL)
+        else:
+            return
 
 
 def main() -> int:
@@ -718,7 +743,7 @@ def main() -> int:
 
     if TEMPLATE.exists():
         shutil.rmtree(TEMPLATE)
-    staging.rename(TEMPLATE)  # atomic on the same filesystem
+    _rename_with_retry(staging, TEMPLATE)
 
     total_mako = sum(1 for _ in TEMPLATE.rglob("*.mako"))
     print(

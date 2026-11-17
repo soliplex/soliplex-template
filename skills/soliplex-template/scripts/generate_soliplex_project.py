@@ -479,13 +479,17 @@ def load_params(args: argparse.Namespace) -> dict[str, object]:
 
     if args.params:
         path = pathlib.Path(args.params)
+        # Read bytes and let 'json.loads' detect the encoding (UTF-8, -16 or
+        # -32, with or without a BOM): Windows PowerShell 5.1's '>' writes
+        # UTF-16 with a BOM, so 'generate_soliplex_project.py
+        # --print-defaults > params.json' would otherwise be unreadable.
         try:
-            raw = path.read_text()
+            raw = path.read_bytes()
         except OSError as exc:
             raise ParamsUnreadable(path, exc) from exc
         try:
             supplied = json.loads(raw)
-        except json.JSONDecodeError as exc:
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             raise ParamsNotJSON(exc) from exc
         if not isinstance(supplied, dict):
             raise ParamsNotObject()
@@ -890,7 +894,7 @@ def render_tree(
             except Exception as exc:
                 detail = mako_exceptions.text_error_template().render()
                 raise RenderFailed(rel, detail) from exc
-            dest.write_text(text)
+            dest.write_text(text, encoding="utf-8")
             # Rendered shell scripts need the executable bit.
             mode = 0o755 if dest.suffix == ".sh" else 0o644
             dest.chmod(mode)
@@ -930,7 +934,7 @@ def write_env(out: pathlib.Path, params: dict[str, object]) -> None:
     # an OLLAMA_BASE_URL that embeds credentials (or API keys), so read it
     # only from the owning account. The ingester control plane's bearer is
     # NOT here -- it lives in .secrets/ingester_bearer.gen (#244).
-    (out / ".env").write_text("\n".join(lines))
+    (out / ".env").write_text("\n".join(lines), encoding="utf-8")
     (out / ".env").chmod(0o600)
 
 
@@ -1116,6 +1120,11 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":  # pragma: no cover
+    # Piped output (an agent running this script) otherwise takes the locale
+    # encoding -- cp1252 on Windows -- which can't print generate_secrets's
+    # check marks.
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
     try:
         sys.exit(main(sys.argv[1:]))
     except GenError as exc:

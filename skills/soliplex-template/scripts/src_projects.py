@@ -138,7 +138,7 @@ def own_package(project: pathlib.Path) -> str | None:
     if not pyproject.is_file():
         return None
     try:
-        data = tomllib.loads(pyproject.read_text())
+        data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError:
         return None
     params = (
@@ -199,7 +199,7 @@ def declared_dependencies(project: pathlib.Path, name: str) -> list[str]:
     if not pyproject.is_file():
         return []
     try:
-        data = tomllib.loads(pyproject.read_text())
+        data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError:
         return []
     return [
@@ -380,7 +380,7 @@ def collect_dev_requirements(project: pathlib.Path) -> str:
     for pyproject in sorted((project / "src").glob("*/pyproject.toml")):
         name = pyproject.parent.name
         try:
-            data = tomllib.loads(pyproject.read_text())
+            data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
             requirements = group_requirements(
                 data.get("dependency-groups", {}), DEV_GROUP
             )
@@ -402,10 +402,10 @@ def sync_dev_requirements(project: pathlib.Path, dry_run: bool) -> bool | None:
     if not path.parent.is_dir():
         return None
     text = collect_dev_requirements(project)
-    if path.is_file() and path.read_text() == text:
+    if path.is_file() and path.read_text(encoding="utf-8") == text:
         return False
     if not dry_run:
-        path.write_text(text)
+        path.write_text(text, encoding="utf-8")
     return True
 
 
@@ -556,7 +556,7 @@ def _compose_path(project: pathlib.Path) -> pathlib.Path:
 def do_list(args: argparse.Namespace) -> int:
     project = rooms.resolve_project(args.project_dir)
     compose = _compose_path(project)
-    text = compose.read_text()
+    text = compose.read_text(encoding="utf-8")
     entries = read_entries(text, compose)
     watched = read_reload_dirs(text)
     mine = own_package(project)
@@ -617,7 +617,7 @@ def _add_entry(
         ProjectMissing(project / "src" / name),
     )
     compose = _compose_path(project)
-    before = compose.read_text()
+    before = compose.read_text(encoding="utf-8")
     entries = read_entries(before, compose)
     path = container_path(project, name)
 
@@ -627,7 +627,7 @@ def _add_entry(
 
     changed = text != before
     if changed and not dry_run:
-        compose.write_text(text)
+        compose.write_text(text, encoding="utf-8")
     if not fresh:
         verb = "unchanged"
     else:
@@ -833,7 +833,7 @@ def do_clone(args: argparse.Namespace) -> int:
 def do_remove(args: argparse.Namespace) -> int:
     project = rooms.resolve_project(args.project_dir)
     compose = _compose_path(project)
-    before = compose.read_text()
+    before = compose.read_text(encoding="utf-8")
     entries = read_entries(before, compose)
     path = container_path(project, args.name)
 
@@ -865,7 +865,7 @@ def do_remove(args: argparse.Namespace) -> int:
         print("\n(dry run: nothing written)")
         return 0
 
-    compose.write_text(text)
+    compose.write_text(text, encoding="utf-8")
     print(
         f"\nThe checkout at src/{args.name} is untouched; only the backend's "
         "import path\nand watch list changed. Run 'docker compose up -d "
@@ -880,7 +880,7 @@ def do_dev_requirements(args: argparse.Namespace) -> int:
     _require(path.parent.is_dir(), NoSoliplexDev(project))
 
     if args.check:
-        current = path.read_text() if path.is_file() else ""
+        current = path.read_text(encoding="utf-8") if path.is_file() else ""
         if current == collect_dev_requirements(project):
             print(f"up to date: {DEV_REQUIREMENTS}")
             return 0

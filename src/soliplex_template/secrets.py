@@ -187,7 +187,7 @@ def discover_secret_roles(
     if init_dir is not None:
         init_root = pathlib.Path(project_dir) / init_dir
         for path in sorted(init_root.glob("*.sh")):
-            init_roles = discover_init_roles(path.read_text())
+            init_roles = discover_init_roles(path.read_text(encoding="utf-8"))
             roles.update(
                 {
                     secret: init_roles[var]
@@ -220,7 +220,7 @@ def read_puid_pgid(env_path: pathlib.Path) -> tuple[str, str]:
     """The ``PUID``/``PGID`` from ``.env`` (last wins), or the defaults."""
     puid, pgid = DEFAULT_PUID, DEFAULT_PGID
     if env_path.is_file():
-        for line in env_path.read_text().splitlines():
+        for line in env_path.read_text(encoding="utf-8").splitlines():
             if line.startswith("PUID="):
                 value = line[len("PUID=") :].strip()
                 if value:
@@ -400,7 +400,7 @@ def generate_secrets(
     if not compose.is_file():
         raise ComposeNotFound(compose)
 
-    compose_text = compose.read_text()
+    compose_text = compose.read_text(encoding="utf-8")
     declared = list(discover_secret_files(compose_text))
     wired = discover_db_pass_vars(compose_text)
     roles = discover_secret_roles(compose_text, project)
@@ -441,7 +441,7 @@ def generate_secrets(
         secret_file = project / rel
         secret_file.parent.mkdir(parents=True, exist_ok=True)
         password = generate_password()
-        secret_file.write_text(password)
+        secret_file.write_text(password, encoding="utf-8")
         secret_file.chmod(0o600)
         generated.append((secret_file.name, password))
         print(f"✓ {verb}: {secret_file.name}")

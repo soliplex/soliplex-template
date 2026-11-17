@@ -142,7 +142,7 @@ class Settings:
             or INGESTER_TOKEN_FILE
         )
         try:
-            ingester_token = token_file.read_text().strip()
+            ingester_token = token_file.read_text(encoding="utf-8").strip()
         except OSError as error:
             raise IngesterTokenMissing(token_file) from error
 

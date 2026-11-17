@@ -211,14 +211,16 @@ class GitRoomStore:
                 data_dir=self.data_dir,
                 uploads_root=self.uploads_root,
                 issue_url=issue.url if issue is not None else None,
-            )
+            ),
+            encoding="utf-8",
         )
         (room_dir / rendering.PROVISION_FILE).write_text(
             rendering.provision_record(
                 request,
                 identity_claim=self.identity_claim,
                 issue_url=issue.url if issue is not None else None,
-            )
+            ),
+            encoding="utf-8",
         )
         return interfaces.Undo(
             description="remove the room directory",
@@ -303,7 +305,7 @@ class HaikuRagRegistrar:
         if database.exists():
             found.append(f"database directory {database}")
 
-        config = self.ingester_config.read_text()
+        config = self.ingester_config.read_text(encoding="utf-8")
         ingester.check_config(
             config,
             config_dir=self.ingester_config_dir,
@@ -355,7 +357,8 @@ class HaikuRagRegistrar:
         fragment.write_text(
             rendering.fragment(
                 request, data_dir=self.data_dir, uploads_root=self.uploads_root
-            )
+            ),
+            encoding="utf-8",
         )
         try:
             report = ingester.reload(self.ingester_url, self.ingester_token)
@@ -446,7 +449,7 @@ class SoliplexCliAuthz:
             request.room, request.owner.json_path
         )
         record = self.clone / request.room / rendering.AUTHZ_FILE
-        record.write_text(rendering.authz_document(policy))
+        record.write_text(rendering.authz_document(policy), encoding="utf-8")
         try:
             soliplex_cli.set_policy(
                 self.cli, environment, request.room, policy
