@@ -678,14 +678,14 @@ def _build_into(dest_root: pathlib.Path, files: list[str]) -> tuple[int, int]:
             dest = dest_root / "docs" / rel
             dest = dest.with_name(dest.name + ".mako")
             dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_text(mako_text, encoding="utf-8")
+            dest.write_text(mako_text, encoding="utf-8", newline="\n")
             derived += 1
 
     # authored templates (paths may nest, e.g. src/__package__/tools.py.mako)
     for name, content in AUTHORED.items():
         dest = dest_root / name
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(content, encoding="utf-8")
+        dest.write_text(content, encoding="utf-8", newline="\n")
 
     checked = sum(1 for rel in files if dest_map[rel].name.endswith(".mako"))
     return derived, len(AUTHORED), checked

@@ -1,0 +1,6 @@
+# Check out text files with LF endings on every platform. The stack's files
+# (shell scripts, YAML, Dockerfiles, nginx.conf) are consumed inside Linux
+# containers, where a CR breaks them, and Git for Windows otherwise converts
+# them to CRLF (core.autocrlf=true by default). The refresh copies this file
+# into the skill's template, so generated stacks get the same rule.
+* text=auto eol=lf
