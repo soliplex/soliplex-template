@@ -50,6 +50,14 @@ services:
     secrets:
       - ingester_bearer
 
+    environment:
+      # DNS server nginx resolves service names with (rendered into the
+      # 'resolver' directive in nginx.conf).  127.0.0.11 is Docker Engine's
+      # embedded DNS.  Under podman, change this (e.g. in .env) to the
+      # network's aardvark-dns address: the 'nameserver' line in the
+      # container's /etc/resolv.conf, e.g. 10.89.0.1.
+      NGINX_RESOLVER: ${NGINX_RESOLVER:-127.0.0.11}
+
     #
     # '$$' is Compose's escape for a literal '$': the container's shell sees
     # '$(cat ...)'.
@@ -65,10 +73,16 @@ services:
             echo "error: /run/secrets/ingester_bearer missing or empty; run 'uv run scripts/generate_secrets.py'" >&2
             exit 1
         }
+        test -n "$$NGINX_RESOLVER" || {
+            echo "error: NGINX_RESOLVER is empty" >&2
+            exit 1
+        }
         # nginx cannot read a secret file inside 'location' blocks, nor
         # environment references in its configuration: substitute the
-        # ingester bearer into a copy of the config instead.
-        sed "s|@@INGESTER_BEARER@@|$$(cat /run/secrets/ingester_bearer)|g" /etc/nginx/nginx.conf > /tmp/nginx.conf
+        # ingester bearer and the resolver into a copy of the config instead.
+        sed -e "s|@@INGESTER_BEARER@@|$$(cat /run/secrets/ingester_bearer)|g" \
+            -e "s|@@RESOLVER@@|$$NGINX_RESOLVER|g" \
+            /etc/nginx/nginx.conf > /tmp/nginx.conf
         exec nginx -c /tmp/nginx.conf -g 'daemon off;'
 
 % if include_tui:
@@ -584,6 +598,7 @@ services:
         target: "/var/lib/postgresql"
 
     tmpfs:
+      # podman may require: - /var/run/postgresql:rw,noexec,nosuid,size=64m
       - /var/run/postgresql:uid=<%text>${PUID:-1000}</%text>,gid=<%text>${PGID:-1000}</%text>
       - /tmp
     secrets:

@@ -28,9 +28,11 @@ http {
     proxy_hide_header X-Runtime;
 
 
-    # Use Docker's internal DNS resolver with short cache TTL
+    # Container DNS resolver with short cache TTL
     # This prevents stale IP caching when containers restart
-    resolver 127.0.0.11 valid=10s;
+    # '@@RESOLVER@@' is rendered by the 'nginx' service command in
+    # docker-compose.yml from NGINX_RESOLVER (default: Docker's 127.0.0.11).
+    resolver @@RESOLVER@@ valid=10s ipv6=off;
 
     log_format main '$remote_addr - $remote_user [$time_local] "$request" '
                     '$status $body_bytes_sent "$http_referer" '
