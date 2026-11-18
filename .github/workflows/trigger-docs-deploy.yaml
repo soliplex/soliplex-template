@@ -1,0 +1,80 @@
+name: Trigger Documentation Rebuild
+
+# Asks soliplex.github.io to rebuild the aggregated Soliplex docs site, which
+# includes this repository's docs/ tree (served under /template/). That site
+# builds from the latest main of every project, so this only shortens the wait
+# for its nightly rebuild. Publishing this repository's own Pages site is
+# docs.yaml's job.
+#
+# DOCS_DEPLOY_TOKEN is an organization secret shared with the other projects
+# that feed soliplex.github.io.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      # The aggregated site copies all of docs/, not only Markdown: snippet
+      # includes under docs/getting-started/includes/ and the stylesheets.
+      - 'docs/**'
+      # Snippet sources outside docs/ ('--8<--' in getting-started/generator.md).
+      - 'skills/soliplex-template/assets/aliases.json'
+      - '.github/workflows/trigger-docs-deploy.yaml'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  trigger-docs-rebuild:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Trigger soliplex.github.io documentation rebuild
+        env:
+          DOCS_TOKEN: ${{ secrets.DOCS_DEPLOY_TOKEN }}
+          REPO: ${{ github.repository }}
+          REF: ${{ github.ref }}
+          SHA: ${{ github.sha }}
+          PUSHER: ${{ github.actor }}
+          # Untrusted input: passed through the environment, never inlined.
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          echo "Triggering documentation rebuild for $REPO"
+
+          payload=$(jq -n \
+            --arg repo "$REPO" \
+            --arg ref "$REF" \
+            --arg sha "$SHA" \
+            --arg pusher "$PUSHER" \
+            --arg message "$COMMIT_MSG" \
+            '{
+              event_type: "docs_update",
+              client_payload: {
+                repository: $repo,
+                ref: $ref,
+                sha: $sha,
+                pusher: $pusher,
+                commit_message: $message
+              }
+            }')
+
+          response=$(curl -sS -X POST \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Authorization: token $DOCS_TOKEN" \
+            -w "\n%{http_code}" \
+            https://api.github.com/repos/soliplex/soliplex.github.io/dispatches \
+            -d "$payload")
+
+          http_code=$(echo "$response" | tail -n1)
+
+          if [ "$http_code" -eq 204 ]; then
+            echo "Successfully triggered documentation rebuild"
+          else
+            echo "Failed to trigger documentation rebuild (HTTP $http_code)"
+            echo "$response"
+            exit 1
+          fi
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::warning::Failed to trigger documentation rebuild. Check the DOCS_DEPLOY_TOKEN secret."
