@@ -4,7 +4,7 @@
 by its rooms, all depend on a specific, pinned range of `haiku-rag-slim`
 versions. Keeping the version of the image specified in `docker-compose.yml`
 in sync with that range should follow a documented process (see
-`../docs/upgrades/index.md`).
+[Upgrading an existing stack](https://soliplex.github.io/soliplex-template/upgrades/)).
 
 ## Using the stock ingester image
 

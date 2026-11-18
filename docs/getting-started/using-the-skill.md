@@ -110,7 +110,8 @@ The agent creates a private RAG room on that user's behalf: its own database
 fed from the room's uploads, access for that user alone, and its config
 committed to the stack's `src/rooms-provisioned` repository. It asks for the
 user's username (plus email and display name if known) and the room's name;
-the room id becomes `<username>:<slug>`.
+the room id becomes `<username>--<slug>` (the separator is configurable; see
+[Room provisioning from the command line](../users/operations/room-provisioning/command-line.md)).
 
 The provisioner needs an `admin_users` entry, which the stack's `stack-init`
 adds. If the entry is missing, the agent says so and offers to run

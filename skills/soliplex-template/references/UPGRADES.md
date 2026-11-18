@@ -63,8 +63,15 @@ nothing to migrate. Do not guess which case a bump is — ask, as below.
 Raise the tag in `docker-compose.yml`, on the `&haiku_rag_image` anchor that
 the `haiku-ingester` and one-shot `haiku-rag` services share, and in the
 `haiku_rag_version` key of the stack's `[tool.soliplex-template]` manifest.
-(Stacks from before upgrade rung 3 also carry a `haiku.rag/Dockerfile`
-whose `FROM` line must agree.)
+A stack that still has a `haiku.rag/Dockerfile` is in an older shape:
+upgrade rung 3,
+[*Move to soliplex 0.86.1 and haiku.rag 0.101.0*](https://soliplex.github.io/soliplex-template/upgrades/move-to-soliplex-0.86.1/),
+removed that file, and moved its build recipe to `haiku.rag/README.md`. The
+rungs are listed in
+[Upgrading an existing stack](https://soliplex.github.io/soliplex-template/upgrades/). Don't bump the tag in that file. Tell the user the
+stack predates rung 3, and bring it up to the current shape by walking the
+upgrade rungs from where it is. Do that before any haiku.rag bump, because
+a bump is written for the current shape.
 
 The pairing is not a free choice: the `haiku.rag-slim` release must stay
 inside the range the target `soliplex` release declares (the ingester

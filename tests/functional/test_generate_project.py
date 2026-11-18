@@ -27,6 +27,7 @@ import json
 import os
 import pathlib
 import posixpath
+import re
 import shutil
 import stat
 import subprocess
@@ -1138,11 +1139,20 @@ def test_default_project_omits_tui_service(generated_project):
     # include_tui defaults off: no tui service, no tui/ build context...
     assert "\n  tui:\n" not in compose
     assert not (out / "tui").exists()
-    # ...but the CLI client (bundled in the backend image) is still documented.
+    # ...but the CLI client is still documented, run from the soliplex-tui
+    # release image on the stack's network: the backend image has the
+    # 'soliplex-tui' entry point but not its 'textual' dependencies.
     install_doc = _read(out, "docs/installation.md")
-    assert "docker compose exec backend" in install_doc
-    assert "soliplex-tui --url http://localhost:8000" in install_doc
-    # The web-TUI-behind-nginx note is gated on include_tui, so absent here.
+    assert "docker compose exec backend soliplex-tui" not in install_doc
+    assert re.search(
+        r"docker run --rm -it --network soliplex-functest_default\s+"
+        r"ghcr\.io/soliplex/soliplex-tui:\S+\s+"
+        r"soliplex-tui --url http://backend:8000",
+        install_doc,
+    )
+    # The Compose form needs the tui service, so it is gated on include_tui,
+    # like the web-TUI-behind-nginx note.
+    assert "docker compose run --rm tui" not in install_doc
     assert "/tui/>" not in install_doc
 
 
@@ -1375,6 +1385,12 @@ def test_include_tui_renders_valid_compose(
     compose = _read(out, "docker-compose.yml")
     assert "\n  tui:\n" in compose
     assert (out / "tui" / "Dockerfile").exists()
+    # With the tui service, the docs also offer the Compose form of the CLI.
+    install_doc = _read(out, "docs/installation.md")
+    assert (
+        "docker compose run --rm tui soliplex-tui --url http://backend:8000"
+        in install_doc
+    )
     cfg = _compose(out, "config", "-q")
     assert cfg.returncode == 0, cfg.stderr
 

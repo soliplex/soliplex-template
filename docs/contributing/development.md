@@ -44,8 +44,16 @@ environment. If `uv` resolves a Python newer than the repo supports, set
 ```bash
 # Working on the template from a checkout of this repo
 uv run scripts/refresh_skill_template.py     # regenerate the embedded template
-uv run scripts/generate_soliplex_project.py  # drive the generator directly
+
+# Drive the generator directly; '--with-editable .' runs it against this
+# checkout's soliplex-template package instead of the PyPI release
+uv run --with-editable . \
+    skills/soliplex-template/scripts/generate_soliplex_project.py \
+    --out ../my-stack --params params.json
 ```
+
+See [Generate a project](../getting-started/generator.md#from-a-clone) for
+the generator's parameters and flags.
 
 ## Daily commands
 
@@ -80,10 +88,19 @@ the repo files themselves. The non-obvious paths:
 - `skills/soliplex-template/` — the skill source; its
   `assets/template/` is a gitignored build artifact, regenerated from the
   exemplars (never edit it directly)
-- `scripts/` — the generator, the refresh/build tooling, and the
-  per-stack helpers the generated stacks run
-  (`soliplex_config.py`, `rag_db.py`, `add_room.py`,
-  `migrate_*.py`, `src_projects.py`)
+- `skills/soliplex-template/scripts/` — the generator
+  (`generate_soliplex_project.py`) and the skill's helpers, run from the
+  installed skill against a stack (`add_room.py`, `rag_db.py`,
+  `soliplex_config.py`, `src_projects.py`, `oidc_providers.py`,
+  `install_authelia.py`, `authelia_users.py`, `provision_room.py`,
+  `migrate_layout.py`, `skill_versions.py`)
+- `scripts/` — two kinds of script:
+    - copied into every generated stack, which runs them from its own
+      `scripts/`: `generate_secrets.py`, `generate_env.py`,
+      `init_gitea.py`, `migrate_rag_dbs.py`, `migrate_soliplex_dbs.py`
+    - repo-only tooling, which never ships: `refresh_skill_template.py`,
+      `build_skill.py`, `lint_docs_anchors.py`,
+      `extract_version_pairings.py`, `lint_version_pairings.py`
 - `src/soliplex_template/` — the published Python package (the thin
   `soliplex-plumber` implementation behind the per-stack scripts)
 - `tests/functional/` — generation end-to-end (some fixtures require
@@ -97,8 +114,10 @@ repo sources, and
 ## Documentation sites
 
 - This repo's site (`zensical.toml`) includes repo-only trees and is
-  built with `uv run zensical build --strict` — part of the pre-release
-  and pre-commit gates.
+  built with `uv run zensical build --strict`. No pre-commit hook runs
+  it: CI does (`docs-lint.yaml`, on pull requests and pushes that touch
+  the docs), so run it yourself before pushing a docs change, and before
+  a release.
 - A generated stack ships its own parameterized site under `docs/`,
   built the same way from the generated pages.
 
@@ -115,8 +134,8 @@ from a squash-merged PR against `main`.
 1. Update `main` and open a new worktree for the release branch:
 
    ```bash
-   # from `main` worktree
-   git worktree add ../vX.Y
+   # from `main` worktree; the branch is 'vX.Y.x', the worktree 'vX.Y'
+   git worktree add -b vX.Y.x ../vX.Y
    ```
 
 2. Capturing the changelog draft — the container's `release-notes/`
@@ -147,7 +166,7 @@ from a squash-merged PR against `main`.
 5. Tag and push:
 
    ```bash
-   git tag -s -F ../../release-notes/soliplex-template-vX.Y.txt vX.Y
+   git tag -s -F ../release-notes/soliplex-template-vX.Y.txt vX.Y
    git push origin vX.Y.x vX.Y
    ```
 
@@ -228,7 +247,7 @@ pre-releases cut ahead of it, so it sorts before `vX.Y`:
    pre-release:
 
     ```bash
-    git tag -s -F ../../release-notes/soliplex-template-vX.YbN.txt vX.YbN
+    git tag -s -F ../release-notes/soliplex-template-vX.YbN.txt vX.YbN
     git push origin vX.YbN
     ```
 
@@ -251,7 +270,7 @@ recent minor branch, in that branch's worktree:
 git cherry-pick <pr-squash-merge-sha>
 ```
 
-Then a follow the same flow as the minor release above:
+Then follow the same flow as the minor release above:
 - fresh changelog draft based on the most recent tag on the branch
 - version bump in `pyproject.toml` and `uv sync --all-groups`
 - commit

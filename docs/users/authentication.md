@@ -92,14 +92,54 @@ the provisioner, add its own service subject instead — see
 
 ### Key rotation
 
-Authelia's OIDC signing key and the server certificate are generated once
-and preserved across re-runs of `install_authelia.py`. To replace the
-signing key, delete
-`.secrets/authelia_oidc_issuer_private_key.gen` and
-`.secrets/authelia_oidc_issuer_certificate.pem` and re-run the install: it
-re-registers the provider entry and refreshes the backend's trust list. The
-server certificate is valid for a year; rotate it the same way, deleting
-`.secrets/authelia_tls_certificate.pem` and `.secrets/authelia_tls_key.gen`.
+Authelia's OIDC signing key and its server certificate are generated once,
+and re-running `install_authelia.py` keeps them. To replace either one,
+delete its files and re-run the installer with `--no-up`.
+
+!!! warning "Always pass `--no-up` when re-running the installer"
+    Without it, the installer also re-creates the admin user, which gives
+    that user a new password. `--admin-email` is still required, but with
+    `--no-up` it is not used.
+
+**The signing key.** The installer generates a new key, but it keeps an
+existing `authelia` provider entry, along with the old public key in it.
+Remove the entry first, so the installer writes it again with the new key.
+Stop the backend while you do this, so that it never loads the config
+without the entry:
+
+```bash
+docker compose stop backend
+rm .secrets/authelia_oidc_issuer_private_key.gen \
+   .secrets/authelia_oidc_issuer_certificate.pem
+python3 <skill>/scripts/oidc_providers.py remove authelia
+python3 <skill>/scripts/install_authelia.py --admin-email <admin email> --no-up
+docker compose up -d --force-recreate authelia
+docker compose start backend
+```
+
+- `--force-recreate` is needed because the key reaches Authelia as a
+  Compose secret, and a container keeps the file it was created with: a
+  plain `restart` would keep signing with the old key.
+- **If Authelia is the `/ingester/` sign-in provider and others remain**,
+  `remove` needs `--signin-successor <another id>`. The installer makes
+  Authelia the sign-in provider again.
+- **If Authelia was not the sign-in provider**, the installer makes it one.
+  Set the previous one back with `oidc_providers.py signin <id>`.
+- If the sign-in provider ends up different from where it started,
+  `docker compose restart nginx`.
+- **The re-added entry goes to the end of `auth_systems`**, which moves its
+  login button last.
+
+**The server certificate** is valid for a year. Replacing it leaves the
+provider entry alone; the installer replaces Authelia's block in the
+backend's trust list:
+
+```bash
+rm .secrets/authelia_tls_certificate.pem .secrets/authelia_tls_key.gen
+python3 <skill>/scripts/install_authelia.py --admin-email <admin email> --no-up
+docker compose up -d --force-recreate authelia
+docker compose restart backend
+```
 
 ## External provider
 
@@ -122,11 +162,40 @@ provider to issue RS256 access tokens; until soliplex's web client stops
 expecting a refresh token (`soliplex/frontend#671`), a provider that sends
 none ends the session a few minutes before the access token expires.
 
-If a provider rotates its signing key, `soliplex` never fetches keys itself:
-fetch the new signing key and run
-`oidc_providers.py add` again with the same id and the new PEM, or remove and
-re-add it (`--signin-successor` names the provider that takes over the
-`/ingester/` sign-in while others remain).
+### Rotating a provider's signing key
+
+`soliplex` never fetches signing keys itself; the key is stored in the
+provider's entry, as `token_validation_pem`. When a provider rotates its
+key, fetch the new public key as a PEM file and replace the entry. `add`
+refuses an id that already exists, so remove the entry and add it back:
+
+1. Note the entry's `title`, `server_url`, `client_id` and `scope` in
+   `backend/environment/oidc/config.yaml`; `add` needs them again.
+2. Stop the backend, so it never loads the config while the entry is
+   missing. If it is the only provider, the backend would otherwise reload
+   into running *without* authentication until the entry is back.
+3. Remove the entry, add it back with the new key, and start the backend:
+
+    ```bash
+    docker compose stop backend
+    python3 <skill>/scripts/oidc_providers.py remove <id>
+    python3 <skill>/scripts/oidc_providers.py add --id <id> \
+        --title "<title>" --server-url <server_url> \
+        --client-id <client_id> --pem-file <new key, PEM> \
+        [--scope "<scope>"]
+    docker compose start backend
+    ```
+
+- **If this provider is the `/ingester/` sign-in provider and others
+  remain**, `remove` needs `--signin-successor <another id>`. Pass
+  `--signin` to `add` to make it the sign-in provider again. The sign-in
+  provider ends where it started, so nginx needs no restart.
+- **The re-added entry goes to the end of `auth_systems`**, which moves
+  its login button last.
+- **An entry `oidc_providers.py` didn't write**, for example one with a
+  `client_secret` or other hand edits, loses those fields this way. Replace
+  its `token_validation_pem` in `config.yaml` by hand instead; the backend
+  reloads the file by itself.
 
 ## How the pieces fit
 
