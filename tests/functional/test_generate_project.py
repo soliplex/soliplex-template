@@ -510,14 +510,44 @@ def test_ingester_bearer_gate_wiring(generated_project):
     # nginx renders the bearer into its config at container start, loudly
     # failing when the secret file is missing/empty
     assert (
-        'sed "s|@@INGESTER_BEARER@@|$$(cat /run/secrets/ingester_bearer)|g"'
+        'sed -e "s|@@INGESTER_BEARER@@|$$(cat /run/secrets/ingester_bearer)|g"'
         in compose
     )
     assert "test -s /run/secrets/ingester_bearer || {" in compose
     # uniform escape: no bare '$(cat' secret read survives the '$$' spelling
-    assert 'sed "s|@@INGESTER_BEARER@@|$(cat' not in compose
+    assert '"s|@@INGESTER_BEARER@@|$(cat' not in compose
 
     assert "exec nginx -c /tmp/nginx.conf -g 'daemon off;'" in compose
+
+
+def test_nginx_resolver_wiring(generated_project):
+    # nginx's own resolver (not the system's) re-resolves the upstream names
+    # on each request, so its address cannot be hardcoded: Docker's embedded
+    # DNS is 127.0.0.11, podman's aardvark-dns sits on the network gateway.
+    # The compose command renders NGINX_RESOLVER (default 127.0.0.11) into
+    # the config at container start.
+    out, _params = generated_project
+
+    compose = _read(out, "docker-compose.yml")
+    nginx = _read(out, "nginx/nginx.conf")
+
+    assert "resolver @@RESOLVER@@ valid=10s ipv6=off;" in nginx
+    assert "resolver 127.0.0.11" not in nginx
+
+    service = yaml.safe_load(compose)["services"]["nginx"]
+    assert service["environment"] == {
+        "NGINX_RESOLVER": "${NGINX_RESOLVER:-127.0.0.11}"
+    }
+    command = service["command"][2]
+    # an empty resolver fails loudly rather than rendering 'resolver ;'
+    assert 'test -n "$$NGINX_RESOLVER" || {' in command
+    # one sed renders both placeholders, with the same '$$' escape
+    assert '-e "s|@@RESOLVER@@|$$NGINX_RESOLVER|g"' in command
+    assert '"s|@@RESOLVER@@|$NGINX_RESOLVER' not in command
+    assert command.index('test -n "$$NGINX_RESOLVER"') < command.index(
+        "sed -e"
+    )
+    assert command.index("sed -e") < command.index("exec nginx")
 
     ingester = yaml.safe_load(compose)["services"]["haiku-ingester"]
     command = ingester["command"][2]
