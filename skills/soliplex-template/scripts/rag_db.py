@@ -242,16 +242,29 @@ def db_lancedb_path(project: pathlib.Path, db_name: str) -> pathlib.Path:
     return project / "rag" / "db" / f"{db_name}.lancedb"
 
 
+def _is_remote(source: str) -> bool:
+    """Whether ``source`` is a URI for ``add-src`` rather than a host path.
+
+    A URI has a scheme, but ``urlsplit`` also reads a Windows drive letter
+    as one (``C:\\docs`` has scheme ``'c'``), so a path with a drive is
+    local (#359). Checked the same way on every OS.
+    """
+    return bool(urllib.parse.urlsplit(source).scheme) and not (
+        pathlib.PureWindowsPath(source).drive
+    )
+
+
 def resolve_source(
     project: pathlib.Path, source: str
 ) -> tuple[list[str], str]:
     """Map a host source to (extra ``docker run`` args, container path).
 
-    Remote URIs (a non-empty URL scheme) pass through to ``add-src``
-    untouched. A local path already under ``rag/docs/`` reuses the service's
-    ``/docs`` mount; anything else is auto-bind-mounted read-only at ``/src``.
+    Remote URIs (a non-empty URL scheme, not a Windows drive letter) pass
+    through to ``add-src`` untouched. A local path already under
+    ``rag/docs/`` reuses the service's ``/docs`` mount; anything else is
+    auto-bind-mounted read-only at ``/src``.
     """
-    if urllib.parse.urlsplit(source).scheme:
+    if _is_remote(source):
         return [], source
 
     path = pathlib.Path(source).resolve()

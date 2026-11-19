@@ -223,16 +223,34 @@ def test_resolve_source_remote(tmp_path, source):
     assert (mounts, container) == ([], source)
 
 
-# Known Windows bug (#359): a drive-letter path parses as a URI scheme.
-# Strict, so the mark must come off once the fix lands.
-XFAIL_WINDOWS_DRIVE_LETTER = pytest.mark.xfail(
-    sys.platform == "win32",
-    reason="Windows: a drive-letter path parses as a URI scheme (#359)",
-    strict=True,
+@pytest.mark.parametrize(
+    "source, expected",
+    [
+        # Windows drive paths are local on every OS (#359):
+        ("C:\\Users\\me\\docs", False),
+        ("c:/users/me/docs", False),
+        ("D:\\a\\b.pdf", False),
+        ("\\\\srv\\share\\docs", False),
+        ("rag\\docs\\handbook", False),
+        ("rag/docs/handbook", False),
+        ("https://example.com/a.html", True),
+        ("s3://bucket/key.pdf", True),
+        ("file:///C:/docs/a.pdf", True),
+    ],
 )
+def test_is_remote(source, expected):
+    assert rag_db._is_remote(source) is expected
 
 
-@XFAIL_WINDOWS_DRIVE_LETTER
+def test_resolve_source_missing_drive_path(tmp_path):
+    # Local on every OS, so it is checked rather than passed to add-src: a
+    # relative path that doesn't exist on POSIX, a missing drive on Windows.
+    project = _make_project(tmp_path)
+
+    with pytest.raises(rag_db.SourceMissing):
+        rag_db.resolve_source(project, "Z:\\no\\such\\source")
+
+
 def test_resolve_source_under_docs(tmp_path):
     project = _make_project(tmp_path)
     src = project / "rag" / "docs" / "sub" / "file.md"
@@ -244,7 +262,6 @@ def test_resolve_source_under_docs(tmp_path):
     assert (mounts, container) == ([], "/docs/sub/file.md")
 
 
-@XFAIL_WINDOWS_DRIVE_LETTER
 def test_resolve_source_docs_root(tmp_path):
     project = _make_project(tmp_path)
     docs_root = project / "rag" / "docs"
@@ -254,7 +271,6 @@ def test_resolve_source_docs_root(tmp_path):
     assert (mounts, container) == ([], "/docs")
 
 
-@XFAIL_WINDOWS_DRIVE_LETTER
 def test_resolve_source_automount_dir(tmp_path):
     project = _make_project(tmp_path)
     external = tmp_path / "external"
@@ -268,7 +284,6 @@ def test_resolve_source_automount_dir(tmp_path):
     )
 
 
-@XFAIL_WINDOWS_DRIVE_LETTER
 def test_resolve_source_automount_file(tmp_path):
     project = _make_project(tmp_path)
     external = tmp_path / "report.pdf"
@@ -282,7 +297,6 @@ def test_resolve_source_automount_file(tmp_path):
     )
 
 
-@XFAIL_WINDOWS_DRIVE_LETTER
 def test_resolve_source_missing(tmp_path):
     project = _make_project(tmp_path)
 
@@ -324,7 +338,6 @@ def test_compose_run_builds_argv(tmp_path, run):
 # --------------------------------------------------------------------------
 # create
 # --------------------------------------------------------------------------
-@XFAIL_WINDOWS_DRIVE_LETTER
 def test_create_happy(tmp_path, which, run, capsys):
     project = _make_project(tmp_path)
     src = project / "rag" / "docs" / "handbook"
@@ -478,7 +491,6 @@ def test_update_db_missing(tmp_path, which, run):
     assert run.call_args_list == []
 
 
-@XFAIL_WINDOWS_DRIVE_LETTER
 def test_update_add_src(tmp_path, which, run, capsys):
     project = _make_project(tmp_path)
     _make_db(project)
@@ -574,7 +586,6 @@ def test_update_delete(tmp_path, which, run):
     ]
 
 
-@XFAIL_WINDOWS_DRIVE_LETTER
 def test_update_all_ops_in_order(tmp_path, which, run, capsys):
     project = _make_project(tmp_path)
     _make_db(project)
