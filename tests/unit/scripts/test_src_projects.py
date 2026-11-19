@@ -627,6 +627,18 @@ def test_add_redirects_a_clone_url_to_clone(stack, url):
         )
 
 
+@pytest.mark.parametrize("name", ["..", ".", "../outside", "a\\b", "C:pkg"])
+def test_add_refuses_a_name_outside_src(stack, name):
+    before = (stack / "docker-compose.yml").read_text()
+
+    with pytest.raises(src_projects.BadProjectName, match="single"):
+        src_projects.main(
+            ["add", name, "--project-dir", str(stack), "--no-dep-check"]
+        )
+
+    assert (stack / "docker-compose.yml").read_text() == before
+
+
 def test_add_requires_the_directory(stack):
     with pytest.raises(src_projects.ProjectMissing, match="does not exist"):
         src_projects.main(
@@ -871,16 +883,6 @@ def test_clone_fetches_and_wires_it_up(stack, origin, capsys):
     assert "cloned" in capsys.readouterr().out
 
 
-# Known Windows bug (#361): derive_name splits a local path on '/' only.
-# Strict, so the mark must come off once the fix lands.
-XFAIL_WINDOWS_DERIVE_NAME = pytest.mark.xfail(
-    sys.platform == "win32",
-    reason="Windows: derive_name splits a local path on '/' only (#361)",
-    strict=True,
-)
-
-
-@XFAIL_WINDOWS_DERIVE_NAME
 def test_clone_defaults_the_name_to_the_repo(stack, origin, capsys):
     result = src_projects.main(
         ["clone", str(origin), "--project-dir", str(stack), "--no-dep-check"]
@@ -898,12 +900,51 @@ def test_clone_defaults_the_name_to_the_repo(stack, origin, capsys):
         ("https://github.com/soliplex/soliplex.git", "soliplex"),
         ("git@github.com:soliplex/soliplex.git", "soliplex"),
         ("/local/path/to/repo/", "repo"),
+        ("/local/path/to/repo/.git", "repo"),
+        ("file:///C:/repos/mypkg", "mypkg"),
+        # Windows paths, on every OS (#361):
+        ("C:\\repos\\mypkg", "mypkg"),
+        ("C:\\repos\\mypkg\\", "mypkg"),
+        ("C:\\repos\\mypkg.git", "mypkg"),
+        ("C:\\repos\\mypkg\\.git", "mypkg"),
+        ("\\\\server\\share\\mypkg", "mypkg"),
+        ("..\\mypkg", "mypkg"),
+        # scp-style, with no '/':
+        ("host:mypkg.git", "mypkg"),
     ],
 )
 def test_derive_name(url, expected):
     result = src_projects.derive_name(url)
 
     assert result == expected
+
+
+@pytest.mark.parametrize(
+    "name", ["../outside", "/abs/path", "C:\\outside", "a/b", "..", "."]
+)
+def test_clone_refuses_a_name_outside_src(stack, origin, tmp_path, name):
+    before = sorted(tmp_path.rglob("*"))
+
+    with pytest.raises(src_projects.BadProjectName, match="single"):
+        src_projects.main(
+            [
+                "clone",
+                str(origin),
+                "--name",
+                name,
+                "--project-dir",
+                str(stack),
+            ]
+        )
+
+    assert sorted(tmp_path.rglob("*")) == before  # nothing cloned anywhere
+
+
+def test_clone_refuses_an_empty_derived_name(stack):
+    with pytest.raises(src_projects.BadProjectName, match="--name"):
+        src_projects.main(
+            ["clone", ".git", "--project-dir", str(stack), "--dry-run"]
+        )
 
 
 def test_clone_can_skip_the_path_edit(stack, origin, capsys):
@@ -926,7 +967,6 @@ def test_clone_can_skip_the_path_edit(stack, origin, capsys):
     assert "left off the backend's PYTHONPATH" in capsys.readouterr().out
 
 
-@XFAIL_WINDOWS_DERIVE_NAME
 def test_clone_dry_run_writes_nothing(stack, origin, capsys):
     result = src_projects.main(
         ["clone", str(origin), "--project-dir", str(stack), "--dry-run"]

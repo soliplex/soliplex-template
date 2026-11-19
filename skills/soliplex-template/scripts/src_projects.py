@@ -98,6 +98,15 @@ class UrlPassedToAdd(SrcProjectError):
         )
 
 
+class BadProjectName(SrcProjectError):
+    def __init__(self, name: str):
+        super().__init__(
+            f"{name!r} is not a directory name under src/: it must be a "
+            "single path component -- not empty, '.' or '..', and without "
+            "'/', '\\' or ':' (for 'clone', pass --name to choose one)"
+        )
+
+
 class ProjectMissing(SrcProjectError):
     def __init__(self, path: pathlib.Path):
         super().__init__(
@@ -127,6 +136,25 @@ class RefusingOwnProject(SrcProjectError):
 def _require(cond: bool, exc: SrcProjectError) -> None:
     if not cond:
         raise exc
+
+
+# Separators that end a repo name in a clone URL or path: '/', the Windows
+# '\' (on every OS, so a Windows path derives the same name everywhere), and
+# the ':' of an scp-style 'host:repo.git'.
+_NAME_SEPARATORS = re.compile(r"[/\\:]")
+
+
+def _check_name(name: str) -> None:
+    """Refuse a name that isn't one directory directly under ``src/``.
+
+    ``project / "src" / name`` silently leaves ``src/`` for an absolute name
+    and climbs out of it for ``..``, so anything but a single path component
+    would clone or point outside ``src/`` (#361).
+    """
+    _require(
+        name not in ("", ".", "..") and not _NAME_SEPARATORS.search(name),
+        BadProjectName(name),
+    )
 
 
 # --------------------------------------------------------------------------
@@ -612,6 +640,7 @@ def _add_entry(
     re-running 'add' brings an older stack's watch list into step.
     """
     _require(not _URL_LIKE.search(name), UrlPassedToAdd(name))
+    _check_name(name)
     _require(
         (project / "src" / name).is_dir(),
         ProjectMissing(project / "src" / name),
@@ -787,13 +816,20 @@ def do_add(args: argparse.Namespace) -> int:
 
 
 def derive_name(url: str) -> str:
-    """Default directory name for a clone: the repo name in the URL."""
-    return url.rstrip("/").split("/")[-1].removesuffix(".git")
+    """Default directory name for a clone: the repo name in the URL.
+
+    Matches 'git clone': trailing separators and a '.git' suffix (or a
+    trailing '.git' directory) are dropped, and the name is what follows the
+    last '/', '\\' or ':' -- so ``C:\\repos\\pkg`` gives ``pkg`` (#361).
+    """
+    stem = url.rstrip("/\\").removesuffix(".git").rstrip("/\\")
+    return _NAME_SEPARATORS.split(stem)[-1]
 
 
 def do_clone(args: argparse.Namespace) -> int:
     project = rooms.resolve_project(args.project_dir)
     name = args.name or derive_name(args.url)
+    _check_name(name)
     target = project / "src" / name
     _require(not target.exists(), ProjectExists(target))
 
