@@ -756,16 +756,6 @@ def test_validate_bad_docs_dir(docs_dir):
 # --------------------------------------------------------------------------
 # render_tree (real Mako)
 # --------------------------------------------------------------------------
-# Known Windows bug (#360): rendered files get doubled CRLF line endings.
-# Strict, so the mark must come off once the fix lands.
-XFAIL_WINDOWS_CRLF = pytest.mark.xfail(
-    sys.platform == "win32",
-    reason="Windows: rendered files get doubled CRLF line endings (#360)",
-    strict=True,
-)
-
-
-@XFAIL_WINDOWS_CRLF
 def test_render_tree_renders_copies_and_chmod(tmp_path, expected_mode):
     template = tmp_path / "template"
     (template / "sub").mkdir(parents=True)
@@ -804,7 +794,20 @@ def test_render_tree_bad_template_raises(tmp_path):
         gen.render_tree(template, out, {"project_name": "demo"})
 
 
-@XFAIL_WINDOWS_CRLF
+def test_render_tree_writes_lf_from_a_crlf_template(tmp_path):
+    # A CRLF checkout (Git for Windows' autocrlf) must still render LF (#360).
+    template = tmp_path / "template"
+    template.mkdir()
+    (template / "run.sh.mako").write_bytes(
+        b"#!/bin/sh\r\necho ${project_name}\r\n"
+    )
+    out = tmp_path / "out"
+
+    gen.render_tree(template, out, {"project_name": "demo"})
+
+    assert (out / "run.sh").read_bytes() == b"#!/bin/sh\necho demo\n"
+
+
 def test_render_tree_substitutes_package_dir(tmp_path):
     template = tmp_path / "template"
     (template / "src" / "__package__").mkdir(parents=True)
@@ -1019,6 +1022,7 @@ def test_write_env(tmp_path, expected_mode):
     assert "PGID=5678" in text
     assert "INGESTER_TOKEN" not in text  # (#244): the bearer is a .gen secret
     assert ((tmp_path / ".env").stat().st_mode & 0o777) == expected_mode(0o600)
+    assert b"\r" not in (tmp_path / ".env").read_bytes()  # LF on Windows too
 
 
 # --------------------------------------------------------------------------

@@ -357,9 +357,10 @@ def test_build_into_copies_checked_in_mako_and_authors(tmp_path, monkeypatch):
     assert (derived, authored, checked) == (0, 1, 1)
     assert (tmp_path / "dest" / "plain.txt").read_text() == "verbatim\n"
     assert (tmp_path / "dest" / "d.mako").read_text() == "${nginx_http}\n"
+    # read_bytes: LF on Windows too, where text mode would write CRLF.
     assert (
         tmp_path / "dest" / "nested" / "authored.md"
-    ).read_text() == "authored\n"
+    ).read_bytes() == b"authored\n"
 
 
 def test_build_into_derives_user_docs(tmp_path, monkeypatch):
@@ -382,7 +383,7 @@ def test_build_into_derives_user_docs(tmp_path, monkeypatch):
     ).read_text() == "port `${nginx_http}`\n"
     assert (
         tmp_path / "dest" / "docs" / "sub" / "page.md.mako"
-    ).read_text() == "# Home\n"
+    ).read_bytes() == b"# Home\n"  # LF on Windows too
 
 
 def test_main_requires_git_repo(repo):
