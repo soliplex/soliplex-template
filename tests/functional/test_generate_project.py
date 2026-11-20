@@ -1243,6 +1243,7 @@ _DOC_PAGES = (
     "docs/operations/ingester.md",
     "docs/operations/migrations.md",
     "docs/operations/ollama.md",
+    "docs/operations/frontend.md",
     "docs/custom-package.md",
 )
 
