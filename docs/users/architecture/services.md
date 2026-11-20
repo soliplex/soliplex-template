@@ -82,7 +82,8 @@ flowchart TB
 
 ## nginx
 
-- Serves the Flutter web frontend.
+- Serves the Flutter web frontend (see [Web frontend and
+  nginx](../operations/frontend.md)).
 
 - Reverse-proxies `/api/` and `/mcp/` to `backend:8000`.
 

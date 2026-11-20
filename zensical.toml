@@ -66,6 +66,7 @@ nav = [
         ] },
         "users/operations/migrations.md",
         "users/operations/ollama.md",
+        "users/operations/frontend.md",
         "users/custom-package.md",
     ] },
     { "Upgrading a generated stack" = [

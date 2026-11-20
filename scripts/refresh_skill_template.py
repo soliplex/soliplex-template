@@ -486,6 +486,7 @@ nav = [
         ] },
         "operations/migrations.md",
         "operations/ollama.md",
+        "operations/frontend.md",
     ] },
     { "Custom Python package" = "custom-package.md" },
 ]
