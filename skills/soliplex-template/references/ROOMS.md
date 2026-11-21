@@ -91,8 +91,11 @@ first use), which reloads the ingester and the backend. The stack's
 1. **Gather** the requester (`--username`, plus `--email` and
    `--display-name` when known; or their claims as JSON with `--claims`)
    and the room's `--name`, optionally `--description` and `--slug`. The
-   room id is `<username>:<slug>`; the slug defaults to one derived from the
-   name (`"Q3 Plans"` → `q3-plans`).
+   room id is `<username>--<slug>`; the slug defaults to one derived from the
+   name (`"Q3 Plans"` → `q3-plans`). `--` is the default separator: a stack
+   whose `.env` sets `PROVISIONER_ROOM_ID_SEPARATOR` (e.g. `:` for the
+   legacy `<username>:<slug>` form) uses that instead, so check `.env` before
+   telling the user the id.
 
 2. **Run** it from the stack dir, or pass `--project-dir`:
 

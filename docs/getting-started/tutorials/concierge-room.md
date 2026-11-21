@@ -27,16 +27,22 @@ skill into your agent. (When you run it in the next step, it also fetches the
 
 Ask your agent — using the `soliplex-concierge-installer` skill — to wire
 concierge into your stack, pointed at your Gitea owner and repo. The skill runs
-its bundled `apply.py` (previewing with a dry run, then applying), which creates
-the **`about-<project>`** room — hosting a `create_gitea_issue` tool and the
-`soliplex-concierge-room` skill — and merges the matching `installation.yaml`
-entries.
+its bundled `install_concierge.py` (previewing with `--dry-run`, then
+applying), which creates the **`about-<project>`** room — hosting a
+`create_gitea_issue` tool and the `soliplex-concierge-room` skill — and merges
+the matching `installation.yaml` entries.
 
 ## 3. Rebuild the backend
 
-`apply.py` edits `backend/pyproject.toml`, `backend/Dockerfile`, `.env`, and
-`backend/environment/`, so rebuild and restart the backend to pick up the new
-dependency and configuration:
+`install_concierge.py` adds the `soliplex-concierge` package to
+`backend/requirements.txt` and `backend/pyproject.toml`, adds the `GITEA_HOST`
+/ `GITEA_ACCESS_TOKEN` entries to `.env`, and writes the room, its skills and
+the `installation.yaml` entries under `backend/environment/`. It also writes
+the administrator's `scripts/gitea_issues.py`
+(see [Resolve room requests](concierge-admin.md)). (On a stack old
+enough to have no `backend/requirements.txt`, it edits the `uv add` block in
+`backend/Dockerfile` instead.) Rebuild and restart the backend to pick up the
+new dependency and configuration:
 
 ```bash
 docker compose up -d --build backend

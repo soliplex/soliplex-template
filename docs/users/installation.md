@@ -228,13 +228,27 @@ Open Gitea at <https://${server_name}:${nginx_https}/gitea/>.
 
 ## Using the TUI
 
-Soliplex includes an interactive terminal client. The backend image bundles it,
-so you can run it against the running stack without installing anything on the
-host:
+Soliplex includes an interactive terminal client. It ships in its own release
+image, `ghcr.io/soliplex/soliplex-tui`: the backend image has the
+`soliplex-tui` command but not the libraries it needs, so it cannot run there.
+Run the TUI image on the stack's network, so that it reaches the backend by
+its service name, without installing anything on the host:
 
 ```bash
-docker compose exec backend soliplex-tui --url http://localhost:8000
+docker run --rm -it --network ${project_name}_default \
+    ghcr.io/soliplex/soliplex-tui:${soliplex_image_tag} \
+    soliplex-tui --url http://backend:8000
 ```
+
+<!-- if:tui -->
+This stack's `tui` service is built on the same image, so Compose can run the
+client from it too:
+
+```bash
+docker compose run --rm tui soliplex-tui --url http://backend:8000
+```
+
+<!-- endif -->
 
 <!-- if:tui -->
 This stack also serves the same client as a web app via the `tui` service;

@@ -18,14 +18,14 @@ of Markdown. The skill builds `rag/db/handbook.lancedb` as a one-off,
 independent of the ingester's database (and it refuses to overwrite the
 ingester's own database while that service is running).
 
-## 2. Point a cloned room at it
+## 2. Point a copy of a room at it
 
 [:lucide-wand-sparkles: Ask the agent](../using-the-skill.md#point-rooms-at-a-rag-database "The soliplex-template skill can do this for you")
 { .skill-link }
 
-Ask the agent to clone the `custom` room under a new id — say `handbook` — and
-wire that copy to the new database (`rag_lancedb_stem: "handbook"`) instead of
-the ingester's. Open the new room and ask a question answerable from the
+Ask the agent to create a copy of the `custom` room under a new id — say
+`handbook` — and wire that copy to the new database
+(`rag_lancedb_stem: "handbook"`) instead of the ingester's. Open the new room and ask a question answerable from the
 `handbook` corpus: it answers from that database, while the `custom` room still
 uses the ingester's.
 
