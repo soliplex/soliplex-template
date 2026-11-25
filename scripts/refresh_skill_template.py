@@ -21,9 +21,6 @@ What it does:
   4. writes the authored templates (README.md.mako, the two
      pyproject.toml.mako, the src/__package__/ project tree, …)
   5. render-checks every .mako with Mako
-  6. writes a fingerprint of its inputs beside the template
-     (assets/template.fingerprint); the generator compares it with the
-     current sources and refuses to render a stale copy
 
 Only *tracked* files are picked up (it uses ``git ls-files``); commit new stack
 files before refreshing. Transforms assert on the exemplar text, so if an
@@ -33,7 +30,6 @@ rather than emitting a broken template.
 
 from __future__ import annotations
 
-import hashlib
 import pathlib
 import re
 import shutil
@@ -43,9 +39,6 @@ import time
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 TEMPLATE = REPO / "skills" / "soliplex-template" / "assets" / "template"
-# Sits beside TEMPLATE, not in it: every file in TEMPLATE renders into a
-# generated project.
-FINGERPRINT_NAME = "template.fingerprint"
 
 # Tracked paths NOT copied into the template (git pathspecs, repo-relative).
 EXCLUDE_PATHSPECS = [
@@ -641,29 +634,6 @@ def tracked_files() -> list[str]:
     return sorted({p for p in out.split("\0") if p and (REPO / p).is_file()})
 
 
-def source_fingerprint(files: list[str]) -> str:
-    """SHA-256 over every input a refresh reads.
-
-    The inputs are ``files`` (repo-relative), the ``docs/users/`` pages and
-    this script, which holds ``AUTHORED`` and the transforms."""
-    sources = {rel: REPO / rel for rel in files}
-    docs_src = REPO / USER_DOCS_SRC
-    if docs_src.is_dir():
-        for md in docs_src.rglob("*.md"):
-            sources[md.relative_to(REPO).as_posix()] = md
-    sources["scripts/refresh_skill_template.py"] = pathlib.Path(__file__)
-    digest = hashlib.sha256()
-    for rel in sorted(sources):
-        data = hashlib.sha256(sources[rel].read_bytes()).hexdigest()
-        digest.update(f"{rel}\0{data}\n".encode())
-    return digest.hexdigest()
-
-
-def fingerprint_path(template: pathlib.Path) -> pathlib.Path:
-    """Where the fingerprint of the ``template`` tree is stored."""
-    return template.parent / FINGERPRINT_NAME
-
-
 def render_check(root: pathlib.Path) -> int:
     from mako import exceptions
     from mako import template
@@ -759,7 +729,6 @@ def main() -> int:
     require((REPO / ".git").exists(), "must run inside the repo")
     files = tracked_files()
     require(bool(files), "git ls-files returned nothing")
-    fingerprint = source_fingerprint(files)
 
     # Build into a staging dir and swap into place only on success, so a
     # mid-run failure leaves the existing template intact rather than corrupt.
@@ -773,14 +742,9 @@ def main() -> int:
         shutil.rmtree(staging, ignore_errors=True)
         raise
 
-    # Drop the old fingerprint first: a failure from here on leaves the
-    # template unstamped, which the generator reports as stale.
-    stamp = fingerprint_path(TEMPLATE)
-    stamp.unlink(missing_ok=True)
     if TEMPLATE.exists():
         shutil.rmtree(TEMPLATE)
     _rename_with_retry(staging, TEMPLATE)
-    stamp.write_text(fingerprint + "\n", encoding="utf-8", newline="\n")
 
     total_mako = sum(1 for _ in TEMPLATE.rglob("*.mako"))
     print(

@@ -18,8 +18,8 @@ import argparse
 import importlib.util
 import json
 import pathlib
-import shutil
 import stat
+import subprocess
 import sys
 from unittest import mock
 
@@ -1215,6 +1215,75 @@ def test_main_missing_template(monkeypatch, tmp_path):
         gen.main(["--out", str(tmp_path / "proj")])
 
 
+# --------------------------------------------------------------------------
+# refresh_checkout_template
+# --------------------------------------------------------------------------
+# Stands in for scripts/refresh_skill_template.py: rebuilds the template.
+_STUB_REFRESH = """\
+import pathlib
+
+repo = pathlib.Path(__file__).resolve().parent.parent
+template = repo / "skills" / "soliplex-template" / "assets" / "template"
+template.mkdir(parents=True, exist_ok=True)
+(template / "stale").unlink(missing_ok=True)
+(template / "fresh").write_text("fresh", encoding="utf-8")
+"""
+
+
+def _checkout(tmp_path, parent="skills", refresh=_STUB_REFRESH):
+    """A repo holding a skill under ``parent`` with a stale template."""
+    repo = tmp_path / "repo"
+    (repo / "scripts").mkdir(parents=True)
+    (repo / "scripts" / "refresh_skill_template.py").write_text(
+        refresh, encoding="utf-8"
+    )
+    skill = repo / parent / "soliplex-template"
+    (skill / "assets" / "template").mkdir(parents=True)
+    (skill / "assets" / "template" / "stale").write_text("x", encoding="utf-8")
+    return skill
+
+
+def test_refresh_checkout_template_rebuilds(tmp_path):
+    skill = _checkout(tmp_path)
+
+    gen.refresh_checkout_template(skill)
+
+    template = tmp_path / "repo" / "skills" / "soliplex-template"
+    template = template / "assets" / "template"
+    assert sorted(p.name for p in template.iterdir()) == ["fresh"]
+
+
+def test_refresh_checkout_template_skips_dist_build(tmp_path):
+    skill = _checkout(tmp_path, parent="dist", refresh="raise SystemExit(1)\n")
+
+    gen.refresh_checkout_template(skill)
+
+    assert (skill / "assets" / "template" / "stale").is_file()
+
+
+def test_refresh_checkout_template_skips_installed_skill(tmp_path):
+    skill = tmp_path / "skills" / "soliplex-template"
+    (skill / "assets" / "template").mkdir(parents=True)
+
+    gen.refresh_checkout_template(skill)
+
+    assert list((skill / "assets" / "template").iterdir()) == []
+
+
+def test_main_refresh_failure_stops(monkeypatch, tmp_path):
+    skill = _checkout(tmp_path, refresh="raise SystemExit(1)\n")
+    monkeypatch.setattr(
+        gen,
+        "__file__",
+        str(skill / "scripts" / "generate_soliplex_project.py"),
+    )
+
+    with pytest.raises(subprocess.CalledProcessError):
+        gen.main(["--out", str(tmp_path / "proj")])
+
+    assert not (tmp_path / "proj").exists()
+
+
 def test_main_out_not_empty(monkeypatch, tmp_path):
     monkeypatch.setattr(
         gen,
@@ -1228,126 +1297,6 @@ def test_main_out_not_empty(monkeypatch, tmp_path):
 
     with pytest.raises(gen.OutNotEmpty):
         gen.main(["--out", str(out)])
-
-
-# --------------------------------------------------------------------------
-# check_template_current
-# --------------------------------------------------------------------------
-# Stands in for scripts/refresh_skill_template.py: the fingerprint is the
-# joined file list, so a test sets the "sources" by writing tracked.txt.
-_STUB_REFRESH = """\
-import pathlib
-
-REPO = pathlib.Path(__file__).resolve().parent.parent
-
-
-def fingerprint_path(template):
-    return template.parent / "template.fingerprint"
-
-
-def tracked_files():
-    return (REPO / "tracked.txt").read_text().split()
-
-
-def source_fingerprint(files):
-    return ",".join(files)
-"""
-
-
-@pytest.fixture
-def checkout_template(tmp_path):
-    """A checkout's template, stamped from sources ``a b``."""
-    repo = tmp_path / "repo"
-    (repo / ".git").mkdir(parents=True)
-    (repo / "scripts").mkdir()
-    (repo / "scripts" / "refresh_skill_template.py").write_text(
-        _STUB_REFRESH, encoding="utf-8"
-    )
-    (repo / "tracked.txt").write_text("a b\n", encoding="utf-8")
-    template = repo / "skills" / "soliplex-template" / "assets" / "template"
-    template.mkdir(parents=True)
-    (template.parent / "template.fingerprint").write_text(
-        "a,b\n", encoding="utf-8"
-    )
-    return template
-
-
-def test_check_template_current_fresh_passes(checkout_template):
-    result = gen.check_template_current(checkout_template)
-
-    assert result is None
-
-
-def test_check_template_current_stale(checkout_template):
-    repo = checkout_template.parents[3]
-    (repo / "tracked.txt").write_text("a b c\n", encoding="utf-8")
-
-    with pytest.raises(gen.TemplateStale) as excinfo:
-        gen.check_template_current(checkout_template)
-
-    assert excinfo.value.path == checkout_template
-    assert "scripts" in str(excinfo.value)
-    assert "refresh_skill_template.py" in str(excinfo.value)
-
-
-def test_check_template_current_unstamped_is_stale(checkout_template):
-    (checkout_template.parent / "template.fingerprint").unlink()
-
-    with pytest.raises(gen.TemplateStale):
-        gen.check_template_current(checkout_template)
-
-
-@pytest.mark.parametrize("missing", [".git", "scripts"])
-def test_check_template_current_skills_dir_without_sources(
-    checkout_template, missing
-):
-    # An installed skill under some '.../skills/' directory: no sources, so
-    # nothing to compare, even though the stamp disagrees with them.
-    repo = checkout_template.parents[3]
-    (repo / "tracked.txt").write_text("a b c\n", encoding="utf-8")
-    shutil.rmtree(repo / missing)
-
-    result = gen.check_template_current(checkout_template)
-
-    assert result is None
-
-
-def test_check_template_current_dist_build_is_packaged(tmp_path):
-    # A 'dist/' build sits at the same depth as the source skill.
-    repo = tmp_path / "repo"
-    (repo / ".git").mkdir(parents=True)
-    (repo / "scripts").mkdir()
-    (repo / "scripts" / "refresh_skill_template.py").write_text(
-        "raise AssertionError('must not load')\n", encoding="utf-8"
-    )
-    template = repo / "dist" / "soliplex-template" / "assets" / "template"
-    template.mkdir(parents=True)
-
-    result = gen.check_template_current(template)
-
-    assert result is None
-
-
-def test_check_template_current_shallow_path_is_packaged():
-    result = gen.check_template_current(pathlib.Path("/assets/template"))
-
-    assert result is None
-
-
-def test_main_stale_template(monkeypatch, checkout_template, tmp_path):
-    monkeypatch.setattr(
-        gen,
-        "__file__",
-        str(checkout_template.parents[1] / "scripts" / "generate.py"),
-    )
-    (checkout_template.parents[3] / "tracked.txt").write_text(
-        "changed\n", encoding="utf-8"
-    )
-
-    with pytest.raises(gen.TemplateStale):
-        gen.main(["--out", str(tmp_path / "proj")])
-
-    assert not (tmp_path / "proj").exists()
 
 
 def test_main_parent_target_not_empty(

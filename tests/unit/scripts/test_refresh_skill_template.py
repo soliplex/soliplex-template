@@ -74,13 +74,6 @@ def render_check(monkeypatch):
 
 
 @pytest.fixture
-def source_fingerprint(monkeypatch):
-    source_fingerprint = mock.Mock(return_value="f00d")
-    monkeypatch.setattr(rst, "source_fingerprint", source_fingerprint)
-    return source_fingerprint
-
-
-@pytest.fixture
 def repo(tmp_path, monkeypatch):
     repo_dir = tmp_path / "repo"
     (repo_dir / "skills" / "soliplex-template" / "assets").mkdir(parents=True)
@@ -408,7 +401,7 @@ def test_main_no_tracked_files(repo, tracked_files):
 
 
 def test_main_happy_path_fresh(
-    repo, tracked_files, source_fingerprint, build_into, render_check, capsys
+    repo, tracked_files, build_into, render_check, capsys
 ):
     repo_dir, template = repo
     (repo_dir / ".git").mkdir()
@@ -423,21 +416,18 @@ def test_main_happy_path_fresh(
     assert template.is_dir()
     assert not staging.exists()
     assert "render-check OK" in capsys.readouterr().out
-    assert rst.fingerprint_path(template).read_text() == "f00d\n"
     tracked_files.assert_called_once_with()
-    source_fingerprint.assert_called_once_with(["a"])
     build_into.assert_called_once_with(staging, ["a"])
     render_check.assert_called_once_with(staging)
 
 
 def test_main_happy_path_replaces_existing(
-    repo, tracked_files, source_fingerprint, build_into, render_check
+    repo, tracked_files, build_into, render_check
 ):
     repo_dir, template = repo
     (repo_dir / ".git").mkdir()
     template.mkdir(parents=True)
     (template / "stale").write_text("old\n", encoding="utf-8")
-    rst.fingerprint_path(template).write_text("old\n", encoding="utf-8")
     staging = template.parent / "template.new"
     staging.mkdir()
     tracked_files.return_value = ["a"]
@@ -449,19 +439,17 @@ def test_main_happy_path_replaces_existing(
     assert result == 0
     assert template.is_dir()
     assert not (template / "stale").exists()
-    assert rst.fingerprint_path(template).read_text() == "f00d\n"
     build_into.assert_called_once_with(staging, ["a"])
     render_check.assert_called_once_with(staging)
 
 
 def test_main_render_check_failure_leaves_template_intact(
-    repo, tracked_files, source_fingerprint, build_into, render_check
+    repo, tracked_files, build_into, render_check
 ):
     repo_dir, template = repo
     (repo_dir / ".git").mkdir()
     template.mkdir(parents=True)
     (template / "keep").write_text("intact\n", encoding="utf-8")
-    rst.fingerprint_path(template).write_text("old\n", encoding="utf-8")
     staging = template.parent / "template.new"
     tracked_files.return_value = ["a"]
     build_into.return_value = (3, 1, 2)
@@ -471,14 +459,13 @@ def test_main_render_check_failure_leaves_template_intact(
         rst.main()
 
     assert (template / "keep").read_text() == "intact\n"
-    assert rst.fingerprint_path(template).read_text() == "old\n"
     assert not staging.exists()
     build_into.assert_called_once_with(staging, ["a"])
     render_check.assert_called_once_with(staging)
 
 
 def test_main_build_error_removes_staging(
-    repo, tracked_files, source_fingerprint, build_into, render_check
+    repo, tracked_files, build_into, render_check
 ):
     repo_dir, template = repo
     (repo_dir / ".git").mkdir()
@@ -492,72 +479,6 @@ def test_main_build_error_removes_staging(
     assert not staging.exists()
     build_into.assert_called_once_with(staging, ["a"])
     render_check.assert_not_called()
-
-
-# --------------------------------------------------------------------------
-# source_fingerprint()
-# --------------------------------------------------------------------------
-@pytest.fixture
-def fingerprint_repo(repo):
-    repo_dir, _template = repo
-    (repo_dir / "a.txt").write_text("a\n", encoding="utf-8")
-    (repo_dir / "docs" / "users").mkdir(parents=True)
-    (repo_dir / "docs" / "users" / "page.md").write_text(
-        "# page\n", encoding="utf-8"
-    )
-    return repo_dir
-
-
-def test_source_fingerprint_is_stable(fingerprint_repo):
-    first = rst.source_fingerprint(["a.txt"])
-
-    second = rst.source_fingerprint(["a.txt"])
-
-    assert second == first
-    assert re.fullmatch(r"[0-9a-f]{64}", second)
-
-
-@pytest.mark.parametrize(
-    "rel, content",
-    [
-        ("a.txt", "changed\n"),
-        ("docs/users/page.md", "# changed\n"),
-        ("docs/users/new.md", "# new\n"),
-    ],
-)
-def test_source_fingerprint_tracks_copied_files_and_user_docs(
-    fingerprint_repo, rel, content
-):
-    before = rst.source_fingerprint(["a.txt"])
-    (fingerprint_repo / rel).write_text(content, encoding="utf-8")
-
-    after = rst.source_fingerprint(["a.txt"])
-
-    assert after != before
-
-
-def test_source_fingerprint_tracks_the_file_list(fingerprint_repo):
-    (fingerprint_repo / "b.txt").write_text("a\n", encoding="utf-8")
-    before = rst.source_fingerprint(["a.txt"])
-
-    after = rst.source_fingerprint(["a.txt", "b.txt"])
-
-    assert after != before
-
-
-def test_source_fingerprint_without_user_docs(repo):
-    repo_dir, _template = repo
-    (repo_dir / "a.txt").write_text("a\n", encoding="utf-8")
-
-    result = rst.source_fingerprint(["a.txt"])
-
-    assert re.fullmatch(r"[0-9a-f]{64}", result)
-
-
-def test_fingerprint_path_sits_beside_the_template(tmp_path):
-    result = rst.fingerprint_path(tmp_path / "assets" / "template")
-
-    assert result == tmp_path / "assets" / "template.fingerprint"
 
 
 # --------------------------------------------------------------------------

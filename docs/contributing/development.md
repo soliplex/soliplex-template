@@ -63,11 +63,8 @@ uv run zensical build --strict  # the docs site, repo-only pages included
 regenerates the gitignored embedded template from the repo exemplars and
 render-checks every shipped `.mako` against the generator's `DEFAULTS`,
 so a stale placeholder cannot ship. Functional tests re-run it themselves.
-
-The refresh also writes `skills/soliplex-template/assets/template.fingerprint`,
-a SHA-256 over its inputs. Run from a checkout, the generator recomputes it
-and stops with an error naming the refresh command when the two differ. An
-installed skill has no sources and skips the check.
+Run from a checkout, the generator runs it too before it renders, so it
+never renders a stale copy.
 
 ## Repository structure
 
