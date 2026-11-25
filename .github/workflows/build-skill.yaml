@@ -9,9 +9,11 @@ name: Build & publish soliplex-template skill
 #
 # * On a software release ('release: published'): the skill snapshot is
 #   attached to that release, pinned to the released version.
-# * On skill changes to main (and manual dispatch): an immutable rolling
-#   build 'template-skill-YYYY.MM.DD-<sha>' is published, the 'template-skill-latest'
-#   pointer is updated to it, and old rolling builds are pruned.
+# * On changes to main that can affect the skill (see 'paths' below) and on
+#   manual dispatch: an immutable rolling build
+#   'template-skill-YYYY.MM.DD-<sha>' is published, the
+#   'template-skill-latest' pointer is updated to it, and old rolling builds
+#   are pruned.
 
 on:
   release:
@@ -21,23 +23,28 @@ on:
     # build_skill.py regenerates the embedded template (a build artifact, not
     # committed -- #135) from the repo exemplars and docs/users/, so republish
     # when any generation source changes, not just on the skill tree.
+    #
+    # refresh_skill_template.py copies every tracked file except its
+    # EXCLUDE_PATHSPECS, so trigger on everything and carve out only the
+    # repo-only paths the build never reads (#374): a new exemplar file or
+    # directory then republishes by default instead of being missed. Order
+    # matters: a later '!' pattern excludes, a later plain one re-includes.
     paths:
-      - 'skills/soliplex-template/**'
-      - 'src/soliplex_template/**'
-      - 'docs/users/**'
-      - 'docker-compose.yml'
-      - 'backend/**'
-      - 'nginx/**'
-      - 'postgres/**'
-      - 'haiku.rag/**'
-      - 'docling-serve/**'
-      - 'tui/**'
-      - 'rag/**'
-      - 'AGENTS.md'
-      - 'CLAUDE.md'
-      - 'scripts/build_skill.py'
-      - 'scripts/refresh_skill_template.py'
+      - '**'
+      - '!.claude/**'
+      - '!TODO.md'
+      - '!.github/**'
       - '.github/workflows/build-skill.yaml'
+      - '!.gitignore'  # the stack's copy comes from .gitignore.mako
+      - '!.pre-commit-config.yaml'
+      - '!tests/**'
+      - '!docs/**'
+      - 'docs/users/**'
+      - '!README.md'
+      - '!zensical.toml'
+      - '!scripts/lint_docs_anchors.py'
+      - '!scripts/extract_version_pairings.py'
+      - '!scripts/lint_version_pairings.py'
   workflow_dispatch:
 
 # Serialize publishes so concurrent runs do not race on the rolling pointer
