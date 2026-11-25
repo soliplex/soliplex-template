@@ -9,9 +9,9 @@ cause it to fail outright for some documents.  At such times,
 the `haiku-rag-slim` version may pin the `docling-*` packages to
 versions known to work.
 
-The process outlined in `../docs/upgrades/index`
-for keeping `haiku-rag-slim` in sync with `soliplex` doesn't really cover
-this problem directly.
+The upgrade process for keeping `haiku-rag-slim` in step with `soliplex`
+([Upgrading an existing stack](https://soliplex.github.io/soliplex-template/upgrades/))
+doesn't really cover this problem directly.
 
 ## Using the stock `docling-serve` image
 
@@ -23,21 +23,32 @@ without a local build. E.g.:
     image: quay.io/docling-project/docling-serve-cpu:vK.L.M
 
     #build:
-    #  context: haiku.rag
+    #  context: docling-serve
     #  dockerfile: Dockerfile
 ```
 
-The `-cpu` variant in that image name may be absent, if disabled at generation
-time.
+The image's suffix comes from the `docling_serve_variant` chosen at
+generation:
 
-## Building the 'docling-serve' image locally
+| Variant | Image |
+| --- | --- |
+| `cpu` (default) | `quay.io/docling-project/docling-serve-cpu` |
+| `base` | `quay.io/docling-project/docling-serve` |
+| `cu128` | `quay.io/docling-project/docling-serve-cu128` |
+| `cu130` | `quay.io/docling-project/docling-serve-cu130` |
+
+The tag is `docling_serve_version`: `vK.L.M`, or `latest` for the `cpu` and
+`base` variants only (upstream publishes the CUDA variants under version tags
+only). To change either, edit the `image:` line and commit.
+
+## Building the `docling-serve` image locally
 
 To use a non-default build of the `docling-serve` image for your
 deployment, create a `Dockerfile` in this directory, e.g.:
 
 ```Dockerfile
 # syntax=docker/dockerfile:1
-ARG BASE_IMAGE=ghcr.io/docling-project/docling-serve-cpu:vK.L.M
+ARG BASE_IMAGE=quay.io/docling-project/docling-serve-cpu:vK.L.M
 FROM ${BASE_IMAGE}
 ```
 
@@ -55,5 +66,5 @@ service, replacing it with a `build:` stanza which fits your needs.  E.g.:
       dockerfile: Dockerfile
     # Override ARG here if needed
     # args:
-    #   BASE_IMAGE: "quay.io/ggozad/haiku.rag-slim:U.V.W"
+    #   BASE_IMAGE: "quay.io/docling-project/docling-serve-cpu:vK.L.M"
 ```

@@ -6,8 +6,8 @@ icon: lucide/wand-sparkles
 
 You don't run this template repository directly — you generate your **own**
 Soliplex stack from it, then run and operate that generated project. A generated
-project gets its own project name, host ports, model choices, auth mode, and an
-installable Python package wired into the backend.
+project gets its own project name, host ports, model choices, and an installable
+Python package wired into the backend.
 
 There are two ways to generate, both driven by the same generator
 (`skills/soliplex-template/scripts/generate_soliplex_project.py`, which renders
@@ -25,24 +25,61 @@ stack exists, [Using the skill](using-the-skill.md) covers what else it can do.
 
 ## By hand
 
-You can also run the generator directly:
+You can also run the generator directly, either from the installed skill or
+from a clone of this repository.
+
+### From the installed skill
+
+With `<skills>` standing for your agent's skills directory:
 
 ```bash
 # Show every parameter and its default:
-uv run skills/soliplex-template/scripts/generate_soliplex_project.py --print-defaults
+uv run <skills>/soliplex-template/scripts/generate_soliplex_project.py --print-defaults
 
 # Generate into a new directory from a params file:
-uv run skills/soliplex-template/scripts/generate_soliplex_project.py \
+uv run <skills>/soliplex-template/scripts/generate_soliplex_project.py \
     --out ../my-stack --params params.json
 
 # Or create it inside a directory that collects your stacks; the project
 # directory is named for project_name:
-uv run skills/soliplex-template/scripts/generate_soliplex_project.py \
+uv run <skills>/soliplex-template/scripts/generate_soliplex_project.py \
     --parent ~/stacks --params params.json
 ```
 
+### From a clone
+
+A clone does not include the template the generator renders:
+`skills/soliplex-template/assets/template/` is built from the repository's
+own files and is not committed. Build it first, and again after pulling
+changes:
+
+```bash
+uv run scripts/refresh_skill_template.py
+```
+
+Then run the generator with `--with-editable .`. The script declares its
+`soliplex-template` dependency inline, so plain `uv run` installs the
+package's latest release from PyPI. `--with-editable .` uses this clone's
+package instead, so the generator and the helpers it runs (such as secret
+generation) come from the same commit:
+
+```bash
+uv run --with-editable . \
+    skills/soliplex-template/scripts/generate_soliplex_project.py \
+    --out ../my-stack --params params.json
+```
+
+The other flags and forms shown above work the same way.
+
 `ollama_base_url` is the only value with no usable default; everything else
-falls back to a sensible default. Useful flags:
+falls back to a sensible default. `--print-defaults` emits it as `null`, so
+replace it in a params file saved from that output:
+
+```json
+"ollama_base_url": "http://<host>:11434"
+```
+
+Useful flags:
 
 - `--interactive` — prompt for each parameter on stdin.
 - `--no-generate-secrets` — skip generating the stack's Docker secrets
@@ -52,6 +89,23 @@ falls back to a sensible default. Useful flags:
   target as the project directory itself. Mutually exclusive with `--out`.
 - `--force` — allow writing into a non-empty target directory (with
   `--parent`, that means the project directory, not the parent).
+
+The script never contacts Ollama: it writes `ollama_base_url` into the stack's
+`.env` as given. The model checks [described below](#what-the-agent-checks-before-generating)
+are done by the agent, so when you run the script by hand, a wrong URL or a
+missing model shows up only once the stack is running. To check first, list the
+models the server has:
+
+```bash
+curl <ollama_base_url>/api/tags
+```
+
+Confirm that every model the stack will use appears there: `chat_model`,
+`chat_model_alt`, `title_model`, `rag_qa_model` and `rag_embed_model`. A params
+file only needs the values you change, so take any it leaves out from
+`--print-defaults`. Ollama lists each name with its tag, so a bare `llama3`
+matches `llama3:latest`. In Windows PowerShell 5.1, `curl` is an alias for
+`Invoke-WebRequest`; run `curl.exe` for the same output as above.
 
 ## What the generated project adds
 
@@ -82,8 +136,8 @@ layout](../upgrades/move-to-src-layout.md), rung 0 of
 ## Working with the skill
 
 Asked for a new stack, the agent interviews you, grouping related settings
-into one question each: location, project name, Ollama URL, host ports, auth
-mode, models, frontend and backend versions, the optional Gitea service, the
+into one question each: location, project name, Ollama URL, host ports,
+models, frontend and backend versions, the optional Gitea service, the
 optional code-execution sandbox, and whether to generate secrets and make an
 initial git commit.
 
@@ -115,7 +169,7 @@ guessing.
     --8<-- "skills/soliplex-template/assets/aliases.json"
     ```
 
-### What it checks before writing anything
+### What the agent checks before generating
 
 - **Models.** The agent lists the models your Ollama server actually has and
   offers those, then sends each chosen model a one-token request, even with

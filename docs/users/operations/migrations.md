@@ -128,13 +128,15 @@ non-zero for a database which cannot be migrated as it stands (unstamped,
 unreachable, or stamped by a newer release); `soliplex-cli audit databases
 /environment` gives the same verdict in one line per database. The bootstrap
 script is not part of the installed package, so it is fetched and run in one
-throwaway container. Use the tag matching the image's `soliplex`, and drop
-`--dry-run` to write the stamp:
+throwaway container. The backend image has no `curl`, so Python fetches it.
+Use the tag matching the image's `soliplex`, and drop `--dry-run` to write
+the stamp:
 
 ```bash
 docker compose run --rm --no-deps backend sh -c '
-  curl -fsSL https://raw.githubusercontent.com/soliplex/soliplex/v0.82/scripts/bootstrap_alembic_version.py \
-    -o /tmp/bootstrap.py &&
+  /app/.venv/bin/python -c "import sys, urllib.request; urllib.request.urlretrieve(*sys.argv[1:])" \
+    https://raw.githubusercontent.com/soliplex/soliplex/v0.82/scripts/bootstrap_alembic_version.py \
+    /tmp/bootstrap.py &&
   /app/.venv/bin/python /tmp/bootstrap.py --installation-path /environment --dry-run'
 ```
 
@@ -152,7 +154,7 @@ ingester. Back up `soliplex_ingester` first, then:
 
 ```bash
 docker compose stop haiku-ingester
-docker compose build --pull haiku-ingester
+docker compose pull haiku-ingester
 docker compose run --rm --no-deps haiku-ingester sh -ec '
   export INGESTER_DB_PASSWORD="$(cat /run/secrets/ingester_db_password)"
   exec haiku-ingester --config /app/haiku.rag.yaml queue migrate'
@@ -166,6 +168,11 @@ COMMIT;
 SQL
 docker compose up -d haiku-ingester
 ```
+
+The ingester runs the published `haiku.rag-slim` image, so `pull`, not
+`build --pull`, fetches the upgraded release. A stack that builds its own
+ingester image instead (the commented-out `build:` block on the
+`haiku-ingester` service) uses `docker compose build --pull haiku-ingester`.
 
 This preserves queued jobs and source sync state. Keep the namespace stable
 after migration. For a shared queue, stop all its ingesters and assign rows
