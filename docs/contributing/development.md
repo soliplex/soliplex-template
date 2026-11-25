@@ -141,7 +141,7 @@ from a squash-merged PR against `main`.
    directory (outside the repo) holds one draft per release:
 
    ```bash
-   cd ../vX.Y
+   cd ../vX.Y.x
    git log vX.{Y-1}..HEAD > ../release-notes/soliplex-template-vX.Y.txt
    ```
 
