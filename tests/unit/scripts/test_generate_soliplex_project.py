@@ -19,6 +19,7 @@ import importlib.util
 import json
 import pathlib
 import stat
+import subprocess
 import sys
 from unittest import mock
 
@@ -1212,6 +1213,75 @@ def test_main_missing_template(monkeypatch, tmp_path):
 
     with pytest.raises(gen.TemplateNotFound):
         gen.main(["--out", str(tmp_path / "proj")])
+
+
+# --------------------------------------------------------------------------
+# refresh_checkout_template
+# --------------------------------------------------------------------------
+# Stands in for scripts/refresh_skill_template.py: rebuilds the template.
+_STUB_REFRESH = """\
+import pathlib
+
+repo = pathlib.Path(__file__).resolve().parent.parent
+template = repo / "skills" / "soliplex-template" / "assets" / "template"
+template.mkdir(parents=True, exist_ok=True)
+(template / "stale").unlink(missing_ok=True)
+(template / "fresh").write_text("fresh", encoding="utf-8")
+"""
+
+
+def _checkout(tmp_path, parent="skills", refresh=_STUB_REFRESH):
+    """A repo holding a skill under ``parent`` with a stale template."""
+    repo = tmp_path / "repo"
+    (repo / "scripts").mkdir(parents=True)
+    (repo / "scripts" / "refresh_skill_template.py").write_text(
+        refresh, encoding="utf-8"
+    )
+    skill = repo / parent / "soliplex-template"
+    (skill / "assets" / "template").mkdir(parents=True)
+    (skill / "assets" / "template" / "stale").write_text("x", encoding="utf-8")
+    return skill
+
+
+def test_refresh_checkout_template_rebuilds(tmp_path):
+    skill = _checkout(tmp_path)
+
+    gen.refresh_checkout_template(skill)
+
+    template = tmp_path / "repo" / "skills" / "soliplex-template"
+    template = template / "assets" / "template"
+    assert sorted(p.name for p in template.iterdir()) == ["fresh"]
+
+
+def test_refresh_checkout_template_skips_dist_build(tmp_path):
+    skill = _checkout(tmp_path, parent="dist", refresh="raise SystemExit(1)\n")
+
+    gen.refresh_checkout_template(skill)
+
+    assert (skill / "assets" / "template" / "stale").is_file()
+
+
+def test_refresh_checkout_template_skips_installed_skill(tmp_path):
+    skill = tmp_path / "skills" / "soliplex-template"
+    (skill / "assets" / "template").mkdir(parents=True)
+
+    gen.refresh_checkout_template(skill)
+
+    assert list((skill / "assets" / "template").iterdir()) == []
+
+
+def test_main_refresh_failure_stops(monkeypatch, tmp_path):
+    skill = _checkout(tmp_path, refresh="raise SystemExit(1)\n")
+    monkeypatch.setattr(
+        gen,
+        "__file__",
+        str(skill / "scripts" / "generate_soliplex_project.py"),
+    )
+
+    with pytest.raises(subprocess.CalledProcessError):
+        gen.main(["--out", str(tmp_path / "proj")])
+
+    assert not (tmp_path / "proj").exists()
 
 
 def test_main_out_not_empty(monkeypatch, tmp_path):

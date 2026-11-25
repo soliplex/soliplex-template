@@ -63,6 +63,8 @@ uv run zensical build --strict  # the docs site, repo-only pages included
 regenerates the gitignored embedded template from the repo exemplars and
 render-checks every shipped `.mako` against the generator's `DEFAULTS`,
 so a stale placeholder cannot ship. Functional tests re-run it themselves.
+Run from a checkout, the generator runs it too before it renders, so it
+never renders a stale copy.
 
 ## Repository structure
 

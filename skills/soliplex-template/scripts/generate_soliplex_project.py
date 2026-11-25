@@ -22,6 +22,9 @@ or, without uv:
 The embedded template lives at ``../assets/template`` relative to this script.
 Files ending in ``.mako`` are rendered through Mako with the resolved
 parameters; every other file is copied byte-for-byte.
+
+Run from a soliplex-template checkout, the generator first rebuilds that
+template from the repo sources with ``scripts/refresh_skill_template.py``.
 """
 
 from __future__ import annotations
@@ -780,6 +783,19 @@ def validate(params: dict[str, object]) -> None:
 # --------------------------------------------------------------------------
 # Generation
 # --------------------------------------------------------------------------
+def refresh_checkout_template(skill_dir: pathlib.Path) -> None:
+    """Rebuild the template from the repo sources when run from a checkout.
+
+    A checkout holds the skill at ``<repo>/skills/<skill>`` and the refresh
+    script at ``<repo>/scripts/``. An installed skill has no refresh script,
+    and a ``dist/`` build sits outside ``skills/``. Both render the template
+    they ship.
+    """
+    refresh = skill_dir.parent.parent / "scripts" / "refresh_skill_template.py"
+    if skill_dir.parent.name == "skills" and refresh.is_file():
+        subprocess.run([sys.executable, str(refresh)], check=True)
+
+
 def read_skill_metadata(skill_dir: pathlib.Path) -> dict[str, str]:
     """Return ``version`` / ``source_commit`` / ``generated`` for a skill.
 
@@ -1057,9 +1073,9 @@ def main(argv: list[str]) -> int:
     if not args.out and not args.parent:
         raise OutIsRequired()
 
-    template_root = (
-        pathlib.Path(__file__).resolve().parent.parent / "assets" / "template"
-    )
+    skill_dir = pathlib.Path(__file__).resolve().parent.parent
+    refresh_checkout_template(skill_dir)
+    template_root = skill_dir / "assets" / "template"
     if not template_root.is_dir():
         raise TemplateNotFound(template_root)
 
