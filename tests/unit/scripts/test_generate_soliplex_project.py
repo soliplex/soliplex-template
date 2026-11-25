@@ -18,6 +18,7 @@ import argparse
 import importlib.util
 import json
 import pathlib
+import shutil
 import stat
 import sys
 from unittest import mock
@@ -1227,6 +1228,126 @@ def test_main_out_not_empty(monkeypatch, tmp_path):
 
     with pytest.raises(gen.OutNotEmpty):
         gen.main(["--out", str(out)])
+
+
+# --------------------------------------------------------------------------
+# check_template_current
+# --------------------------------------------------------------------------
+# Stands in for scripts/refresh_skill_template.py: the fingerprint is the
+# joined file list, so a test sets the "sources" by writing tracked.txt.
+_STUB_REFRESH = """\
+import pathlib
+
+REPO = pathlib.Path(__file__).resolve().parent.parent
+
+
+def fingerprint_path(template):
+    return template.parent / "template.fingerprint"
+
+
+def tracked_files():
+    return (REPO / "tracked.txt").read_text().split()
+
+
+def source_fingerprint(files):
+    return ",".join(files)
+"""
+
+
+@pytest.fixture
+def checkout_template(tmp_path):
+    """A checkout's template, stamped from sources ``a b``."""
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    (repo / "scripts").mkdir()
+    (repo / "scripts" / "refresh_skill_template.py").write_text(
+        _STUB_REFRESH, encoding="utf-8"
+    )
+    (repo / "tracked.txt").write_text("a b\n", encoding="utf-8")
+    template = repo / "skills" / "soliplex-template" / "assets" / "template"
+    template.mkdir(parents=True)
+    (template.parent / "template.fingerprint").write_text(
+        "a,b\n", encoding="utf-8"
+    )
+    return template
+
+
+def test_check_template_current_fresh_passes(checkout_template):
+    result = gen.check_template_current(checkout_template)
+
+    assert result is None
+
+
+def test_check_template_current_stale(checkout_template):
+    repo = checkout_template.parents[3]
+    (repo / "tracked.txt").write_text("a b c\n", encoding="utf-8")
+
+    with pytest.raises(gen.TemplateStale) as excinfo:
+        gen.check_template_current(checkout_template)
+
+    assert excinfo.value.path == checkout_template
+    assert "scripts" in str(excinfo.value)
+    assert "refresh_skill_template.py" in str(excinfo.value)
+
+
+def test_check_template_current_unstamped_is_stale(checkout_template):
+    (checkout_template.parent / "template.fingerprint").unlink()
+
+    with pytest.raises(gen.TemplateStale):
+        gen.check_template_current(checkout_template)
+
+
+@pytest.mark.parametrize("missing", [".git", "scripts"])
+def test_check_template_current_skills_dir_without_sources(
+    checkout_template, missing
+):
+    # An installed skill under some '.../skills/' directory: no sources, so
+    # nothing to compare, even though the stamp disagrees with them.
+    repo = checkout_template.parents[3]
+    (repo / "tracked.txt").write_text("a b c\n", encoding="utf-8")
+    shutil.rmtree(repo / missing)
+
+    result = gen.check_template_current(checkout_template)
+
+    assert result is None
+
+
+def test_check_template_current_dist_build_is_packaged(tmp_path):
+    # A 'dist/' build sits at the same depth as the source skill.
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    (repo / "scripts").mkdir()
+    (repo / "scripts" / "refresh_skill_template.py").write_text(
+        "raise AssertionError('must not load')\n", encoding="utf-8"
+    )
+    template = repo / "dist" / "soliplex-template" / "assets" / "template"
+    template.mkdir(parents=True)
+
+    result = gen.check_template_current(template)
+
+    assert result is None
+
+
+def test_check_template_current_shallow_path_is_packaged():
+    result = gen.check_template_current(pathlib.Path("/assets/template"))
+
+    assert result is None
+
+
+def test_main_stale_template(monkeypatch, checkout_template, tmp_path):
+    monkeypatch.setattr(
+        gen,
+        "__file__",
+        str(checkout_template.parents[1] / "scripts" / "generate.py"),
+    )
+    (checkout_template.parents[3] / "tracked.txt").write_text(
+        "changed\n", encoding="utf-8"
+    )
+
+    with pytest.raises(gen.TemplateStale):
+        gen.main(["--out", str(tmp_path / "proj")])
+
+    assert not (tmp_path / "proj").exists()
 
 
 def test_main_parent_target_not_empty(

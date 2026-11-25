@@ -48,3 +48,4 @@ conf/
 # build time (scripts/build_skill.py) and before the functional tests, so it is
 # not committed. See issue #135.
 skills/soliplex-template/assets/template/
+skills/soliplex-template/assets/template.fingerprint

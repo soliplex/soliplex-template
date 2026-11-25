@@ -22,11 +22,17 @@ or, without uv:
 The embedded template lives at ``../assets/template`` relative to this script.
 Files ending in ``.mako`` are rendered through Mako with the resolved
 parameters; every other file is copied byte-for-byte.
+
+Run from a soliplex-template checkout, the generator refuses a template whose
+recorded fingerprint differs from the current sources (see
+``check_template_current``). An installed skill has no sources and skips the
+check.
 """
 
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import keyword
 import os
@@ -463,6 +469,15 @@ class TemplateNotFound(GenError):
         )
 
 
+class TemplateStale(GenError):
+    def __init__(self, path, refresh):
+        self.path = path
+        super().__init__(
+            f"embedded template at {path} was not built from the current "
+            f"sources; run 'uv run {refresh}' to regenerate it"
+        )
+
+
 class OutNotEmpty(GenError):
     def __init__(self, out):
         self.out = out
@@ -780,6 +795,36 @@ def validate(params: dict[str, object]) -> None:
 # --------------------------------------------------------------------------
 # Generation
 # --------------------------------------------------------------------------
+def check_template_current(template_root: pathlib.Path) -> None:
+    """Refuse a checkout's template that is older than its sources.
+
+    ``template_root`` is a checkout's template when it sits at
+    ``<repo>/skills/<skill>/assets/template`` and ``<repo>`` holds ``.git``
+    and the refresh script. The refresh script then recomputes the source
+    fingerprint and this compares it with the one stored at the last refresh.
+    Any other location (an installed skill, a ``dist/`` build) is a packaged
+    template and passes unchecked.
+    """
+    parents = template_root.parents
+    if len(parents) < 4 or parents[2].name != "skills":
+        return
+    repo = parents[3]
+    refresh = repo / "scripts" / "refresh_skill_template.py"
+    if not ((repo / ".git").exists() and refresh.is_file()):
+        return
+    spec = importlib.util.spec_from_file_location(
+        "refresh_skill_template", refresh
+    )
+    rst = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(rst)
+    stamp = rst.fingerprint_path(template_root)
+    recorded = (
+        stamp.read_text(encoding="utf-8").strip() if stamp.is_file() else ""
+    )
+    if recorded != rst.source_fingerprint(rst.tracked_files()):
+        raise TemplateStale(template_root, refresh)
+
+
 def read_skill_metadata(skill_dir: pathlib.Path) -> dict[str, str]:
     """Return ``version`` / ``source_commit`` / ``generated`` for a skill.
 
@@ -1062,6 +1107,7 @@ def main(argv: list[str]) -> int:
     )
     if not template_root.is_dir():
         raise TemplateNotFound(template_root)
+    check_template_current(template_root)
 
     # With --out the target is known up front, so check it before the
     # (possibly interactive) interview rather than after. With --parent the
