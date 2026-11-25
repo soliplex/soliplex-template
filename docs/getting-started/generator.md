@@ -72,8 +72,8 @@ uv run --with-editable . \
 The other flags and forms shown above work the same way.
 
 `ollama_base_url` is the only value with no usable default; everything else
-falls back to a sensible default. `--print-defaults` leaves it out, so add it
-to a params file saved from that output:
+falls back to a sensible default. `--print-defaults` emits it as `null`, so
+replace it in a params file saved from that output:
 
 ```json
 "ollama_base_url": "http://<host>:11434"
