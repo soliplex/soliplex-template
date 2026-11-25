@@ -134,8 +134,7 @@ from a squash-merged PR against `main`.
 1. Update `main` and open a new worktree for the release branch:
 
    ```bash
-   # from `main` worktree; the branch is 'vX.Y.x', the worktree 'vX.Y'
-   git worktree add -b vX.Y.x ../vX.Y
+   git worktree add ../vX.Y.x
    ```
 
 2. Capturing the changelog draft — the container's `release-notes/`
